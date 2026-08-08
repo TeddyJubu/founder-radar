@@ -1,0 +1,52 @@
+{
+  "_note": "Recorded shape of a SILENTLY TRUNCATED advanced-search response: the API reports 7200 hits but only ever returns `size` items. Item list abridged to 3 rows for the repo — the only thing under test is `hits > len(items)`, which is what forces the window to halve (04-sources 3.2).",
+  "hits": 7200,
+  "items": [
+    {
+      "company_name": "TRUNCATION CANARY ONE LIMITED",
+      "company_number": "15900001",
+      "company_status": "active",
+      "company_type": "ltd",
+      "date_of_creation": "2026-08-03",
+      "sic_codes": ["62020"],
+      "kind": "search-results#company",
+      "links": { "company_profile": "/company/15900001" },
+      "registered_office_address": {
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE1 4ST",
+        "country": "England"
+      }
+    },
+    {
+      "company_name": "TRUNCATION CANARY TWO LIMITED",
+      "company_number": "15900002",
+      "company_status": "active",
+      "company_type": "ltd",
+      "date_of_creation": "2026-08-05",
+      "sic_codes": ["62020"],
+      "kind": "search-results#company",
+      "links": { "company_profile": "/company/15900002" },
+      "registered_office_address": {
+        "locality": "Sheffield",
+        "postal_code": "S75 1AA",
+        "country": "England"
+      }
+    },
+    {
+      "company_name": "TRUNCATION CANARY THREE LIMITED",
+      "company_number": "15900003",
+      "company_status": "active",
+      "company_type": "ltd",
+      "date_of_creation": "2026-08-07",
+      "sic_codes": ["62020"],
+      "kind": "search-results#company",
+      "links": { "company_profile": "/company/15900003" },
+      "registered_office_address": {
+        "locality": "London",
+        "postal_code": "EC2A 4NE",
+        "country": "England"
+      }
+    }
+  ],
+  "kind": "search#advanced-search"
+}

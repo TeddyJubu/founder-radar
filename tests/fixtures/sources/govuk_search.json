@@ -1,0 +1,60 @@
+{
+  "results": [
+    {
+      "index": "govuk",
+      "es_score": 41.882,
+      "document_type": "news_story",
+      "format": "news_article",
+      "link": "/government/news/innovate-uk-announces-smart-shipping-competition-winners",
+      "title": "Innovate UK announces Smart Shipping competition winners",
+      "description": "Twelve companies win a share of £14 million for maritime innovation, including Teesside startup Harbourside Marine Systems.",
+      "public_timestamp": "2026-07-25T09:00:00+01:00",
+      "organisations": [
+        {"title": "Innovate UK", "slug": "innovate-uk", "link": "/government/organisations/innovate-uk", "organisation_type": "other"}
+      ]
+    },
+    {
+      "index": "govuk",
+      "es_score": 38.104,
+      "document_type": "news_story",
+      "format": "news_article",
+      "link": "/government/news/energy-storage-call-awards-14m-to-uk-firms",
+      "title": "Energy storage call awards £14m to UK firms",
+      "description": "UKRI awards funding to twelve energy storage companies including Newcastle battery firm Voltrax.",
+      "public_timestamp": "2026-07-18T10:30:00+01:00",
+      "organisations": [
+        {"title": "UK Research and Innovation", "slug": "uk-research-and-innovation", "link": "/government/organisations/uk-research-and-innovation", "organisation_type": "other"},
+        {"title": "Innovate UK", "slug": "innovate-uk", "link": "/government/organisations/innovate-uk", "organisation_type": "other"}
+      ]
+    },
+    {
+      "index": "govuk",
+      "es_score": 33.517,
+      "document_type": "news_story",
+      "format": "news_article",
+      "link": "/government/news/smart-shipping-grant-round-two-launches",
+      "title": "Smart Shipping grant round two launches",
+      "description": "Innovate UK opens the second round of its Smart Shipping competition for UK maritime startups.",
+      "public_timestamp": "2026-07-10T11:00:00+01:00",
+      "organisations": [
+        {"title": "Innovate UK", "slug": "innovate-uk", "link": "/government/organisations/innovate-uk", "organisation_type": "other"}
+      ]
+    },
+    {
+      "index": "govuk",
+      "es_score": 29.640,
+      "document_type": "publication",
+      "format": "transparency",
+      "link": "/government/publications/innovate-uk-funded-projects-june-2026",
+      "title": "Innovate UK funded projects: June 2026",
+      "description": "Details of projects awarded funding by Innovate UK in June 2026, including company names, project titles and grant amounts.",
+      "public_timestamp": "2026-07-02T08:00:00+01:00",
+      "organisations": [
+        {"title": "Innovate UK", "slug": "innovate-uk", "link": "/government/organisations/innovate-uk", "organisation_type": "other"}
+      ]
+    }
+  ],
+  "total": 4,
+  "start": 0,
+  "suggested_queries": []
+}

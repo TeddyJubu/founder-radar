@@ -1,0 +1,37 @@
+{
+  "headerData": {
+    "lastRefreshDate": "06 Jul 2026"
+  },
+  "facetedSearchResultBean": {
+    "request": {
+      "page": 1,
+      "fetchSize": 100,
+      "term": "*",
+      "selectedSortableField": "pro.sd",
+      "selectedSortOrder": "DESC"
+    },
+    "totalResults": 0,
+    "results": [],
+    "sortableFields": [
+      {
+        "fieldName": "pro.sd",
+        "displayName": "Start Date"
+      },
+      {
+        "fieldName": "pro.ed",
+        "displayName": "End Date"
+      },
+      {
+        "fieldName": "pro.am",
+        "displayName": "Funded Value"
+      },
+      {
+        "fieldName": "score",
+        "displayName": "Relevance"
+      }
+    ],
+    "page": 1,
+    "fetchSize": 100,
+    "totalPages": 0
+  }
+}

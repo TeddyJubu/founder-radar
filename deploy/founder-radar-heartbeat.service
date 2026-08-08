@@ -1,0 +1,37 @@
+# /etc/systemd/system/founder-radar-heartbeat.service
+#
+# The second clock. A daily job that stops running produces no error, because
+# nothing runs to produce one — so something else has to check it fired
+# (02-architecture §7, "The whole run dies → Heartbeat timer fires at +26 h").
+
+[Unit]
+Description=Founder Radar staleness check
+Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=radar
+Group=radar
+WorkingDirectory=/opt/founder-radar/app
+EnvironmentFile=/opt/founder-radar/.env
+Environment=TZ=Europe/London
+
+# 08-deployment §4, verbatim. `radar.notify.heartbeat.check()` is the single
+# implementation; the CLI flag and `python -m radar.notify.heartbeat
+# --alert-if-stale 26h` are two doors into it, so the fallback below is a
+# straight swap if the console script is ever missing.
+ExecStart=/opt/founder-radar/venv/bin/founder-radar status --alert-if-stale 26h
+
+# Exit 1 means "an alert fired", which is information, not a broken unit —
+# but leaving it as a failure is how it also shows up in `systemctl --failed`.
+TimeoutStartSec=120
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs
+
+StandardOutput=append:/opt/founder-radar/logs/heartbeat.log
+StandardError=append:/opt/founder-radar/logs/error.log

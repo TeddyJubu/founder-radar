@@ -1,0 +1,40 @@
+[
+  {
+    "id": 48122,
+    "date": "2026-08-04T07:00:00",
+    "date_gmt": "2026-08-04T06:00:00",
+    "slug": "edinburgh-ai-startup-quicksilver-closes-3-2m",
+    "link": "https://www.uktech.news/2026/08/04/edinburgh-ai-startup-quicksilver-closes-3-2m/",
+    "title": {"rendered": "Edinburgh AI startup Quicksilver closes &#163;3.2m Series A"},
+    "excerpt": {"rendered": "<p>Quicksilver, an Edinburgh AI company, has closed a &#163;3.2 million Series A round to commercialise its geospatial data models.</p>"},
+    "categories": ["ai", "funding"]
+  },
+  {
+    "id": 48110,
+    "date": "2026-08-01T08:30:00",
+    "date_gmt": "2026-08-01T07:30:00",
+    "slug": "belfast-startup-beacon-raises-600k",
+    "link": "https://www.uktech.news/2026/08/01/belfast-startup-beacon-raises-600k/",
+    "title": {"rendered": "Belfast startup Beacon raises &#163;600,000 for warehouse sensors"},
+    "excerpt": {"rendered": "<p>Beacon, a Belfast-based startup, has raised &#163;600,000 to grow its warehouse sensor business.</p>"},
+    "categories": ["funding", "hardware"]
+  },
+  {
+    "id": 48098,
+    "date": "2026-07-29T09:45:00",
+    "date_gmt": "2026-07-29T08:45:00",
+    "slug": "glasgow-fintech-kilo-raises-4m-us-investors",
+    "link": "https://www.uktech.news/2026/07/29/glasgow-fintech-kilo-raises-4m-us-investors/",
+    "title": {"rendered": "Glasgow fintech Kilo raises $4m from US investors"},
+    "excerpt": {"rendered": "<p>Kilo, a Glasgow-based fintech startup, has raised $4 million from US investors.</p>"},
+    "categories": ["fintech", "funding"]
+  },
+  {
+    "id": 48090,
+    "slug": "manchester-cellarstone-battery-software-seed",
+    "link": "https://www.uktech.news/2026/07/24/manchester-cellarstone-battery-software-seed/",
+    "title": {"rendered": "Manchester&#8217;s Cellarstone lands seed round for battery software"},
+    "excerpt": {"rendered": "<p>Cellarstone has raised a seed round for its battery-health analytics platform.</p>"},
+    "categories": ["funding", "north"]
+  }
+]

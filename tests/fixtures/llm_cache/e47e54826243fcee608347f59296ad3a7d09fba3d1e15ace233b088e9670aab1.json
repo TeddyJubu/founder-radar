@@ -1,0 +1,23 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 1800000,
+    "company_name": "Quantia",
+    "evidence_quote_amount": "has raised \u00a31.8 million in a pre-seed round",
+    "evidence_quote_company": "Quantia, a quantum sensing company spun out of Durham University, has raised \u00a31.8 million",
+    "evidence_quote_spinout": "spun out of Durham University",
+    "evidence_quote_stage": "in a pre-seed round",
+    "extraction_confidence": 0.9,
+    "hq_city": "Durham",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "is_university_spinout": true,
+    "one_line_description": "Quantum sensors for underground infrastructure",
+    "sector": "deeptech",
+    "stage": "pre_seed",
+    "university_name": "Durham University"
+  },
+  "tokens_in": 429,
+  "tokens_out": 350
+}

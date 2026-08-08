@@ -1,0 +1,18 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "company_name": "HumberWorks",
+    "evidence_quote_amount": "has confirmed it has closed its funding round",
+    "evidence_quote_company": "A Hull-based engineering firm has confirmed it has closed its funding round",
+    "extraction_confidence": 0.35,
+    "hq_city": "Hull",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Marine engineering services",
+    "sector": "industrial_tech",
+    "stage": "pre_seed"
+  },
+  "tokens_in": 412,
+  "tokens_out": 350
+}

@@ -1,0 +1,50 @@
+# /etc/systemd/system/founder-radar.service
+#
+# The daily scan. Started by founder-radar.timer, never by Hermes
+# (02-architecture §3: the run must survive `hermes update` and a sick gateway).
+
+[Unit]
+Description=UK Founder Radar daily scan
+Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=radar
+Group=radar
+WorkingDirectory=/opt/founder-radar/app
+EnvironmentFile=/opt/founder-radar/.env
+Environment=TZ=Europe/London
+
+# Two steps, on purpose.
+#
+# 08-deployment §4 shows only the scan. Delivery is split out so the digest is
+# not hostage to where in the pipeline the send happens to sit: if the scan
+# exits 1 (partial — some sources failed) the digest MUST still go out, because
+# a partial run is a normal Tuesday, not an outage. SuccessExitStatus makes
+# systemd treat that exit 1 as success so the second ExecStart runs.
+#
+# Exit 2 is fatal: nothing was produced, so nothing is sent, and the heartbeat
+# at 09:00 is what tells Aryan (02-architecture §7).
+ExecStart=/opt/founder-radar/venv/bin/founder-radar run
+ExecStart=/opt/founder-radar/venv/bin/founder-radar digest --today --send
+SuccessExitStatus=0 1
+
+TimeoutStartSec=3600
+Nice=10
+
+# 1G leaves comfortable headroom for Hermes on a 4 GB box (NFR-2).
+# Raise to 2G *only* if a browser-backed source is ever enabled — Playwright
+# adds ~300 MB per page and would OOM-kill the whole run.
+MemoryMax=1G
+
+# Hardening. The service needs exactly one writable tree.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs /opt/founder-radar/backups
+
+StandardOutput=append:/opt/founder-radar/logs/run.log
+StandardError=append:/opt/founder-radar/logs/error.log

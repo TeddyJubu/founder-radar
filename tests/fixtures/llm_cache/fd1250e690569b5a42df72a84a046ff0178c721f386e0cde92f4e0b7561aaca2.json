@@ -1,0 +1,21 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 600000,
+    "company_name": "Beacon",
+    "evidence_quote_amount": "has raised \u00a3600,000 in a pre-seed round",
+    "evidence_quote_company": "Beacon, a Belfast-based startup, has raised \u00a3600,000 in a pre-seed round",
+    "evidence_quote_stage": "in a pre-seed round to grow its warehouse sensor business",
+    "extraction_confidence": 0.88,
+    "founded_year": 2023,
+    "hq_city": "Belfast",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Warehouse temperature and humidity sensors",
+    "sector": "industrial_tech",
+    "stage": "pre_seed"
+  },
+  "tokens_in": 409,
+  "tokens_out": 350
+}

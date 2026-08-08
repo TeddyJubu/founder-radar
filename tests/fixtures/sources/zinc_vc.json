@@ -1,0 +1,82 @@
+[
+  {
+    "id": 3021,
+    "date": "2026-08-02T08:00:00",
+    "date_gmt": "2026-08-02T07:00:00",
+    "guid": {"rendered": "https://www.zinc.vc/?p=3021"},
+    "modified_gmt": "2026-08-02T07:00:00",
+    "slug": "announcing-zincs-investment-in-palisade-health",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.zinc.vc/news/announcing-zincs-investment-in-palisade-health/",
+    "title": {"rendered": "Announcing Zinc&#8217;s investment in Palisade Health"},
+    "content": {
+      "rendered": "<p>We are thrilled to announce Zinc&#8217;s investment in Palisade Health, a care-home software company founded out of our Healthy Ageing mission in Newcastle.</p>\n<p>Palisade digitises medication records and staffing rotas for residential care homes. Zinc is first money in.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Zinc invests in Palisade Health.</p>\n", "protected": false},
+    "author": 4,
+    "categories": [3],
+    "_links": {"self": [{"href": "https://www.zinc.vc/wp-json/wp/v2/posts/3021"}]}
+  },
+  {
+    "id": 3009,
+    "date": "2026-07-18T10:30:00",
+    "date_gmt": "2026-07-18T09:30:00",
+    "guid": {"rendered": "https://www.zinc.vc/?p=3009"},
+    "modified_gmt": "2026-07-18T09:30:00",
+    "slug": "zinc-invests-in-brightbox-analytics",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.zinc.vc/news/zinc-invests-in-brightbox-analytics/",
+    "title": {"rendered": "Zinc invests in Brightbox Analytics"},
+    "content": {
+      "rendered": "<p>Zinc has invested in Brightbox Analytics, a workplace wellbeing analytics company based in Leeds and founded by two alumni of our sixth cohort.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Zinc invests in Brightbox Analytics.</p>\n", "protected": false},
+    "author": 4,
+    "categories": [3],
+    "_links": {"self": [{"href": "https://www.zinc.vc/wp-json/wp/v2/posts/3009"}]}
+  },
+  {
+    "id": 3001,
+    "date": "2026-07-02T13:00:00",
+    "date_gmt": "2026-07-02T12:00:00",
+    "guid": {"rendered": "https://www.zinc.vc/?p=3001"},
+    "modified_gmt": "2026-07-02T12:00:00",
+    "slug": "zinc-backs-northwind-diagnostics",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.zinc.vc/news/zinc-backs-northwind-diagnostics/",
+    "title": {"rendered": "Zinc backs Northwind Diagnostics"},
+    "content": {
+      "rendered": "<p>Zinc is excited to back Northwind Diagnostics, which is building a low-cost point-of-care test for respiratory infection in community pharmacies.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Zinc backs Northwind Diagnostics.</p>\n", "protected": false},
+    "author": 8,
+    "categories": [3],
+    "_links": {"self": [{"href": "https://www.zinc.vc/wp-json/wp/v2/posts/3001"}]}
+  },
+  {
+    "id": 2994,
+    "date": "2026-06-19T11:00:00",
+    "date_gmt": "2026-06-19T10:00:00",
+    "guid": {"rendered": "https://www.zinc.vc/?p=2994"},
+    "modified_gmt": "2026-06-19T10:00:00",
+    "slug": "applications-open-for-mission-nine",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.zinc.vc/news/applications-open-for-mission-nine/",
+    "title": {"rendered": "Applications are open for Mission Nine"},
+    "content": {
+      "rendered": "<p>Our ninth mission tackles the mental health of young people. Applications close in September and the programme starts in London in January.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Applications are open for Mission Nine.</p>\n", "protected": false},
+    "author": 2,
+    "categories": [5],
+    "_links": {"self": [{"href": "https://www.zinc.vc/wp-json/wp/v2/posts/2994"}]}
+  }
+]

@@ -1,0 +1,15 @@
+# /etc/systemd/system/founder-radar-heartbeat.timer
+#
+# 09:00 — two and a half hours after the scan, which is long enough for a slow
+# run to finish and early enough that Aryan hears about a dead night before his
+# morning is over.
+
+[Unit]
+Description=Check Founder Radar ran this morning
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Europe/London
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,19 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 900000,
+    "company_name": "CafeteriaCloud",
+    "evidence_quote_amount": "has raised \u00a3900,000 to digitise school catering",
+    "evidence_quote_company": "CafeteriaCloud, a Preston startup, has raised \u00a3900,000",
+    "extraction_confidence": 0.5,
+    "hq_city": "Preston",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "School catering digitisation",
+    "sector": "vertical_saas",
+    "stage": "pre_seed"
+  },
+  "tokens_in": 420,
+  "tokens_out": 350
+}

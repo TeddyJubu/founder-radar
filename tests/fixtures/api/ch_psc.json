@@ -1,0 +1,82 @@
+{
+  "_note": "Recorded GET /company/15021884/persons-with-significant-control. Carries date_of_birth, address, nationality and country_of_residence, all of which must be dropped at ingest.",
+  "active_count": 2,
+  "ceased_count": 0,
+  "items_per_page": 25,
+  "kind": "persons-with-significant-control#list",
+  "start_index": 0,
+  "total_results": 3,
+  "links": { "self": "/company/15021884/persons-with-significant-control" },
+  "items": [
+    {
+      "kind": "individual-person-with-significant-control",
+      "name": "Ms Jane Elizabeth Smith",
+      "name_elements": {
+        "title": "Ms",
+        "forename": "Jane",
+        "other_forenames": "Elizabeth",
+        "surname": "Smith"
+      },
+      "notified_on": "2026-06-14",
+      "nationality": "British",
+      "country_of_residence": "England",
+      "date_of_birth": { "month": 4, "year": 1988 },
+      "address": {
+        "address_line_1": "Hoults Yard",
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE6 2HL",
+        "country": "England"
+      },
+      "natures_of_control": [
+        "ownership-of-shares-50-to-75-percent",
+        "voting-rights-50-to-75-percent"
+      ],
+      "links": {
+        "self": "/company/15021884/persons-with-significant-control/individual/aBc123"
+      }
+    },
+    {
+      "kind": "individual-person-with-significant-control",
+      "name": "Dr Priya Raman",
+      "name_elements": {
+        "title": "Dr",
+        "forename": "Priya",
+        "surname": "Raman"
+      },
+      "notified_on": "2026-06-14",
+      "nationality": "British",
+      "country_of_residence": "England",
+      "date_of_birth": { "month": 9, "year": 1990 },
+      "address": {
+        "address_line_1": "Science Central",
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE4 5TG",
+        "country": "England"
+      },
+      "natures_of_control": ["ownership-of-shares-25-to-50-percent"],
+      "links": {
+        "self": "/company/15021884/persons-with-significant-control/individual/dEf456"
+      }
+    },
+    {
+      "kind": "corporate-entity-person-with-significant-control",
+      "name": "NORTHERN NOMINEES LIMITED",
+      "notified_on": "2026-06-14",
+      "identification": {
+        "legal_authority": "Companies Act 2006",
+        "legal_form": "Private Limited Company",
+        "registration_number": "07771111"
+      },
+      "address": {
+        "address_line_1": "1 Wellington Street",
+        "locality": "Leeds",
+        "postal_code": "LS1 4DL",
+        "country": "England"
+      },
+      "natures_of_control": ["ownership-of-shares-25-to-50-percent"],
+      "links": {
+        "self": "/company/15021884/persons-with-significant-control/corporate-entity/gHi789"
+      }
+    }
+  ]
+}

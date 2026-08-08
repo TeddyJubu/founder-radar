@@ -1,0 +1,11 @@
+# /etc/systemd/system/founder-radar-backup.timer
+
+[Unit]
+Description=Back up the Founder Radar database daily
+
+[Timer]
+OnCalendar=*-*-* 05:00:00 Europe/London
+Persistent=true
+
+[Install]
+WantedBy=timers.target

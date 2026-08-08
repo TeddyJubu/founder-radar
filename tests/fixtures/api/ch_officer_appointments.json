@@ -1,0 +1,54 @@
+{
+  "_note": "Recorded GET /officers/{id}/appointments. total_results counts the appointment we already know about, so prior_appointments = total_results - 1 = 2 (a repeat founder).",
+  "date_of_birth": { "month": 4, "year": 1988 },
+  "etag": "e2f0b8f9a1c34d5e6f708192a3b4c5d6e7f80912",
+  "is_corporate_officer": false,
+  "items_per_page": 35,
+  "kind": "personal-appointment",
+  "links": { "self": "/officers/8Kk2wPqR3vJmTn5cXyB1aLdF0Zs/appointments" },
+  "name": "Jane Elizabeth SMITH",
+  "start_index": 0,
+  "total_results": 3,
+  "items": [
+    {
+      "appointed_on": "2026-06-14",
+      "occupation": "Chief Executive Officer",
+      "officer_role": "director",
+      "name": "SMITH, Jane Elizabeth",
+      "nationality": "British",
+      "country_of_residence": "England",
+      "address": {
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE6 2HL"
+      },
+      "appointed_to": {
+        "company_name": "METZERO LIMITED",
+        "company_number": "15021884",
+        "company_status": "active"
+      }
+    },
+    {
+      "appointed_on": "2023-02-01",
+      "resigned_on": "2025-11-30",
+      "occupation": "Director",
+      "officer_role": "director",
+      "name": "SMITH, Jane Elizabeth",
+      "appointed_to": {
+        "company_name": "TYNE ANALYTICS LTD",
+        "company_number": "14550021",
+        "company_status": "dissolved"
+      }
+    },
+    {
+      "appointed_on": "2019-05-09",
+      "occupation": "Director",
+      "officer_role": "director",
+      "name": "SMITH, Jane Elizabeth",
+      "appointed_to": {
+        "company_name": "QUAYSIDE SOFTWARE LIMITED",
+        "company_number": "11998877",
+        "company_status": "active"
+      }
+    }
+  ]
+}

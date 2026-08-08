@@ -1,0 +1,18 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "company_name": "Harbourside",
+    "evidence_quote_amount": "awarded a \u00a3250,000 Innovate UK grant",
+    "evidence_quote_company": "Harbourside, a Teesside-based startup, has been awarded a \u00a3250,000 Innovate UK grant",
+    "extraction_confidence": 0.9,
+    "grant_amount_gbp": 250000,
+    "hq_city": "Middlesbrough",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Collision-avoidance technology for small vessels",
+    "sector": "deeptech"
+  },
+  "tokens_in": 407,
+  "tokens_out": 350
+}

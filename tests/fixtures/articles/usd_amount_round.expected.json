@@ -1,0 +1,10 @@
+{
+  "amount": null,
+  "amount_currency": "USD",
+  "amount_original": 4000000,
+  "company_name": "Kilo",
+  "is_about_single_company": true,
+  "needs_review": true,
+  "sector": "fintech",
+  "stage": "seed"
+}

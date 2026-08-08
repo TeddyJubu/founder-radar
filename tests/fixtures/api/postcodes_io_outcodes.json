@@ -1,0 +1,216 @@
+{
+  "_note": "Recorded GET https://api.postcodes.io/outcodes/{outcode} bodies, collated by outcode. Note the shape: `region`, `country` and `admin_district` are ARRAYS, because an outcode can straddle a boundary — take element [0]. `region` is populated for ENGLAND ONLY, so Scotland/Wales/NI come back with an empty list and `country` is what carries the answer (03-data-model 3).",
+  "NE1": {
+    "status": 200,
+    "result": {
+      "outcode": "NE1",
+      "longitude": -1.6132,
+      "latitude": 54.9738,
+      "northings": 564500,
+      "eastings": 424900,
+      "country": ["England"],
+      "region": ["North East"],
+      "admin_district": ["Newcastle upon Tyne"],
+      "admin_county": [],
+      "admin_ward": ["Monument"],
+      "parish": ["Newcastle upon Tyne, unparished area"],
+      "parliamentary_constituency": ["Newcastle upon Tyne Central and West"]
+    }
+  },
+  "NE4": {
+    "status": 200,
+    "result": {
+      "outcode": "NE4",
+      "longitude": -1.6435,
+      "latitude": 54.9756,
+      "country": ["England"],
+      "region": ["North East"],
+      "admin_district": ["Newcastle upon Tyne"],
+      "admin_county": []
+    }
+  },
+  "NE6": {
+    "status": 200,
+    "result": {
+      "outcode": "NE6",
+      "longitude": -1.5719,
+      "latitude": 54.9762,
+      "country": ["England"],
+      "region": ["North East"],
+      "admin_district": ["Newcastle upon Tyne"],
+      "admin_county": []
+    }
+  },
+  "SR1": {
+    "status": 200,
+    "result": {
+      "outcode": "SR1",
+      "longitude": -1.3812,
+      "latitude": 54.9057,
+      "country": ["England"],
+      "region": ["North East"],
+      "admin_district": ["Sunderland"],
+      "admin_county": []
+    }
+  },
+  "S1": {
+    "status": 200,
+    "result": {
+      "outcode": "S1",
+      "longitude": -1.4659,
+      "latitude": 53.3811,
+      "country": ["England"],
+      "region": ["Yorkshire and The Humber"],
+      "admin_district": ["Sheffield"],
+      "admin_county": ["South Yorkshire"]
+    }
+  },
+  "S75": {
+    "status": 200,
+    "result": {
+      "outcode": "S75",
+      "longitude": -1.5171,
+      "latitude": 53.5605,
+      "country": ["England"],
+      "region": ["Yorkshire and The Humber"],
+      "admin_district": ["Barnsley"],
+      "admin_county": ["South Yorkshire"]
+    }
+  },
+  "LS1": {
+    "status": 200,
+    "result": {
+      "outcode": "LS1",
+      "longitude": -1.5476,
+      "latitude": 53.7978,
+      "country": ["England"],
+      "region": ["Yorkshire and The Humber"],
+      "admin_district": ["Leeds"],
+      "admin_county": ["West Yorkshire"]
+    }
+  },
+  "YO1": {
+    "status": 200,
+    "result": {
+      "outcode": "YO1",
+      "longitude": -1.0805,
+      "latitude": 53.9591,
+      "country": ["England"],
+      "region": ["Yorkshire and The Humber"],
+      "admin_district": ["York"],
+      "admin_county": []
+    }
+  },
+  "EC2A": {
+    "status": 200,
+    "result": {
+      "outcode": "EC2A",
+      "longitude": -0.0836,
+      "latitude": 51.5219,
+      "country": ["England"],
+      "region": ["London"],
+      "admin_district": ["Islington", "Hackney"],
+      "admin_county": []
+    }
+  },
+  "N1": {
+    "status": 200,
+    "result": {
+      "outcode": "N1",
+      "longitude": -0.0989,
+      "latitude": 51.5362,
+      "country": ["England"],
+      "region": ["London"],
+      "admin_district": ["Islington", "Hackney"],
+      "admin_county": []
+    }
+  },
+  "EH1": {
+    "status": 200,
+    "result": {
+      "outcode": "EH1",
+      "longitude": -3.1892,
+      "latitude": 55.9506,
+      "country": ["Scotland"],
+      "region": [],
+      "admin_district": ["City of Edinburgh"],
+      "admin_county": []
+    }
+  },
+  "CF10": {
+    "status": 200,
+    "result": {
+      "outcode": "CF10",
+      "longitude": -3.1738,
+      "latitude": 51.4794,
+      "country": ["Wales"],
+      "region": [],
+      "admin_district": ["Cardiff"],
+      "admin_county": []
+    }
+  },
+  "BT1": {
+    "status": 200,
+    "result": {
+      "outcode": "BT1",
+      "longitude": -5.9297,
+      "latitude": 54.6006,
+      "country": ["Northern Ireland"],
+      "region": [],
+      "admin_district": ["Belfast"],
+      "admin_county": []
+    }
+  },
+  "OX1": {
+    "status": 200,
+    "result": {
+      "outcode": "OX1",
+      "longitude": -1.2603,
+      "latitude": 51.7501,
+      "country": ["England"],
+      "region": ["South East"],
+      "admin_district": ["Oxford"],
+      "admin_county": ["Oxfordshire"]
+    }
+  },
+  "CB1": {
+    "status": 200,
+    "result": {
+      "outcode": "CB1",
+      "longitude": 0.1417,
+      "latitude": 52.1979,
+      "country": ["England"],
+      "region": ["East of England"],
+      "admin_district": ["Cambridge"],
+      "admin_county": ["Cambridgeshire"]
+    }
+  },
+  "M1": {
+    "status": 200,
+    "result": {
+      "outcode": "M1",
+      "longitude": -2.2298,
+      "latitude": 53.4794,
+      "country": ["England"],
+      "region": ["North West"],
+      "admin_district": ["Manchester"],
+      "admin_county": []
+    }
+  },
+  "BS1": {
+    "status": 200,
+    "result": {
+      "outcode": "BS1",
+      "longitude": -2.5943,
+      "latitude": 51.4536,
+      "country": ["England"],
+      "region": ["South West"],
+      "admin_district": ["Bristol, City of"],
+      "admin_county": []
+    }
+  },
+  "ZZ99": {
+    "status": 404,
+    "error": "Outcode not found"
+  }
+}

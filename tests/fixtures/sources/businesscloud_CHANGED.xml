@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 200 OK, valid RSS, zero <item> elements: the dangerous failure. A feed
+     plugin change or a category filter gone wrong looks exactly like this,
+     and without guard_nonempty it reads as a quiet week. -->
+<rss version="2.0"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>BusinessCloud</title>
+    <atom:link href="https://businesscloud.co.uk/feed/" rel="self" type="application/rss+xml" />
+    <link>https://businesscloud.co.uk</link>
+    <description>Business technology news from the North of England</description>
+    <lastBuildDate>Mon, 03 Aug 2026 08:34:11 +0000</lastBuildDate>
+    <language>en-GB</language>
+  </channel>
+</rss>

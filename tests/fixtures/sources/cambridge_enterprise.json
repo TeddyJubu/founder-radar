@@ -1,0 +1,82 @@
+[
+  {
+    "id": 8123,
+    "date": "2026-08-03T09:00:00",
+    "date_gmt": "2026-08-03T08:00:00",
+    "guid": {"rendered": "https://www.enterprise.cam.ac.uk/?p=8123"},
+    "modified_gmt": "2026-08-03T08:41:02",
+    "slug": "cambridge-spinout-fenwick-bio-launches",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.enterprise.cam.ac.uk/news/cambridge-spinout-fenwick-bio-launches/",
+    "title": {"rendered": "Cambridge spinout Fenwick Bio launches with seed funding"},
+    "content": {
+      "rendered": "<p>Fenwick Bio, a new company spun out of the University of Cambridge, has launched with a seed round to develop synthetic enzymes for sustainable chemical production.</p>\n<p>The technology comes out of eight years of work in the Department of Biochemistry. Cambridge Enterprise holds a founding equity stake alongside the two academic founders.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Fenwick Bio, a Cambridge spinout, has launched with seed funding.</p>\n", "protected": false},
+    "author": 11,
+    "categories": [4],
+    "_links": {"self": [{"href": "https://www.enterprise.cam.ac.uk/wp-json/wp/v2/posts/8123"}]}
+  },
+  {
+    "id": 8110,
+    "date": "2026-07-22T11:15:00",
+    "date_gmt": "2026-07-22T10:15:00",
+    "guid": {"rendered": "https://www.enterprise.cam.ac.uk/?p=8110"},
+    "modified_gmt": "2026-07-22T10:15:00",
+    "slug": "cambridge-researchers-license-drug-discovery-platform",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.enterprise.cam.ac.uk/news/cambridge-researchers-license-drug-discovery-platform/",
+    "title": {"rendered": "Cambridge researchers license drug discovery platform"},
+    "content": {
+      "rendered": "<p>Researchers at the University of Cambridge have licensed a drug discovery platform to a major pharmaceutical partner in a multi-year deal.</p>\n<p>The agreement covers three therapeutic areas and includes milestone payments to the university.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Researchers at Cambridge have licensed a drug discovery platform.</p>\n", "protected": false},
+    "author": 11,
+    "categories": [9],
+    "_links": {"self": [{"href": "https://www.enterprise.cam.ac.uk/wp-json/wp/v2/posts/8110"}]}
+  },
+  {
+    "id": 8099,
+    "date": "2026-07-10T14:45:00",
+    "date_gmt": "2026-07-10T13:45:00",
+    "guid": {"rendered": "https://www.enterprise.cam.ac.uk/?p=8099"},
+    "modified_gmt": "2026-07-10T13:45:00",
+    "slug": "cambridge-enterprise-appoints-head-of-technology-transfer",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.enterprise.cam.ac.uk/news/cambridge-enterprise-appoints-head-of-technology-transfer/",
+    "title": {"rendered": "Cambridge Enterprise appoints new head of technology transfer"},
+    "content": {
+      "rendered": "<p>Cambridge Enterprise has appointed a new head of technology transfer, who joins from a research institute in Basel.</p>\n<p>The role oversees licensing, consultancy and the seed fund team.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Cambridge Enterprise has appointed a new head of technology transfer.</p>\n", "protected": false},
+    "author": 2,
+    "categories": [1],
+    "_links": {"self": [{"href": "https://www.enterprise.cam.ac.uk/wp-json/wp/v2/posts/8099"}]}
+  },
+  {
+    "id": 8081,
+    "date": "2026-06-30T10:00:00",
+    "date_gmt": "2026-06-30T09:00:00",
+    "guid": {"rendered": "https://www.enterprise.cam.ac.uk/?p=8081"},
+    "modified_gmt": "2026-06-30T09:00:00",
+    "slug": "photonics-spinout-lumenline-raises-seed-round",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.enterprise.cam.ac.uk/news/photonics-spinout-lumenline-raises-seed-round/",
+    "title": {"rendered": "Photonics spin-out Lumenline raises &#163;1.4m seed round"},
+    "content": {
+      "rendered": "<p>Lumenline, a photonics spin-out from the Cavendish Laboratory, raises &#163;1.4 million in a seed round led by a deeptech fund.</p>\n<p>The company makes low-loss optical interconnects for data-centre switching and was incorporated in February.</p>\n",
+      "protected": false
+    },
+    "excerpt": {"rendered": "<p>Lumenline, a Cavendish photonics spin-out, raises &#163;1.4m.</p>\n", "protected": false},
+    "author": 11,
+    "categories": [4],
+    "_links": {"self": [{"href": "https://www.enterprise.cam.ac.uk/wp-json/wp/v2/posts/8081"}]}
+  }
+]

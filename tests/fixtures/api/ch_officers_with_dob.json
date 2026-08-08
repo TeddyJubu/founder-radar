@@ -1,0 +1,99 @@
+{
+  "_note": "Recorded GET /company/15021884/officers. Deliberately carries every field the privacy filter must destroy at ingest: date_of_birth, address, nationality, country_of_residence, occupation (03-data-model 2).",
+  "active_count": 3,
+  "inactive_count": 0,
+  "resigned_count": 1,
+  "items_per_page": 35,
+  "kind": "officer-list",
+  "start_index": 0,
+  "total_results": 4,
+  "links": { "self": "/company/15021884/officers" },
+  "items": [
+    {
+      "name": "SMITH, Jane Elizabeth",
+      "officer_role": "director",
+      "appointed_on": "2026-06-14",
+      "occupation": "Chief Executive Officer",
+      "nationality": "British",
+      "country_of_residence": "England",
+      "date_of_birth": { "month": 4, "year": 1988 },
+      "address": {
+        "address_line_1": "Hoults Yard",
+        "address_line_2": "Walker Road",
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE6 2HL",
+        "country": "England",
+        "premises": "Unit 12"
+      },
+      "links": {
+        "self": "/company/15021884/appointments/mVi1LqXk8Xz2s9AaEwQ1nN0pQmU",
+        "officer": {
+          "appointments": "/officers/8Kk2wPqR3vJmTn5cXyB1aLdF0Zs/appointments"
+        }
+      }
+    },
+    {
+      "name": "O'BRIEN, Michael",
+      "officer_role": "director",
+      "appointed_on": "2026-06-14",
+      "occupation": "Chief Technology Officer",
+      "nationality": "Irish",
+      "country_of_residence": "England",
+      "date_of_birth": { "month": 11, "year": 1985 },
+      "address": {
+        "address_line_1": "Hoults Yard",
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE6 2HL",
+        "country": "England"
+      },
+      "links": {
+        "self": "/company/15021884/appointments/pRr7TtYy2Uu4Ii6Oo8Pp0Aa2Ss4",
+        "officer": {
+          "appointments": "/officers/3Hh5Jj7Kk9Ll1Zz3Xx5Cc7Vv9Bb/appointments"
+        }
+      }
+    },
+    {
+      "name": "SWIFT INCORPORATIONS LIMITED",
+      "officer_role": "corporate-secretary",
+      "appointed_on": "2026-06-14",
+      "identification": {
+        "identification_type": "uk-limited-company",
+        "registration_number": "04785222",
+        "legal_authority": "Companies Act 2006",
+        "legal_form": "Private Limited Company"
+      },
+      "address": {
+        "address_line_1": "20-22 Wenlock Road",
+        "locality": "London",
+        "postal_code": "N1 7GU",
+        "country": "England"
+      },
+      "links": {
+        "self": "/company/15021884/appointments/zZz1Xx2Cc3Vv4Bb5Nn6Mm7Qq8Ww"
+      }
+    },
+    {
+      "name": "PATEL, Anita",
+      "officer_role": "director",
+      "appointed_on": "2026-06-14",
+      "resigned_on": "2026-07-02",
+      "occupation": "Consultant",
+      "nationality": "British",
+      "country_of_residence": "United Kingdom",
+      "date_of_birth": { "month": 2, "year": 1979 },
+      "address": {
+        "address_line_1": "5 Grey Street",
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE1 6EE",
+        "country": "England"
+      },
+      "links": {
+        "self": "/company/15021884/appointments/qQq9Ww8Ee7Rr6Tt5Yy4Uu3Ii2Oo",
+        "officer": {
+          "appointments": "/officers/9Nn8Mm7Qq6Ww5Ee4Rr3Tt2Yy1Uu/appointments"
+        }
+      }
+    }
+  ]
+}

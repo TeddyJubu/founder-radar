@@ -1,0 +1,11 @@
+{
+  "amount": 2400000,
+  "company_name": "Lumina Bio",
+  "founders": [
+    "Dr Jane Smith"
+  ],
+  "is_about_single_company": true,
+  "needs_review": false,
+  "sector": "healthcare",
+  "stage": "seed"
+}

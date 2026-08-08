@@ -1,0 +1,18 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "company_name": "Voltrax",
+    "evidence_quote_amount": "has received a \u00a31.2 million grant award",
+    "evidence_quote_company": "Voltrax, a Newcastle startup building sodium-ion batteries, has received a \u00a31.2 million grant award",
+    "extraction_confidence": 0.9,
+    "grant_amount_gbp": 1200000,
+    "hq_city": "Newcastle",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Sodium-ion batteries for grid storage",
+    "sector": "climate_tech"
+  },
+  "tokens_in": 403,
+  "tokens_out": 350
+}

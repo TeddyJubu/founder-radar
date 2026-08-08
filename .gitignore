@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# secrets — never commit
+.env
+secrets/
+*service-account*.json
+founder-finder-*.json
+google-sa.json
+
+# local data
+data/
+*.db
+*.db-wal
+*.db-shm
+backups/

@@ -1,0 +1,33 @@
+{
+  "_note": "Recorded GET /company/15021885/filing-history for a young company with no share allotment: incorporation and a confirmation statement only.",
+  "etag": "0c1d2e3f405162738495a6b7c8d9e0f102132435",
+  "filing_history_status": "filing-history-available",
+  "items_per_page": 100,
+  "kind": "filing-history",
+  "start_index": 0,
+  "total_count": 2,
+  "items": [
+    {
+      "category": "confirmation-statement",
+      "date": "2026-07-05",
+      "description": "confirmation-statement-with-no-updates",
+      "type": "CS01",
+      "transaction_id": "Q1c2V3b4N5m6L7k8J9h0G1f2",
+      "pages": 3,
+      "links": {
+        "self": "/company/15021885/filing-history/Q1c2V3b4N5m6L7k8J9h0G1f2"
+      }
+    },
+    {
+      "category": "incorporation",
+      "date": "2026-06-30",
+      "description": "incorporation-company",
+      "type": "NEWINC",
+      "transaction_id": "Z9x8C7v6B5n4M3l2K1j0H9g8",
+      "pages": 10,
+      "links": {
+        "self": "/company/15021885/filing-history/Z9x8C7v6B5n4M3l2K1j0H9g8"
+      }
+    }
+  ]
+}

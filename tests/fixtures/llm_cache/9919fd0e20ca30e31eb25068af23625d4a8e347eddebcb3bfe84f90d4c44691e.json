@@ -1,0 +1,21 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 500000,
+    "company_name": "Paylate",
+    "evidence_quote_amount": "has secured \u00a3500,000 in a pre-seed round",
+    "evidence_quote_company": "Paylate, a Leeds-based fintech startup, has secured \u00a3500,000",
+    "evidence_quote_stage": "in a pre-seed round",
+    "extraction_confidence": 0.92,
+    "founded_year": 2024,
+    "hq_city": "Leeds",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Instalment-payment tooling for small retailers",
+    "sector": "fintech",
+    "stage": "pre_seed"
+  },
+  "tokens_in": 411,
+  "tokens_out": 350
+}
