@@ -1,0 +1,23 @@
+# /etc/systemd/system/founder-radar.timer
+#
+# systemd is the scheduler, not Hermes (02-architecture §3).
+
+[Unit]
+Description=Run Founder Radar every morning
+
+[Timer]
+# Explicit timezone: correct across BST/GMT even if the server's clock is UTC.
+# Requires systemd >= 252; Ubuntu 24.04 ships 255. install.sh also sets the
+# system timezone, so a bare `06:30:00` would land in the right place anyway.
+OnCalendar=*-*-* 06:30:00 Europe/London
+
+# The reboot catch-up. Without this, a machine that was down at 06:30 simply
+# skips the day and nobody finds out until the heartbeat fires.
+Persistent=true
+
+# Politeness to the upstream APIs — every deployment of this would otherwise
+# hit Companies House on the same second.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

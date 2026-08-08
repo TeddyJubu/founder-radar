@@ -1,0 +1,11 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "extraction_confidence": 0.7,
+    "is_about_single_company": false,
+    "rejection_reason": "paywalled"
+  },
+  "tokens_in": 414,
+  "tokens_out": 350
+}

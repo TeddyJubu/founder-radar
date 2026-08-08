@@ -1,0 +1,382 @@
+{
+  "headerData": {
+    "lastRefreshDate": "06 Jul 2026"
+  },
+  "facetedSearchResultBean": {
+    "request": {
+      "page": 1,
+      "fetchSize": 100,
+      "term": "*",
+      "selectedSortableField": "pro.sd",
+      "selectedSortOrder": "DESC"
+    },
+    "totalResults": 33170,
+    "results": [
+      {
+        "projectComposition": {
+          "project": {
+            "id": "BC4205B3-A269-4CE6-B854-067D3D89629A",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10164516",
+            "title": "University College London and Alleyn's School KTP 25_26 R2",
+            "status": null,
+            "grantReference": "10164516",
+            "grantCategory": "Knowledge Transfer Partnership",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 186230,
+              "start": 1782860400000,
+              "end": 1845932400000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "2E89A125-8219-459F-9EC4-A2BD9FC9B245",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/2E89A125-8219-459F-9EC4-A2BD9FC9B245",
+            "name": "UNIVERSITY COLLEGE LONDON",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      },
+      {
+        "projectComposition": {
+          "project": {
+            "id": "2CF4319F-6A23-4F71-9E03-1EB4D6026216",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10189566",
+            "title": "DROPFORM: Data-Reinforced Rapid Optimization Platform for Formulation Manufacturing (DROPFORM)",
+            "status": null,
+            "grantReference": "10189566",
+            "grantCategory": "Investment Accelerator",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 249900,
+              "start": 1782860400000,
+              "end": 1830211200000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "11805737-2430-41C8-9D36-38993B3A4D61",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/11805737-2430-41C8-9D36-38993B3A4D61",
+            "name": "NATURAL NEGATIVE LTD",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      },
+      {
+        "projectComposition": {
+          "project": {
+            "id": "773A978C-55C1-456E-9A82-27AD1D7C7E52",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10191109",
+            "title": "ThermalCyclones’ Next-Generation Industrial Steam Boiler Replacement – an Industrial Revolution",
+            "status": null,
+            "grantReference": "10191109",
+            "grantCategory": "Investment Accelerator",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 676960,
+              "start": 1782860400000,
+              "end": 1824937200000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "16466BAC-4D5A-4509-AB4C-399CCBAAE1F8",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/16466BAC-4D5A-4509-AB4C-399CCBAAE1F8",
+            "name": "THERMALCYCLONES LTD",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      },
+      {
+        "projectComposition": {
+          "project": {
+            "id": "2A85AF4A-8F20-49A4-9215-2FA5858D20B7",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10191268",
+            "title": "Investigating and developing a roll-to-roll production method for a sustainable leather-like material made from waste beer/whisky grain proteins",
+            "status": null,
+            "grantReference": "10191268",
+            "grantCategory": "Investment Accelerator",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 684946,
+              "start": 1782860400000,
+              "end": 1845932400000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "A9CC9366-F91B-49C6-A1D8-36169CE58E36",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/A9CC9366-F91B-49C6-A1D8-36169CE58E36",
+            "name": "ARDA BIOMATERIALS LTD",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      },
+      {
+        "projectComposition": {
+          "project": {
+            "id": "B831AE8A-CB9C-4D6D-AD91-379946F162B1",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10182047",
+            "title": "Building the QC assay that enables manufacturing readiness for our first-in-class Pseudomonas vaccine",
+            "status": null,
+            "grantReference": "10182047",
+            "grantCategory": "Collaborative R&D",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 99976,
+              "start": 1782860400000,
+              "end": 1806447600000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "F7754F8F-BC94-4C33-ADF5-AAB0E6455914",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/F7754F8F-BC94-4C33-ADF5-AAB0E6455914",
+            "name": "VacTimmune",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      },
+      {
+        "projectComposition": {
+          "project": {
+            "id": "1F75BCD6-2D62-46E1-8738-7A8A864729C1",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10194379",
+            "title": "LEGO-FAB: Integrated quality-control architecture for autonomous manufacturing of precision micro-structured functional material systems",
+            "status": null,
+            "grantReference": "10194379",
+            "grantCategory": "Collaborative R&D",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 99993,
+              "start": 1782860400000,
+              "end": 1806447600000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "A552E405-B0D2-4C7C-9072-6168E15B8FA9",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/A552E405-B0D2-4C7C-9072-6168E15B8FA9",
+            "name": "CIPHERX TECHNOLOGIES LTD",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      },
+      {
+        "projectComposition": {
+          "project": {
+            "id": "82EC2144-3D46-4669-9FCE-495FFEC76566",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10192811",
+            "title": "PDPatch: Driving Resource Efficiency in UK Advanced Wound Care Manufacturing",
+            "status": null,
+            "grantReference": "10192811",
+            "grantCategory": "Collaborative R&D",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 99938,
+              "start": 1782860400000,
+              "end": 1806447600000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "F2442689-EAAD-4064-A61D-1823C6876EF3",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/F2442689-EAAD-4064-A61D-1823C6876EF3",
+            "name": "KHOTT BIOTECH LTD",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      },
+      {
+        "projectComposition": {
+          "project": {
+            "id": "EAF221B2-D0E3-4D01-9762-B41E4A775959",
+            "resourceUrl": "http://gtr.ukri.org/api/projects?ref=10169969",
+            "title": "Manchester Metropolitan University and Network Rail Infrastructure Limited KTP 25_26 R3",
+            "status": null,
+            "grantReference": "10169969",
+            "grantCategory": "Knowledge Transfer Partnership",
+            "abstractText": null,
+            "potentialImpactText": null,
+            "fund": {
+              "valuePounds": 125194,
+              "start": 1782860400000,
+              "end": 1856563200000,
+              "funder": {
+                "id": "12E03F45-B517-4D83-A182-3D142D1A471A",
+                "resourceUrl": "http://gtr.ukri.org/api/organisation/12E03F45-B517-4D83-A182-3D142D1A471A",
+                "name": "Innovate UK"
+              },
+              "type": "INCOME_ACTUAL"
+            },
+            "identifiers": null,
+            "researchTopics": [],
+            "rcukProgrammes": [],
+            "hasClassifications": false
+          },
+          "leadResearchOrganisation": {
+            "id": "1D5D0EBF-7468-45B3-936F-EA9A613B5989",
+            "resourceUrl": "http://gtr.ukri.org/api/organisation/1D5D0EBF-7468-45B3-936F-EA9A613B5989",
+            "name": "MANCHESTER METROPOLITAN UNIVERSITY",
+            "website": null,
+            "address": null,
+            "department": null,
+            "typeInd": null,
+            "federatedIds": null
+          },
+          "personRoles": [],
+          "collaborations": null,
+          "organisationRoles": null
+        },
+        "abstractSnippet": ""
+      }
+    ],
+    "sortableFields": [
+      {
+        "fieldName": "pro.sd",
+        "displayName": "Start Date"
+      },
+      {
+        "fieldName": "pro.ed",
+        "displayName": "End Date"
+      },
+      {
+        "fieldName": "pro.am",
+        "displayName": "Funded Value"
+      },
+      {
+        "fieldName": "score",
+        "displayName": "Relevance"
+      }
+    ],
+    "page": 1,
+    "fetchSize": 100,
+    "totalPages": 332
+  }
+}

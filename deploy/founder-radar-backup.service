@@ -1,0 +1,28 @@
+# /etc/systemd/system/founder-radar-backup.service
+#
+# 05:00 — before the 06:30 scan, so the snapshot is of yesterday's finished
+# state rather than a half-written run (08-deployment §4, §8 Rollback).
+
+[Unit]
+Description=Founder Radar database backup
+Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+
+[Service]
+Type=oneshot
+User=radar
+Group=radar
+EnvironmentFile=/opt/founder-radar/.env
+Environment=BACKUP_DIR=/opt/founder-radar/backups
+Environment=RETAIN_DAYS=14
+ExecStart=/opt/founder-radar/app/deploy/backup.sh
+
+TimeoutStartSec=600
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/backups /opt/founder-radar/logs
+
+StandardOutput=append:/opt/founder-radar/logs/backup.log
+StandardError=append:/opt/founder-radar/logs/error.log

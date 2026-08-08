@@ -1,0 +1,21 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 3200000,
+    "company_name": "Quicksilver",
+    "evidence_quote_amount": "has closed a \u00a33.2 million Series A round",
+    "evidence_quote_company": "Quicksilver, an Edinburgh AI company, has closed a \u00a33.2 million Series A",
+    "evidence_quote_stage": "Series A round",
+    "extraction_confidence": 0.93,
+    "founded_year": 2022,
+    "hq_city": "Edinburgh",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Geospatial flood-risk prediction from satellite imagery",
+    "sector": "ai_data",
+    "stage": "series_a"
+  },
+  "tokens_in": 410,
+  "tokens_out": 350
+}

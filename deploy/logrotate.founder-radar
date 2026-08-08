@@ -1,0 +1,18 @@
+# /etc/logrotate.d/founder-radar
+#
+# 08-deployment §9: weekly, 8 weeks retained. The units append to these files
+# directly (StandardOutput=append:), so `copytruncate` is what keeps the open
+# file descriptor pointing at the live file after a rotation — without it the
+# service would keep writing to the rotated inode and run.log would stay empty.
+
+/opt/founder-radar/logs/*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 radar radar
+    su radar radar
+}

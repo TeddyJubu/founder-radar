@@ -1,0 +1,20 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 750000,
+    "company_name": "Cellarstone",
+    "evidence_quote_amount": "has raised \u00a3750,000 in a seed round",
+    "evidence_quote_company": "Cellarstone, a Manchester-based climate technology startup, has raised \u00a3750,000",
+    "evidence_quote_stage": "in a seed round",
+    "extraction_confidence": 0.9,
+    "hq_city": "Manchester",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Battery-health analytics for warehouse fleets",
+    "sector": "climate_tech",
+    "stage": "seed"
+  },
+  "tokens_in": 427,
+  "tokens_out": 350
+}

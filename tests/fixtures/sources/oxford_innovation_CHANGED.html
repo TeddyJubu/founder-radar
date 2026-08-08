@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- 200 OK, a full page of companies a human can read, and not one card
+     matches any selector the adapter knows: the site moved to a new theme
+     whose grid classes are `grid-block` / `grid-block__heading`. Without
+     guard_nonempty this parses to [] and reads as a quiet week. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Our portfolio companies | Oxford University Innovation</title>
+</head>
+<body>
+  <header class="site-header"><a class="logo" href="/">Oxford University Innovation</a></header>
+  <main>
+    <h1>Our portfolio companies</h1>
+    <section class="grid">
+      <div class="grid-block">
+        <h3 class="grid-block__heading">Quantia</h3>
+        <p class="grid-block__text">Quantum sensing for underground infrastructure.</p>
+        <a href="/investing/our-portfolio-companies/quantia">View company</a>
+      </div>
+      <div class="grid-block">
+        <h3 class="grid-block__heading">Fenwick Bio</h3>
+        <p class="grid-block__text">Synthetic enzymes for sustainable chemical production.</p>
+        <a href="/investing/our-portfolio-companies/fenwick-bio">View company</a>
+      </div>
+      <div class="grid-block">
+        <h3 class="grid-block__heading">Halcyon Medtech</h3>
+        <p class="grid-block__text">Wearable sensors for post-operative monitoring.</p>
+        <a href="/investing/our-portfolio-companies/halcyon-medtech">View company</a>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"><p>&copy; 2026 Oxford University Innovation Ltd</p></footer>
+</body>
+</html>

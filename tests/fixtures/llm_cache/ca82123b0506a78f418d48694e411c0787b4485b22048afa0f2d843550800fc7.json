@@ -1,0 +1,28 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 2400000,
+    "company_name": "Lumina Bio",
+    "evidence_quote_amount": "has raised \u00a32.4 million in a seed round",
+    "evidence_quote_company": "Lumina Bio, a Newcastle-based healthcare startup, has raised \u00a32.4 million",
+    "evidence_quote_stage": "in a seed round",
+    "extraction_confidence": 0.9,
+    "founded_year": 2023,
+    "founders": [
+      {
+        "evidence_quote": "Founded by Dr Jane Smith, a former NHS consultant",
+        "name": "Dr Jane Smith",
+        "role": "Founder"
+      }
+    ],
+    "hq_city": "Newcastle",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Remote monitoring software for clinical trials",
+    "sector": "healthcare",
+    "stage": "seed"
+  },
+  "tokens_in": 454,
+  "tokens_out": 350
+}

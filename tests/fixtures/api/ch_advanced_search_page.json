@@ -1,0 +1,59 @@
+{
+  "hits": 3,
+  "items": [
+    {
+      "company_name": "METZERO LIMITED",
+      "company_number": "15021884",
+      "company_status": "active",
+      "company_type": "ltd",
+      "date_of_creation": "2026-06-14",
+      "sic_codes": ["62012", "72190"],
+      "kind": "search-results#company",
+      "links": { "company_profile": "/company/15021884" },
+      "registered_office_address": {
+        "address_line_1": "Hoults Yard, Walker Road",
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE6 2HL",
+        "region": "Tyne And Wear",
+        "country": "England"
+      }
+    },
+    {
+      "company_name": "SC EDINBURGH ROBOTICS LTD",
+      "company_number": "SC812345",
+      "company_status": "active",
+      "company_type": "ltd",
+      "date_of_creation": "2026-06-20",
+      "sic_codes": ["26200"],
+      "kind": "search-results#company",
+      "links": { "company_profile": "/company/SC812345" },
+      "registered_office_address": {
+        "address_line_1": "9 Lochrin Square",
+        "locality": "Edinburgh",
+        "postal_code": "EH1 3AA",
+        "country": "Scotland"
+      }
+    },
+    {
+      "company_name": "00445790 LEGACY HOLDINGS LIMITED",
+      "company_number": "445790",
+      "company_status": "active",
+      "company_type": "ltd",
+      "date_of_creation": "2026-07-01",
+      "sic_codes": ["62020"],
+      "kind": "search-results#company",
+      "links": { "company_profile": "/company/00445790" },
+      "registered_office_address": {
+        "address_line_1": "1 Wellington Street",
+        "locality": "Leeds",
+        "postal_code": "LS1 4DL",
+        "country": "England"
+      }
+    }
+  ],
+  "kind": "search#advanced-search",
+  "top_hit": {
+    "company_name": "METZERO LIMITED",
+    "company_number": "15021884"
+  }
+}

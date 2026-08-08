@@ -1,0 +1,10 @@
+{
+  "amount": 4000000,
+  "company_name": "Fenwick Bio",
+  "is_about_single_company": true,
+  "is_university_spinout": true,
+  "needs_review": false,
+  "sector": "life_sciences",
+  "stage": "seed",
+  "university_name": "Oxford University"
+}

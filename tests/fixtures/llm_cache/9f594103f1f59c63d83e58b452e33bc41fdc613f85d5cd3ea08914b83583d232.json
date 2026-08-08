@@ -1,0 +1,21 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 800000,
+    "company_name": "Podmap",
+    "evidence_quote_amount": "raised \u00a3800,000 in a pre-seed round from regional angels",
+    "evidence_quote_company": "Podmap, a Sheffield startup founded in 2022 that makes foot-pressure sensors",
+    "evidence_quote_stage": "in a pre-seed round from regional angels",
+    "extraction_confidence": 0.85,
+    "founded_year": 2022,
+    "hq_city": "Sheffield",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Foot-pressure sensors for diabetics, acquired by Halcyon",
+    "sector": "healthcare",
+    "stage": "pre_seed"
+  },
+  "tokens_in": 425,
+  "tokens_out": 350
+}

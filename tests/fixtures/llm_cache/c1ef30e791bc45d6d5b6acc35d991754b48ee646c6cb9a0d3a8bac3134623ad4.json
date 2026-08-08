@@ -1,0 +1,23 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_currency": "USD",
+    "amount_original": 4000000,
+    "amount_raised_gbp": null,
+    "company_name": "Kilo",
+    "evidence_quote_amount": "has raised $4 million from a group of US investors",
+    "evidence_quote_company": "Kilo, a Glasgow-based fintech startup, has raised $4 million",
+    "evidence_quote_stage": "from a group of US investors",
+    "extraction_confidence": 0.85,
+    "founded_year": 2022,
+    "hq_city": "Glasgow",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Invoice-financing software",
+    "sector": "fintech",
+    "stage": "seed"
+  },
+  "tokens_in": 404,
+  "tokens_out": 350
+}

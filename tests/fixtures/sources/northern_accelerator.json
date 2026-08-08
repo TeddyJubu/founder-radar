@@ -1,0 +1,94 @@
+[
+  {
+    "id": 4102,
+    "date": "2026-08-01T10:00:00",
+    "date_gmt": "2026-08-01T09:00:00",
+    "guid": {"rendered": "https://northernaccelerator.org/?p=4102"},
+    "modified_gmt": "2026-08-01T09:12:44",
+    "slug": "durham-spinout-quantia-raises-pre-seed",
+    "status": "publish",
+    "type": "post",
+    "link": "https://northernaccelerator.org/durham-spinout-quantia-raises-pre-seed/",
+    "title": {"rendered": "Durham spinout Quantia raises pre-seed round"},
+    "content": {
+      "rendered": "<p>Quantia, a spinout from Durham University, has raised a pre-seed round to commercialise quantum sensing technology developed in the university&#8217;s physics department.</p>\n<p>The round was led by a North East fund with support from the Northern Accelerator proof-of-concept programme. Quantia&#8217;s sensors detect voids and buried services beneath roads without excavation, and the company is running paid pilots with two highways authorities.</p>\n",
+      "protected": false
+    },
+    "excerpt": {
+      "rendered": "<p>Quantia, a spinout from Durham University, has raised a pre-seed round.</p>\n",
+      "protected": false
+    },
+    "author": 6,
+    "categories": [12, 19],
+    "_links": {"self": [{"href": "https://northernaccelerator.org/wp-json/wp/v2/posts/4102"}]}
+  },
+  {
+    "id": 4098,
+    "date": "2026-07-28T12:30:00",
+    "date_gmt": "2026-07-28T11:30:00",
+    "guid": {"rendered": "https://northernaccelerator.org/?p=4098"},
+    "modified_gmt": "2026-07-28T11:30:00",
+    "slug": "newcastle-university-spin-out-secures-seed-funding",
+    "status": "publish",
+    "type": "post",
+    "link": "https://northernaccelerator.org/newcastle-university-spin-out-secures-seed-funding/",
+    "title": {"rendered": "Newcastle University spin-out secures seed funding for medical imaging"},
+    "content": {
+      "rendered": "<p>A spin-out from Newcastle University has secured seed funding for its medical imaging platform, which flags early signs of vascular disease in routine scans.</p>\n<p>Northern Accelerator supported the team through its proof-of-concept programme and introduced the academic founders to an experienced chief executive under the Executives into Business scheme.</p>\n",
+      "protected": false
+    },
+    "excerpt": {
+      "rendered": "<p>A spin-out from Newcastle University has secured seed funding for its medical imaging platform.</p>\n",
+      "protected": false
+    },
+    "author": 6,
+    "categories": [12],
+    "_links": {"self": [{"href": "https://northernaccelerator.org/wp-json/wp/v2/posts/4098"}]}
+  },
+  {
+    "id": 4091,
+    "date": "2026-07-20T15:00:00",
+    "date_gmt": "2026-07-20T14:00:00",
+    "guid": {"rendered": "https://northernaccelerator.org/?p=4091"},
+    "modified_gmt": "2026-07-21T08:02:10",
+    "slug": "sunderland-spinout-wins-innovate-uk-grant",
+    "status": "publish",
+    "type": "post",
+    "link": "https://northernaccelerator.org/sunderland-spinout-wins-innovate-uk-grant/",
+    "title": {"rendered": "University of Sunderland spinout wins Innovate UK grant"},
+    "content": {
+      "rendered": "<p>A spinout from the University of Sunderland has won an Innovate UK Smart grant for its low-energy coating process for automotive glass.</p>\n<p>The award of &#163;312,000 covers an 18-month development project with an industrial partner on Wearside.</p>\n",
+      "protected": false
+    },
+    "excerpt": {
+      "rendered": "<p>A spinout from the University of Sunderland has won an Innovate UK grant.</p>\n",
+      "protected": false
+    },
+    "author": 3,
+    "categories": [19],
+    "_links": {"self": [{"href": "https://northernaccelerator.org/wp-json/wp/v2/posts/4091"}]}
+  },
+  {
+    "id": 4087,
+    "date": "2026-07-14T09:45:00",
+    "date_gmt": "2026-07-14T08:45:00",
+    "guid": {"rendered": "https://northernaccelerator.org/?p=4087"},
+    "modified_gmt": "2026-07-14T08:45:00",
+    "slug": "executives-into-business-applications-open",
+    "status": "publish",
+    "type": "post",
+    "link": "https://northernaccelerator.org/executives-into-business-applications-open/",
+    "title": {"rendered": "Applications open for the 2026 Executives into Business programme"},
+    "content": {
+      "rendered": "<p>Northern Accelerator has opened applications for the 2026 cohort of Executives into Business, which places experienced commercial leaders alongside academic teams at Durham University, Newcastle University, Northumbria University, the University of Sunderland and the University of York.</p>\n<p>The programme runs for six months and closes to applications on 30 September.</p>\n",
+      "protected": false
+    },
+    "excerpt": {
+      "rendered": "<p>Applications are open for the 2026 Executives into Business cohort.</p>\n",
+      "protected": false
+    },
+    "author": 3,
+    "categories": [7],
+    "_links": {"self": [{"href": "https://northernaccelerator.org/wp-json/wp/v2/posts/4087"}]}
+  }
+]

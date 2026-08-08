@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:dc="http://purl.org/dc/elements/1.1/"
+     xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>BusinessCloud</title>
+    <atom:link href="https://businesscloud.co.uk/feed/" rel="self" type="application/rss+xml" />
+    <link>https://businesscloud.co.uk</link>
+    <description>Business technology news from the North of England</description>
+    <lastBuildDate>Mon, 03 Aug 2026 08:34:11 +0000</lastBuildDate>
+    <language>en-GB</language>
+    <item>
+      <title>Manchester&#8217;s Cellarstone raises &#163;750k for battery software</title>
+      <link>https://businesscloud.co.uk/news/cellarstone-raises-750k-battery-software/</link>
+      <guid isPermaLink="false">https://businesscloud.co.uk/?p=71234</guid>
+      <pubDate>Mon, 03 Aug 2026 08:30:00 +0000</pubDate>
+      <dc:creator><![CDATA[Jonathan Symcox]]></dc:creator>
+      <category><![CDATA[funding]]></category>
+      <category><![CDATA[north west]]></category>
+      <content:encoded><![CDATA[
+        <p>Cellarstone, a Manchester-based climate technology startup, has raised &#163;750,000 in a seed round led by a Northern venture fund.</p>
+        <p>The company builds battery-health analytics software for warehouse operators, helping them extend the life of forklift fleets. Early customers report replacement costs falling by a third, and the firm says its software has cut unplanned downtime across its trial fleet by more than forty per cent during the first six months of deployment.</p>
+        <p>The investment was announced alongside a partnership with a large logistics group, and Cellarstone plans to open its first overseas office next year. The round brings the company's total funding to &#163;1.2 million, and the founders say the proceeds will be split between product engineering, sales hiring and a pilot programme with two more distribution customers in the Netherlands.</p>
+        <p>"We started this in a spare room above a garage in Salford," said the chief executive. "Every warehouse in the country is sitting on a fleet of batteries nobody measures properly."</p>
+      ]]></content:encoded>
+      <description><![CDATA[<p>Cellarstone raises &#163;750,000 for battery software.</p>]]></description>
+    </item>
+    <item>
+      <title>Sheffield&#8217;s Loamweave raises &#163;1.1m for farm compliance platform</title>
+      <link>https://businesscloud.co.uk/news/loamweave-raises-1-1m-farm-compliance/</link>
+      <guid isPermaLink="false">https://businesscloud.co.uk/?p=71190</guid>
+      <pubDate>Wed, 29 Jul 2026 10:00:00 +0000</pubDate>
+      <dc:creator><![CDATA[Kirsty Rowlinson]]></dc:creator>
+      <category><![CDATA[funding]]></category>
+      <category><![CDATA[yorkshire]]></category>
+      <content:encoded><![CDATA[
+        <p>Loamweave, a Sheffield-based vertical SaaS company, has raised &#163;1.1 million in a seed round. Its platform automates farm compliance paperwork, and the startup says it has cut inspection preparation time by half for its 120 agricultural customers across Yorkshire and the Midlands.</p>
+        <p>The round values the company at &#163;8 million and will fund a second product line for livestock assurance, which the founders expect to launch with a pilot group of ten farms before the end of the financial year.</p>
+        <p>The company was founded by two former agronomists who spent a decade working with arable and dairy producers before starting the software business. Both still spend one day a week on farms, which they credit for the product's unusually low support burden.</p>
+      ]]></content:encoded>
+      <description><![CDATA[<p>Loamweave raises &#163;1.1m for its farm compliance platform.</p>]]></description>
+    </item>
+    <item>
+      <title>Newcastle&#8217;s Palisade Health takes &#163;1.2m for care software</title>
+      <link>https://businesscloud.co.uk/news/palisade-health-1-2m-care-software/</link>
+      <guid isPermaLink="false">https://businesscloud.co.uk/?p=71102</guid>
+      <pubDate>Fri, 24 Jul 2026 09:15:00 +0000</pubDate>
+      <dc:creator><![CDATA[Jonathan Symcox]]></dc:creator>
+      <category><![CDATA[investment]]></category>
+      <category><![CDATA[north east]]></category>
+      <content:encoded><![CDATA[
+        <p>Palisade Health, a Newcastle-based startup, has raised &#163;1.2 million for its care-home software platform. The company digitises medication records and staffing rotas for residential care homes across the North East, and says its systems are already in use at more than sixty care homes in the region.</p>
+        <p>Investors include a regional angel network and a healthcare-focused family office. The team will grow from nine to twenty people by Christmas, with new hires planned in nursing liaison, engineering and customer success to support the company's expansion into the North West.</p>
+        <p>The company was spun out of work the founders did while contracting for a local authority, and incorporated last year.</p>
+      ]]></content:encoded>
+      <description><![CDATA[<p>Palisade Health raises &#163;1.2m for care software.</p>]]></description>
+    </item>
+    <item>
+      <title>Leeds scale-up opens second office in Manchester</title>
+      <link>https://businesscloud.co.uk/news/leeds-scale-up-opens-manchester-office/</link>
+      <guid isPermaLink="false">https://businesscloud.co.uk/?p=71044</guid>
+      <pubDate>Tue, 21 Jul 2026 07:45:00 +0000</pubDate>
+      <dc:creator><![CDATA[Kirsty Rowlinson]]></dc:creator>
+      <category><![CDATA[news]]></category>
+      <description><![CDATA[<p>A Leeds logistics software scale-up has opened a second office in Manchester, taking its headcount past 200.</p>]]></description>
+    </item>
+  </channel>
+</rss>

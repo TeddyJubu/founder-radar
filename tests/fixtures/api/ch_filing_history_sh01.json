@@ -1,0 +1,51 @@
+{
+  "_note": "Recorded GET /company/15021884/filing-history. Company incorporated 2026-06-14; the SH01 lands 2026-07-30, six weeks later — a pre-seed round being papered (04-sources 3.5).",
+  "etag": "b41c7f2d9e8a0b1c2d3e4f5061728394a5b6c7d8",
+  "filing_history_status": "filing-history-available",
+  "items_per_page": 100,
+  "kind": "filing-history",
+  "start_index": 0,
+  "total_count": 3,
+  "items": [
+    {
+      "category": "capital",
+      "date": "2026-07-30",
+      "description": "capital-allotment-shares",
+      "description_values": {
+        "date": "2026-07-24",
+        "capital": [{ "figure": "184,210", "currency": "GBP" }]
+      },
+      "type": "SH01",
+      "transaction_id": "MzQ1Njc4OTBhZGlxemtjeA",
+      "barcode": "XA7B2C9D",
+      "action_date": "2026-07-24",
+      "pages": 4,
+      "links": {
+        "self": "/company/15021884/filing-history/MzQ1Njc4OTBhZGlxemtjeA",
+        "document_metadata": "https://document-api.company-information.service.gov.uk/document/aBcDeF"
+      }
+    },
+    {
+      "category": "officers",
+      "date": "2026-06-20",
+      "description": "appoint-person-director-company-with-name-date",
+      "type": "AP01",
+      "transaction_id": "MDk4NzY1NDMyMWFkaXF6a2N4",
+      "pages": 1,
+      "links": {
+        "self": "/company/15021884/filing-history/MDk4NzY1NDMyMWFkaXF6a2N4"
+      }
+    },
+    {
+      "category": "incorporation",
+      "date": "2026-06-14",
+      "description": "incorporation-company",
+      "type": "NEWINC",
+      "transaction_id": "MTExMjIyMzMzYWRpcXprY3g",
+      "pages": 12,
+      "links": {
+        "self": "/company/15021884/filing-history/MTExMjIyMzMzYWRpcXprY3g"
+      }
+    }
+  ]
+}

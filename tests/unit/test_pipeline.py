@@ -1,0 +1,264 @@
+"""09-test-plan §6/§7 — chaos: proving nothing stops the run.
+
+These encode the failure table from 02-architecture §7. The rules:
+
+* **A broken source never stops the run.** `fetch_all` wraps each adapter
+  individually, so one `ConnectionError` costs one red row on the Sources tab.
+* **Every run writes a run-log row**, so a deployment that "looks fine" but
+  silently never runs is visible (FR-9.2).
+* **Re-running is idempotent** — no duplicate companies, no duplicate signals.
+* **The digest goes out when Hermes is down** — the direct Bot API is the
+  unconditional fallback, because a broken gateway must not silence the run.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+
+from radar.resolve.match import Record
+from radar.resolve.merge import upsert_record
+
+
+class FakeResponse:
+    def __init__(self, payload=None, status=200, text=""):
+        self._payload = payload
+        self.status = status
+        self.text = text
+
+    @property
+    def ok(self):
+        return 200 <= self.status < 400
+
+    def json(self):
+        if self._payload is not None:
+            return self._payload
+        raise ValueError("no json payload")
+
+
+class FakeHttp:
+    """One `get()` for everything: 200 with an empty body, so every adapter
+    sees a quiet source rather than a crash. An empty dict, not an empty
+    list: Companies House reads `data.get("items")` off it."""
+
+    def get(self, url, **kw):  # noqa: ARG002
+        return FakeResponse(payload={})
+
+
+def test_one_source_failure_does_not_stop_run(db, config, monkeypatch):
+    """Kill one Tier 1 source; the other ten stay green and the run completes."""
+    import radar.sources.uktn as uktn
+
+    monkeypatch.setenv("CH_API_KEY", "test-key")   # a real deployment has one
+
+    def boom(self, ctx):  # noqa: ARG002 - the adapter protocol
+        raise ConnectionError("simulated outage")
+
+    monkeypatch.setattr(type(uktn.ADAPTER), "fetch", boom)
+
+    from radar.pipeline import run_pipeline
+
+    result = run_pipeline(db, config=config, http=FakeHttp(), use_llm=False,
+                          gateway=None, now=date(2026, 8, 8))
+    assert result.status == "partial"
+    uktn_row = next(s for s in result.sources if s["key"] == "uktn")
+    assert uktn_row["status"] == "failed"
+    assert "ConnectionError" in (uktn_row["error"] or "")
+    # every OTHER source is still its own verdict — the failure never spreads
+    other_failures = [s["key"] for s in result.sources
+                      if s["status"] == "failed" and s["key"] != "uktn"]
+    assert other_failures == []
+    assert result.items_fetched >= 0                 # the run completed
+
+
+def test_every_run_writes_a_run_log_row(db, config):
+    """FR-9.2 — the row every deployment gets checked against."""
+    from radar.pipeline import run_pipeline
+
+    run_pipeline(db, config=config, http=FakeHttp(), use_llm=False, gateway=None)
+    row = db.one("SELECT * FROM run ORDER BY id DESC LIMIT 1")
+    for field in ("items_fetched", "companies_new", "gated_out", "shortlisted",
+                  "llm_calls", "llm_cost_usd", "status", "finished_at"):
+        assert row[field] is not None, field
+    assert row["status"] in ("ok", "partial", "failed")
+
+
+def test_rerun_is_idempotent(db):
+    """The same mention arriving twice creates one company, not two."""
+    record = Record(name="Acme Robotics", ch_number="00445790")
+    first = upsert_record(db, record, source_key="test", source_url="https://a",
+                          external_id="e1")
+    second = upsert_record(db, record, source_key="test", source_url="https://a",
+                           external_id="e1")
+    assert first.action == "created"
+    assert second.company_id == first.company_id
+    assert second.action == "matched"
+    assert db.scalar("SELECT COUNT(*) FROM company") == 1
+
+
+def test_digest_delivered_when_hermes_is_down(monkeypatch):
+    """The fallback is unconditional: a broken Hermes gateway must not silence
+    the digest (02-architecture §7)."""
+    from radar.notify.telegram import DeliveryError, send_digest
+
+    calls: list[tuple[str, str]] = []
+
+    def hermes_down(text):
+        calls.append(("hermes", text))
+        return False
+
+    def bot_ok(text):
+        calls.append(("bot", text))
+        return True
+
+    assert send_digest("test", hermes=hermes_down, bot_api=bot_ok) is True
+    assert calls[0][0] == "hermes"
+    assert calls[1][0] == "bot"
+
+
+def test_digest_raises_only_when_both_transports_fail(monkeypatch):
+    from radar.notify.telegram import DeliveryError, send_digest
+
+    def always_fail(text):
+        return False
+
+    with pytest.raises(DeliveryError):
+        send_digest("test", hermes=always_fail, bot_api=always_fail,
+                    raise_on_failure=True)
+
+
+def test_telegram_allowlist_rejects_unknown_user(monkeypatch):
+    """FR-8.4 — the allow-list is a closed door on our side of the boundary,
+    and an empty list admits nobody, not everybody."""
+    from radar.notify.telegram import handle
+
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USERS", "111")
+    reply = handle(999_999, "/run")
+    assert reply.status == "denied"
+    assert reply.ran_pipeline is False
+
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USERS", "")
+    reply = handle(111, "/run")
+    assert reply.status == "denied"      # misconfigured = locked, never open
+
+
+def test_every_telegram_command_maps_to_a_cli_command():
+    """FR-9.6 — nothing is trapped in the chat layer: every command the
+    Hermes skill teaches maps to a real `founder-radar` CLI command."""
+    from pathlib import Path
+
+    from radar.cli import cli
+    from radar.notify.telegram import skill_commands
+
+    cli_commands = set(cli.commands)
+    skill_path = Path("hermes/skills/founder-radar/SKILL.md")
+    assert skill_path.is_file()
+    for argv in skill_commands(str(skill_path)):
+        assert argv[0] in cli_commands, f"{argv[0]} is not a real CLI command"
+
+
+# ------------------------------------------------------- bulk rescore parity
+
+
+def test_rescore_bulk_equals_daily(db, config):
+    """The interactive `rescore --all` path writes the same rows the daily
+    path does, for every shape of company.
+
+    `rescore_all` is a deliberately separate implementation — bulk reads,
+    plain-dict arithmetic, executemany writes — because the pydantic daily
+    path cannot hit the NFR-1 one-second target on five thousand companies
+    (09-test-plan §8). A second scorer is only acceptable if it cannot drift;
+    this test is the tripwire. It stores a deliberately varied corpus —
+    qualified and unqualified registry finds, spinouts, gate rejects,
+    companies with founders and signals — then runs both paths and compares
+    every score row and component byte for byte.
+    """
+    from radar.pipeline import rescore_all, score_company
+    from radar.score.derive import Signal
+
+    from tests.factories import C, F, months_ago, registry_company, store_company
+
+    today = date(2026, 8, 8)
+
+    # A corpus with every branch the scorer can take: gate rejects, spinouts,
+    # a non-GB company, an unqualified registry find, a heavily-signalled news
+    # find, and a plain eligible company.
+    companies = [
+        C(age_months=12, canonical_name="Eligible Co", norm_key="eligibleco"),
+        # gate reject — too old
+        C(age_months=60, canonical_name="Old Co", norm_key="oldco"),
+        # gate reject — already seen on a VC portfolio page
+        C(age_months=12, canonical_name="Portfolio Co", norm_key="portfolioco",
+          on_vc_portfolio=True),
+        # spinout with a hard-reject input satisfied
+        C(age_months=8, canonical_name="Spinout Co", norm_key="spinoutco",
+          is_university_spinout=True, spinout_university="Durham University",
+          founders=[F(prior_appointments=1)],
+          signals=[Signal(kind="spinout", headline="Durham spinout",
+                          occurred_on=str(months_ago(2)))]),
+        # non-GB — the only hard no on UK presence
+        C(age_months=12, canonical_name="US Co", norm_key="usco", country="US"),
+        # unqualified registry find — stays in the pool, never scored
+        registry_company(age_months=4, canonical_name="Registry Quiet Co",
+                         norm_key="registryquietco"),
+        # qualified registry find — a share issue earns its way in
+        registry_company(age_months=8, canonical_name="Registry SH01 Co",
+                         norm_key="registrysh01co", has_share_issue=True),
+    ]
+    ids = [store_company(db, c) for c in companies]
+
+    def read_rows():
+        scores = {}
+        for row in db.query("SELECT * FROM score ORDER BY company_id, fund_key"):
+            d = dict(row)
+            d.pop("id")
+            d.pop("scored_at")
+            scores[(d["company_id"], d["fund_key"], d["vehicle_key"])] = d
+        components = {}
+        for row in db.query("SELECT * FROM score_component ORDER BY score_id, key"):
+            d = dict(row)
+            d.pop("score_id")
+            components.setdefault((row["score_id"], d["key"]), d)
+        return scores, components
+
+    def by_identity():
+        """Components keyed by (company, fund, vehicle, key) — score ids differ
+        between runs, so identity is the only stable comparison."""
+        out = {}
+        for row in db.query(
+            """SELECT sc.key, sc.label, sc.sub_score, sc.weight, sc.contribution,
+                      sc.evidence, s.company_id, s.fund_key, s.vehicle_key
+                 FROM score_component sc JOIN score s ON s.id = sc.score_id
+                ORDER BY s.company_id, s.fund_key, sc.key"""):
+            key = (row["company_id"], row["fund_key"], row["vehicle_key"], row["key"])
+            out[key] = dict(row)
+            out[key].pop("company_id"); out[key].pop("fund_key"); out[key].pop("vehicle_key")
+        return out
+
+    # ---- daily path first: one company at a time, pydantic models everywhere
+    for cid in ids:
+        score_company(db, cid, config, today=today)
+    daily_scores, _ = read_rows()
+    daily_identity = by_identity()
+    daily_count = db.scalar("SELECT COUNT(*) FROM score")
+
+    # ---- bulk path on the same database
+    db.execute("DELETE FROM score")
+    db.execute("DELETE FROM score_component")
+    result = rescore_all(db, config, today=today)
+    bulk_scores, _ = read_rows()
+    bulk_identity = by_identity()
+
+    assert result["scored"] == len(ids)
+    assert db.scalar("SELECT COUNT(*) FROM score") == daily_count
+    assert bulk_scores.keys() == daily_scores.keys()
+    for key in daily_scores:
+        daily, bulk = daily_scores[key], bulk_scores[key]
+        for field in daily:
+            assert bulk[field] == daily[field], (
+                f"{key} {field}: bulk={bulk[field]!r} daily={daily[field]!r}")
+
+    assert bulk_identity.keys() == daily_identity.keys()
+    for key in daily_identity:
+        assert bulk_identity[key] == daily_identity[key], key

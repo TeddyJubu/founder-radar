@@ -1,0 +1,94 @@
+{
+  "_note": "Synthetic fixture. Personal fields are placeholders used to test the adapter privacy filter.",
+  "active_count": 2,
+  "ceased_count": 0,
+  "items_per_page": 3,
+  "kind": "persons-with-significant-control-list",
+  "start_index": 0,
+  "total_results": 3,
+  "links": {
+    "self": "https://example.invalid/company/ZZ000000/persons-with-significant-control"
+  },
+  "items": [
+    {
+      "kind": "individual-person-with-significant-control",
+      "name": "Synthetic Director One",
+      "name_elements": {
+        "title": "Mx",
+        "forename": "Synthetic",
+        "other_forenames": "Director",
+        "surname": "One"
+      },
+      "notified_on": "2026-01-14",
+      "nationality": "Synthetic",
+      "country_of_residence": "Synthetic",
+      "date_of_birth": {
+        "month": 1,
+        "year": 2000
+      },
+      "address": {
+        "address_line_1": "Synthetic Address One",
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ",
+        "country": "Synthetic"
+      },
+      "natures_of_control": [
+        "ownership-of-shares",
+        "voting-rights"
+      ],
+      "links": {
+        "self": "https://example.invalid/psc/synthetic-one"
+      }
+    },
+    {
+      "kind": "individual-person-with-significant-control",
+      "name": "Synthetic PSC Two",
+      "name_elements": {
+        "title": "Mx",
+        "forename": "Synthetic",
+        "surname": "PSC Two"
+      },
+      "notified_on": "2026-01-15",
+      "nationality": "Synthetic",
+      "country_of_residence": "Synthetic",
+      "date_of_birth": {
+        "month": 2,
+        "year": 2001
+      },
+      "address": {
+        "address_line_1": "Synthetic Address Two",
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ",
+        "country": "Synthetic"
+      },
+      "natures_of_control": [
+        "ownership-of-shares"
+      ],
+      "links": {
+        "self": "https://example.invalid/psc/synthetic-two"
+      }
+    },
+    {
+      "kind": "corporate-entity-person-with-significant-control",
+      "name": "Synthetic Corporate PSC",
+      "notified_on": "2026-01-16",
+      "identification": {
+        "legal_authority": "Synthetic authority",
+        "legal_form": "Synthetic body",
+        "registration_number": "ZZ000002"
+      },
+      "address": {
+        "address_line_1": "Synthetic Registered Office",
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ",
+        "country": "Synthetic"
+      },
+      "natures_of_control": [
+        "voting-rights"
+      ],
+      "links": {
+        "self": "https://example.invalid/psc/synthetic-corporate"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_currency": "EUR",
+    "amount_original": 2000000,
+    "amount_raised_gbp": null,
+    "company_name": "Lumina AI",
+    "evidence_quote_amount": "a lev\u00e9 2 millions d'euros en amor\u00e7age",
+    "evidence_quote_company": "La startup parisienne Lumina AI a lev\u00e9 2 millions d'euros",
+    "evidence_quote_stage": "qualifi\u00e9 de pre-seed par les investisseurs",
+    "extraction_confidence": 0.6,
+    "hq_city": "Paris",
+    "hq_country_iso2": "FR",
+    "is_about_single_company": true,
+    "one_line_description": "Mod\u00e8les de langage pour cabinets d'avocats",
+    "sector": "ai_data",
+    "stage": "pre_seed"
+  },
+  "tokens_in": 444,
+  "tokens_out": 350
+}

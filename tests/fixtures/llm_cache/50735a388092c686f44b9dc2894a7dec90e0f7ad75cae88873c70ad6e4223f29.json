@@ -1,0 +1,23 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "amount_raised_gbp": 4000000,
+    "company_name": "Fenwick Bio",
+    "evidence_quote_amount": "has launched with \u00a34 million in seed funding",
+    "evidence_quote_company": "Fenwick Bio, a new company spun out of Oxford University, has launched with \u00a34 million",
+    "evidence_quote_spinout": "spun out of Oxford University",
+    "evidence_quote_stage": "in seed funding",
+    "extraction_confidence": 0.9,
+    "hq_city": "Oxford",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "is_university_spinout": true,
+    "one_line_description": "Synthetic enzymes for sustainable chemical production",
+    "sector": "life_sciences",
+    "stage": "seed",
+    "university_name": "Oxford University"
+  },
+  "tokens_in": 416,
+  "tokens_out": 350
+}

@@ -1,0 +1,18 @@
+{
+  "cost_usd": 0.001,
+  "model_id": "claude-haiku-4-5-20251001",
+  "payload": {
+    "company_name": "Seaboard",
+    "evidence_quote_amount": "has raised a seed round",
+    "evidence_quote_company": "A Blackpool startup has raised a seed round",
+    "extraction_confidence": 0.4,
+    "hq_city": "Blackpool",
+    "hq_country_iso2": "GB",
+    "is_about_single_company": true,
+    "one_line_description": "Software for seaside hospitality",
+    "sector": "b2b_saas",
+    "stage": "pre_seed"
+  },
+  "tokens_in": 407,
+  "tokens_out": 350
+}

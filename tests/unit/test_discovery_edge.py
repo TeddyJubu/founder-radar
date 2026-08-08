@@ -1,0 +1,65 @@
+"""09-test-plan §2.4 — Discovery Edge.
+
+The number that encodes Aryan's actual job: *"there's a good chance these
+funds have already come across them, and I'm not really adding much value."*
+Ranking on Fund Fit alone produced the version-1 complaint, so the edge term
+is not decoration — it is what puts a less-visible company above a famous one
+with an identical fit.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from radar.config.defaults import default_config
+from radar.score.discovery_edge import (
+    discovery_edge_component,
+    discovery_edge_components,
+)
+
+from tests.factories import C, score_one
+
+
+@pytest.fixture
+def cfg():
+    return default_config()
+
+
+def test_discovery_edge_ranking(cfg):
+    """Identical on every scored attribute; different only on visibility."""
+    common = dict(sector="climate_tech", geography="north_east",
+                  stage="pre_seed", founder_signal="technical_founder",
+                  traction_signal="pilot_customers")
+    obscure = C(**common, age_months=3,  news_mention_count=0,
+                funding=0, discovery_route="registry")
+    famous  = C(**common, age_months=30, news_mention_count=8,
+                funding=2_000_000, discovery_route="news")
+    a, b = score_one(obscure, "northstar", cfg=cfg), score_one(famous, "northstar", cfg=cfg)
+    assert a.fund_fit_pct == b.fund_fit_pct        # identical fit, by construction
+    assert a.discovery_edge > b.discovery_edge
+    assert a.priority > b.priority
+
+
+def test_unknown_funding_is_not_known_zero():
+    """The one invariant this system holds to, applied to Discovery Edge."""
+    known_none = C(funding=0)
+    unknown    = C(funding=None)
+    assert discovery_edge_component(known_none, "funding").sub_score == 1.0
+    assert discovery_edge_component(unknown,    "funding").sub_score == 0.5
+
+
+def test_portfolio_company_is_gated_not_just_scored(cfg):
+    """Being in a tracked portfolio is a hard reject, not a low score —
+    which is exactly why it is NOT a Discovery Edge component."""
+    c = C(on_vc_portfolio=True)
+    s = score_one(c, "northstar", cfg=cfg)
+    assert s.tier == "reject"
+    assert s.reject_reason == "already_on_vc_portfolio"
+
+
+def test_discovery_edge_has_no_portfolio_component():
+    """A component every scored company gets identically is a constant,
+    not a signal. Guard against it being re-added."""
+    keys = {c.key for c in discovery_edge_components(C())}
+    assert "vc_portfolio" not in keys
+    assert keys == {"age", "press_coverage", "disclosed_funding", "discovery_route"}

@@ -1,0 +1,110 @@
+{
+  "_note": "Synthetic fixture. Personal fields are placeholders used to test the adapter privacy filter.",
+  "active_count": 3,
+  "inactive_count": 0,
+  "resigned_count": 1,
+  "items_per_page": 4,
+  "kind": "officer-list",
+  "start_index": 0,
+  "total_results": 4,
+  "links": {
+    "self": "https://example.invalid/company/ZZ000000/officers"
+  },
+  "items": [
+    {
+      "name": "Synthetic Director One",
+      "officer_role": "director",
+      "appointed_on": "2026-01-10",
+      "occupation": "Synthetic occupation",
+      "nationality": "Synthetic",
+      "country_of_residence": "Synthetic",
+      "date_of_birth": {
+        "month": 1,
+        "year": 2000
+      },
+      "address": {
+        "address_line_1": "Synthetic Address One",
+        "address_line_2": "Synthetic Suite",
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ",
+        "country": "Synthetic",
+        "premises": "1"
+      },
+      "links": {
+        "self": "https://example.invalid/officers/synthetic-one",
+        "officer": {
+          "appointments": "https://example.invalid/officers/synthetic-one/appointments"
+        }
+      }
+    },
+    {
+      "name": "Synthetic Director Two",
+      "officer_role": "director",
+      "appointed_on": "2026-01-11",
+      "occupation": "Synthetic occupation",
+      "nationality": "Synthetic",
+      "country_of_residence": "Synthetic",
+      "date_of_birth": {
+        "month": 2,
+        "year": 2001
+      },
+      "address": {
+        "address_line_1": "Synthetic Address Two",
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ",
+        "country": "Synthetic"
+      },
+      "links": {
+        "self": "https://example.invalid/officers/synthetic-two",
+        "officer": {
+          "appointments": "https://example.invalid/officers/synthetic-two/appointments"
+        }
+      }
+    },
+    {
+      "name": "Synthetic Corporate Secretary",
+      "officer_role": "corporate-secretary",
+      "appointed_on": "2026-01-12",
+      "identification": {
+        "identification_type": "synthetic-registration",
+        "registration_number": "ZZ000001",
+        "legal_authority": "Synthetic authority",
+        "legal_form": "Synthetic body"
+      },
+      "address": {
+        "address_line_1": "Synthetic Registered Office",
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ",
+        "country": "Synthetic"
+      },
+      "links": {
+        "self": "https://example.invalid/officers/synthetic-secretary"
+      }
+    },
+    {
+      "name": "Synthetic Former Director",
+      "officer_role": "director",
+      "appointed_on": "2025-01-01",
+      "resigned_on": "2026-01-13",
+      "occupation": "Synthetic occupation",
+      "nationality": "Synthetic",
+      "country_of_residence": "Synthetic",
+      "date_of_birth": {
+        "month": 3,
+        "year": 2002
+      },
+      "address": {
+        "address_line_1": "Synthetic Former Address",
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ",
+        "country": "Synthetic"
+      },
+      "links": {
+        "self": "https://example.invalid/officers/synthetic-former",
+        "officer": {
+          "appointments": "https://example.invalid/officers/synthetic-former/appointments"
+        }
+      }
+    }
+  ]
+}

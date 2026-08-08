@@ -1,0 +1,59 @@
+{
+  "_note": "Synthetic fixture. Appointment records use placeholder identities and companies.",
+  "date_of_birth": {
+    "month": 1,
+    "year": 2000
+  },
+  "etag": "synthetic-etag",
+  "is_corporate_officer": false,
+  "items_per_page": 3,
+  "kind": "officer-appointment-list",
+  "links": {
+    "self": "https://example.invalid/officers/synthetic-one/appointments"
+  },
+  "name": "Synthetic Director One",
+  "start_index": 0,
+  "total_results": 3,
+  "items": [
+    {
+      "appointed_on": "2026-01-10",
+      "occupation": "Synthetic occupation",
+      "officer_role": "director",
+      "name": "Synthetic Director One",
+      "nationality": "Synthetic",
+      "country_of_residence": "Synthetic",
+      "address": {
+        "locality": "Syntheticville",
+        "postal_code": "ZZ99 9ZZ"
+      },
+      "appointed_to": {
+        "company_name": "Synthetic Test Company One Ltd",
+        "company_number": "ZZ000001",
+        "company_status": "active"
+      }
+    },
+    {
+      "appointed_on": "2025-01-01",
+      "resigned_on": "2025-12-31",
+      "occupation": "Synthetic occupation",
+      "officer_role": "director",
+      "name": "Synthetic Director One",
+      "appointed_to": {
+        "company_name": "Synthetic Test Company Two Ltd",
+        "company_number": "ZZ000002",
+        "company_status": "active"
+      }
+    },
+    {
+      "appointed_on": "2024-01-01",
+      "occupation": "Synthetic occupation",
+      "officer_role": "director",
+      "name": "Synthetic Director One",
+      "appointed_to": {
+        "company_name": "Synthetic Test Company Three Ltd",
+        "company_number": "ZZ000003",
+        "company_status": "dissolved"
+      }
+    }
+  ]
+}

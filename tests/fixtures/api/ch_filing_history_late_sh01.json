@@ -1,0 +1,37 @@
+{
+  "_note": "Recorded GET /company/09876543/filing-history for a 2018 company. The SH01 is real but sits 88 months after incorporation — routine housekeeping, not a pre-seed round, so the 18-month rule must reject it.",
+  "etag": "51627384950a1b2c3d4e5f60718293a4b5c6d7e8",
+  "filing_history_status": "filing-history-available",
+  "items_per_page": 100,
+  "kind": "filing-history",
+  "start_index": 0,
+  "total_count": 2,
+  "items": [
+    {
+      "category": "capital",
+      "date": "2026-03-11",
+      "description": "capital-allotment-shares",
+      "description_values": {
+        "date": "2026-03-01",
+        "capital": [{ "figure": "12,000", "currency": "GBP" }]
+      },
+      "type": "SH01",
+      "transaction_id": "Nn1Mm2Ll3Kk4Jj5Hh6Gg7Ff8",
+      "pages": 3,
+      "links": {
+        "self": "/company/09876543/filing-history/Nn1Mm2Ll3Kk4Jj5Hh6Gg7Ff8"
+      }
+    },
+    {
+      "category": "incorporation",
+      "date": "2018-11-02",
+      "description": "incorporation-company",
+      "type": "NEWINC",
+      "transaction_id": "Dd1Ss2Aa3Pp4Oo5Ii6Uu7Yy8",
+      "pages": 9,
+      "links": {
+        "self": "/company/09876543/filing-history/Dd1Ss2Aa3Pp4Oo5Ii6Uu7Yy8"
+      }
+    }
+  ]
+}
