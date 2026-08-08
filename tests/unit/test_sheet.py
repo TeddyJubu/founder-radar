@@ -271,3 +271,84 @@ def test_source_failures_appear_only_on_the_sources_tab(db, sheet):
 
     # Run Log still names the source that failed — that tab is the audit trail.
     assert "uktn" in sheet.column(RUN_LOG, "O")
+
+
+# --------------------------------------------------------------------- tuning
+
+
+def _seed_verdicts(db, ids, *, positive: int = 12) -> None:
+    """Aryan's own labels — the only training data the thresholds ever get."""
+    from radar.store.db import now_iso
+
+    stamp = now_iso()
+    for index, company_id in enumerate(ids):
+        db.execute(
+            "INSERT INTO user_field(company_id, field, value, updated_at) "
+            "VALUES (?,?,?,?)",
+            (company_id, "verdict",
+             "worth contacting" if index < positive else "not for me", stamp),
+        )
+
+
+def _padded(row, width: int = 6) -> list[str]:
+    """The fake trims trailing blanks, exactly as Sheets does on read-back."""
+    return list(row) + [""] * (width - len(row))
+
+
+def test_tuning_tab_carries_the_sweep_not_just_headers(db, sheet):
+    """The regression: the tab was created with headers and never filled.
+
+    `founder-radar tune` computed the sweep and printed it to stdout, so the
+    one tab that exists to settle where the threshold sits stayed empty on
+    every render — and the decision it supports could never be made in the
+    place Aryan actually works (06-scoring §8, 07-interfaces tab 10).
+    """
+    ids = seed_companies(db, count=40, shortlist=8)
+    _seed_verdicts(db, ids)
+    render(db, sheet)
+
+    grid = sheet.grid("Tuning")
+    assert grid, "Tuning tab was never written at all"
+    header, *rows = grid
+    assert header[:6] == ["Metric", "Threshold", "Would shortlist",
+                          "Precision", "Recall", "F1"]
+    assert rows, "Tuning tab is headers-only — the sweep never landed"
+
+    assert [r[1] for r in rows] == ["55", "60", "65", "70", "75", "80", "85"]
+    # Every row must carry a real count; a blank here is a sweep that ran on
+    # nothing, which looks identical to a sweep that never ran.
+    assert all(_padded(r)[2] != "" for r in rows)
+
+
+def test_tuning_leaves_precision_blank_when_there_are_no_verdicts(db, sheet):
+    """Unmeasurable is not zero.
+
+    With no labels there is nothing to be precise *against*. Rendering 0.00
+    would read as "every one of these thresholds is terrible" rather than
+    "fill in the Verdict column", which is the opposite instruction.
+    """
+    seed_companies(db, count=20, shortlist=4)
+    render(db, sheet)
+
+    _, *rows = sheet.grid("Tuning")
+    assert rows
+    for row in rows:
+        cells = _padded(row)
+        assert cells[2] != "", "would-shortlist is computable without labels"
+        assert cells[3] == "" and cells[4] == "" and cells[5] == "", (
+            f"unmeasurable precision/recall/F1 rendered as {cells[3:6]!r}")
+
+
+def test_tuning_marks_exactly_one_best_threshold(db, sheet):
+    """The recommendation has to be visible in the grid, not just in stdout."""
+    ids = seed_companies(db, count=40, shortlist=8)
+    _seed_verdicts(db, ids)
+    render(db, sheet)
+
+    _, *rows = sheet.grid("Tuning")
+    starred = [r for r in rows if "★" in r[0]]
+    assert len(starred) == 1, f"expected one starred row, got {len(starred)}"
+
+    # The star must sit on the row with the highest F1, not merely somewhere.
+    scored = [(float(_padded(r)[5]), r) for r in rows if _padded(r)[5]]
+    assert starred[0] is max(scored, key=lambda pair: pair[0])[1]
