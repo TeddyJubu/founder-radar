@@ -126,8 +126,14 @@ def sweep(
         }
         positives = {cid for cid, v in labels.items() if v == WORTH_CONTACTING}
 
-        tp = len(shortlisted & positives)
-        fp = len(shortlisted - positives)
+        # Precision is measured over the companies Aryan has actually judged.
+        # An unlabelled company is not a false positive — it is unknown, and
+        # counting it as a miss drives precision toward zero and the
+        # recommended threshold toward "shortlist nothing". With ~50 labels
+        # against a few thousand companies, that error is the whole answer.
+        judged = shortlisted & set(labels)
+        tp = len(judged & positives)
+        fp = len(judged - positives)
         fn = len(positives - shortlisted)
         precision = tp / (tp + fp) if (tp + fp) else None
         recall = tp / (tp + fn) if (tp + fn) else None
@@ -198,8 +204,9 @@ def sweep_attribute(
             if fit.pct >= modified.settings.shortlist_fit and fit.coverage >= modified.settings.min_coverage:
                 shortlisted.add(row["company_id"])
 
-        tp = len(shortlisted & positives)
-        fp = len(shortlisted - positives)
+        judged = shortlisted & set(labels)          # same rule as `sweep`
+        tp = len(judged & positives)
+        fp = len(judged - positives)
         fn = len(positives - shortlisted)
         precision = tp / (tp + fp) if (tp + fp) else None
         recall = tp / (tp + fn) if (tp + fn) else None

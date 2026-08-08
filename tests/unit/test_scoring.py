@@ -195,3 +195,75 @@ def test_gate_reject_returns_one_row_per_fund(cfg):
     assert {s.fund_key for s in rows} == {"outward", "dsw", "northstar", "anticus"}
     assert all(s.tier == "reject" for s in rows)
     assert all(s.reject_reason == "max_company_age_months" for s in rows)
+
+
+# ------------------------------------------------- the tuning sweep (§8)
+
+
+def _seed_scored(db, count: int, *, fit_from: float = 90.0):
+    """`count` companies with descending fit, so any threshold splits them."""
+    from radar.store.db import now_iso
+    from tests.factories import store_company
+
+    stamp = now_iso()
+    ids = []
+    for index in range(count):
+        company = C(canonical_name=f"Co {index:03d}", norm_key=f"co{index:03d}",
+                    age_months=6)
+        store_company(db, company)
+        db.execute(
+            """INSERT INTO score
+                 (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+                  discovery_edge, priority, tier, reject_reason, explanation,
+                  flags, config_hash, scorer_version, scored_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (company.id, "northstar", None, fit_from - index, 0.9,
+             70.0, fit_from - index, "watchlist", None, "x", None,
+             "h", "1", stamp))
+        ids.append(company.id)
+    return ids
+
+
+def _label(db, company_id: str, verdict: str) -> None:
+    from radar.store.db import now_iso
+
+    db.execute("INSERT INTO user_field(company_id, field, value, updated_at) "
+               "VALUES (?,?,?,?)", (company_id, "verdict", verdict, now_iso()))
+
+
+def test_unjudged_companies_are_not_false_positives(db):
+    """An unlabelled company is unknown, not wrong (06-scoring §8).
+
+    Counting every unjudged company in the shortlist as a false positive drove
+    precision toward zero and the recommendation toward "shortlist nothing" —
+    the `None` is not `0` rule, in set arithmetic where the CI grep can't see
+    it. With ~50 labels against thousands of companies that error *is* the
+    whole answer, so it has to be pinned here and not only through the sheet.
+    """
+    from radar.score.tune import sweep
+
+    ids = _seed_scored(db, 30)              # fit 90 down to 61
+    _label(db, ids[0], "worth contacting")  # fit 90 — above every threshold
+    _label(db, ids[1], "worth contacting")  # fit 89
+    _label(db, ids[2], "not for me")        # fit 88
+
+    row = next(r for r in sweep(db)["sweep"] if r["threshold"] == 55)
+
+    # All 30 clear a threshold of 55, but only three are judged: two good,
+    # one bad. Precision is 2/3 over the judged set — not 2/30.
+    assert row["would_shortlist"] == 30
+    assert row["precision"] == round(2 / 3, 2)
+    assert row["recall"] == 1.0
+
+
+def test_sweep_precision_is_none_without_any_verdicts(db):
+    """No labels means nothing to be precise against — not precision zero."""
+    from radar.score.tune import sweep
+
+    _seed_scored(db, 10)
+    result = sweep(db)
+
+    assert all(r["precision"] is None and r["recall"] is None and r["f1"] is None
+               for r in result["sweep"])
+    assert result["best"] is None
+    assert "No verdicts yet" in result["recommendation"]

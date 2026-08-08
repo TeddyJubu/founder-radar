@@ -807,6 +807,39 @@ def build_run_log(db: Any) -> list[Row]:
     return rows
 
 
+def build_tuning(db: Any) -> list[Row]:
+    """The threshold sweep against Aryan's own verdicts (06-scoring §8).
+
+    `founder-radar tune` prints this same table; this is the copy he can sit
+    with while deciding where to lock the threshold. Pipeline-owned and
+    read-only — editing a cell here changes nothing, the same as `Run Log`.
+
+    Precision, recall and F1 render **empty** rather than zero when there is
+    nothing to measure against. A threshold that has never been tested and one
+    that scored zero are different facts, and 0.00 in this column would read as
+    "this threshold is terrible" instead of "fill in the Verdict column".
+    """
+    from radar.score.tune import sweep
+
+    result = sweep(db)
+    best = result.get("best") or {}
+    rows: list[Row] = []
+    for index, row in enumerate(result.get("sweep", []), start=2):
+        # The metric is the row key, not the row number, so a stable grid
+        # re-renders to zero writes. It is also where the edge sweep lands
+        # when it arrives — a new value here, not a new column.
+        winner = bool(best) and row["threshold"] == best.get("threshold")
+        rows.append(Row(f'tuning:fund_fit:{row["threshold"]}', index, {
+            "A": "fund_fit ★" if winner else "fund_fit",
+            "B": _txt(row["threshold"]),
+            "C": _txt(row["would_shortlist"]),
+            "D": _num(row["precision"], 2),
+            "E": _num(row["recall"], 2),
+            "F": _num(row["f1"], 2),
+        }))
+    return rows
+
+
 def build_meta(db: Any, cfg: Any, counts: Mapping[str, int]) -> list[Row]:
     """The hidden tab: schema version, config hash, last-good marker.
 
@@ -1030,6 +1063,7 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
     plan.extend(plan_tab(db, SOURCES, build_sources(db, cfg, today=today),
                          ["A", "B", "C", "D", "E", "F", "G", "H"]))
     plan.extend(plan_tab(db, RUN_LOG, build_run_log(db), columns_for(RUN_LOG)))
+    plan.extend(plan_tab(db, TUNING, build_tuning(db), columns_for(TUNING)))
     plan.extend(plan_tab(db, META, build_meta(db, cfg, counts), ["A", "B"]))
 
     for tab, column in ((SETTINGS, SETTINGS_STATUS_COL),
