@@ -18,7 +18,12 @@ from __future__ import annotations
 import pytest
 
 from radar.resolve.match import MERGE, REVIEW, DISTINCT, Record, compare
-from radar.resolve.merge import merge_companies, unmerge, upsert_record
+from radar.resolve.merge import (
+    duplicate_audit,
+    merge_companies,
+    unmerge,
+    upsert_record,
+)
 from radar.store.db import now_iso
 
 PAIRS = [
@@ -117,3 +122,47 @@ def test_merge_is_reversible(db):
     assert db.scalar("SELECT merged_into FROM company WHERE id = ?", (b.company_id,)) is None
     assert db.scalar("SELECT COUNT(*) FROM signal WHERE company_id = ?", (b.company_id,)) == 1
     assert db.scalar("SELECT COUNT(*) FROM signal WHERE company_id = ?", (a.company_id,)) == 0
+
+
+def test_duplicate_audit_returns_zero_rows(db):
+    """03-data-model §6 query 9, gated by 10-build-plan Phase 2.
+
+    The query was written and never run, which is the worst state for an audit
+    to be in: it looks like a guarantee and checks nothing. Note the second
+    half — asserting "no duplicates" against a database that could not contain
+    any is a vacuous pass, so this plants one and proves the query sees it
+    before proving a real ingest leaves none.
+    """
+    # A realistic ingest: the same company arriving from three sources under
+    # three spellings, plus an unrelated company that must not be swept in.
+    for name, source in (("Acme Robotics Ltd", "uktn"),
+                         ("Acme Robotics Limited", "businesscloud"),
+                         ("ACME ROBOTICS", "companies_house"),
+                         ("Beta Analytics", "uktn")):
+        upsert_record(db, Record(name=name), source_key=source,
+                      source_url=f"https://{source}/x", external_id=name)
+
+    assert duplicate_audit(db) == [], "a normal ingest left duplicate rows behind"
+
+    # Now plant one the resolver could never create, and confirm the query is
+    # actually looking: two live companies sharing a norm_key and country.
+    live = db.one("SELECT norm_key, country_iso2 FROM company "
+                  "WHERE merged_into IS NULL LIMIT 1")
+    stamp = now_iso()
+    db.execute(
+        "INSERT INTO company(id, canonical_name, norm_key, country_iso2, "
+        "                    first_seen, last_seen, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        ("planted", "Planted Duplicate", live["norm_key"], live["country_iso2"],
+         stamp, stamp, stamp, stamp),
+    )
+    planted = duplicate_audit(db)
+    assert planted, "query 9 did not notice a duplicate — the audit is blind"
+    assert planted[0]["norm_key"] == live["norm_key"]
+    assert planted[0]["c"] == 2
+
+    # ...and a merge clears it, which is what the query exists to confirm.
+    survivor = db.scalar("SELECT id FROM company WHERE merged_into IS NULL "
+                         "AND norm_key = ? AND id != 'planted'", (live["norm_key"],))
+    merge_companies(db, survivor, "planted", rule="test", score=99.0)
+    assert duplicate_audit(db) == []
