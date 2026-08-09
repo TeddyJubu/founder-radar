@@ -9,45 +9,131 @@
   <header class="nav"><a href="/">Conception X</a><a href="/programme">Programme</a></header>
   <main>
     <h1>Our ventures</h1>
-    <section class="venture-grid">
 
-      <div class="venture-card" data-cohort="CX24" data-university="University of Cambridge">
-        <a href="/portfolio/astra-materials">
-          <h3 class="venture-name">Astra Materials</h3>
-        </a>
-        <p class="venture-blurb">Self-healing materials for battery casings.</p>
-        <span class="venture-cohort">CX24</span>
-        <span class="venture-university">University of Cambridge</span>
+    <!--
+      The live layout, abridged (fetched 9 August 2026). Two things here are
+      load-bearing and must not be "tidied":
+
+      1. The cohort filter radios below are also `.w-dyn-item`. That is why the
+         adapter selects `.portfolio-collection-item` first — the loose Webflow
+         class matches filters and ventures alike, and the filters carry no
+         name, so the parser returned 42 cards and zero companies while every
+         guard stayed green.
+      2. There are no heading tags. The venture name is a `.para-xxl-24` div
+         inside `.portfolio-title-wrap`, which is why h2/h3/h4 find nothing.
+    -->
+
+    <div class="filters w-dyn-list">
+      <div role="list" class="w-dyn-items">
+        <div role="listitem" class="w-dyn-item">
+          <label class="filter-radio-item w-radio">
+            <input fs-list-value="CX23" fs-list-field="cohort" type="radio" />
+            <span class="filter-text w-form-label">CX23</span>
+          </label>
+        </div>
+        <div role="listitem" class="w-dyn-item">
+          <label class="filter-radio-item w-radio">
+            <input fs-list-value="CX24" fs-list-field="cohort" type="radio" />
+            <span class="filter-text w-form-label">CX24</span>
+          </label>
+        </div>
       </div>
+    </div>
 
-      <div class="venture-card" data-cohort="CX24" data-university="University of Edinburgh">
-        <a href="/portfolio/tessellate-ai">
-          <h3 class="venture-name">Tessellate AI</h3>
-        </a>
-        <p class="venture-blurb">Generative models for structural engineering.</p>
-        <span class="venture-cohort">CX24</span>
-        <span class="venture-university">University of Edinburgh</span>
+    <div class="portfolio-collection w-dyn-list">
+      <div role="list" class="w-dyn-items">
+
+        <div role="listitem" class="portfolio-collection-item w-dyn-item">
+          <div class="portfolio-card-wrap">
+            <div class="portfolio-default">
+              <div class="portfolio-def-info">
+                <div class="portfolio-title-wrap">
+                  <div class="para-xxl-24">Astra Materials</div>
+                </div>
+                <div class="portfolio-def-details">
+                  <div class="portfolio-def-credits">
+                    <div class="label-s-14 medium t-gray04">Founded By</div>
+                    <div class="label-s-14">A. Researcher</div>
+                  </div>
+                  <div class="portfolio-def-credits">
+                    <div class="label-s-14 medium t-gray04">Cohort</div>
+                    <div class="portfolio-def-cohort">
+                      <div fs-list-field="cohort" class="label-s-14">CX24</div>
+                    </div>
+                  </div>
+                  <div fs-list-field="sector" class="label-s-14 medium t-gray04">Advanced Materials</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div role="listitem" class="portfolio-collection-item w-dyn-item">
+          <div class="portfolio-card-wrap">
+            <div class="portfolio-default">
+              <div class="portfolio-def-info">
+                <div class="portfolio-title-wrap">
+                  <div class="para-xxl-24">Brackish Robotics</div>
+                </div>
+                <div class="portfolio-def-details">
+                  <div class="portfolio-def-credits">
+                    <div class="label-s-14 medium t-gray04">Cohort</div>
+                    <div class="portfolio-def-cohort">
+                      <div fs-list-field="cohort" class="label-s-14">CX23</div>
+                    </div>
+                  </div>
+                  <div fs-list-field="sector" class="label-s-14 medium t-gray04">Robotics</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div role="listitem" class="portfolio-collection-item w-dyn-item">
+          <div class="portfolio-card-wrap">
+            <div class="portfolio-default">
+              <div class="portfolio-def-info">
+                <div class="portfolio-title-wrap">
+                  <div class="para-xxl-24">Cadence Bio</div>
+                </div>
+                <div class="portfolio-def-details">
+                  <div class="portfolio-def-credits">
+                    <div class="label-s-14 medium t-gray04">Cohort</div>
+                    <div class="portfolio-def-cohort">
+                      <div fs-list-field="cohort" class="label-s-14">CX25</div>
+                    </div>
+                  </div>
+                  <div fs-list-field="sector" class="label-s-14 medium t-gray04">Life Sciences</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div role="listitem" class="portfolio-collection-item w-dyn-item">
+          <div class="portfolio-card-wrap">
+            <div class="portfolio-default">
+              <div class="portfolio-def-info">
+                <div class="portfolio-title-wrap">
+                  <div class="para-xxl-24">Dover Photonics</div>
+                </div>
+                <div class="portfolio-def-details">
+                  <div class="portfolio-def-credits">
+                    <div class="label-s-14 medium t-gray04">Cohort</div>
+                    <div class="portfolio-def-cohort">
+                      <div fs-list-field="cohort" class="label-s-14">CX25</div>
+                    </div>
+                  </div>
+                  <div fs-list-field="sector" class="label-s-14 medium t-gray04">Photonics</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!--APPEND-VENTURE-HERE-->
       </div>
-
-      <div class="venture-card" data-cohort="CX23" data-university="Imperial College London">
-        <a href="/portfolio/photonic-forge">
-          <h3 class="venture-name">Photonic Forge</h3>
-        </a>
-        <p class="venture-blurb">Integrated photonics for quantum computing.</p>
-        <span class="venture-cohort">CX23</span>
-        <span class="venture-university">Imperial College London</span>
-      </div>
-
-      <div class="venture-card" data-cohort="CX25" data-university="Durham University">
-        <a href="/portfolio/lindisfarne-robotics">
-          <h3 class="venture-name">Lindisfarne Robotics</h3>
-        </a>
-        <p class="venture-blurb">Autonomous inspection for offshore wind foundations.</p>
-        <span class="venture-cohort">CX25</span>
-        <span class="venture-university">Durham University</span>
-      </div>
-
-    </section>
+    </div>
   </main>
   <footer class="footer"><p>&copy; 2026 Conception X</p></footer>
 </body>
