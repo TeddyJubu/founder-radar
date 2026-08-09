@@ -47,7 +47,34 @@ SOURCE_MODULES: dict[str, str] = {
     "vc_portfolios": "radar.sources.vc_portfolios",
 }
 
+#: 04-sources Tier 1 — the fourteen that have to work. `TIER_1_SOURCES` is
+#: written out rather than derived from `SOURCE_MODULES`, because the moment
+#: Tier 2 entries joined the registry the derived version quietly promoted
+#: them and the Monday live check started gating on sources that are allowed
+#: to be flaky.
 TIER_1_SOURCES: tuple[str, ...] = tuple(SOURCE_MODULES)
+
+#: 04-sources Tier 2 — "add after Tier 1 is proven". Quality and volume, not
+#: freshness: none of these is on the critical path, and each one failing is a
+#: row on the Sources tab rather than a problem.
+TIER_2_MODULES: dict[str, str] = {
+    "startups_magazine": "radar.sources.startups_magazine",
+    "bdaily_regional": "radar.sources.bdaily_regional",
+    "edinburgh_innovations": "radar.sources.edinburgh_innovations",
+    "ucl_ventures": "radar.sources.ucl_ventures",
+    "bethnal_green": "radar.sources.bethnal_green",
+    "carbon13": "radar.sources.carbon13",
+    "converge": "radar.sources.converge",
+    "sheffield": "radar.sources.sheffield",
+    "founders_factory": "radar.sources.founders_factory",
+    "techstars_london": "radar.sources.techstars_london",
+}
+
+TIER_2_SOURCES: tuple[str, ...] = tuple(TIER_2_MODULES)
+
+SOURCE_MODULES.update(TIER_2_MODULES)
+
+ALL_SOURCES: tuple[str, ...] = TIER_1_SOURCES + TIER_2_SOURCES
 
 
 class SourceUnavailable(KeyError):
@@ -476,6 +503,8 @@ __all__ = [
     "SourceRun",
     "SourceUnavailable",
     "TIER_1_SOURCES",
+    "TIER_2_SOURCES",
+    "ALL_SOURCES",
     "cli_sources",
     "describe",
     "enabled_adapters",
