@@ -410,12 +410,18 @@ def test_conception_x_returns_only_new_ventures_after_the_first_run(db):
                                        _ctx(StubHttp(), db=db))
     assert second == []
 
+    # The new venture has to arrive in the *live* markup. Appending a
+    # `.venture-card` would prove nothing: `select_any` stops at
+    # `.portfolio-collection-item`, so the legacy card would never be read.
     grown = page.replace(
-        "</section>",
-        '<div class="venture-card" data-cohort="CX26" data-university="Durham University">'
-        '<a href="/portfolio/wearside-optics"><h3 class="venture-name">Wearside Optics</h3></a>'
-        '<p class="venture-blurb">Free-space optical links for rural backhaul.</p>'
-        "</div></section>")
+        "<!--APPEND-VENTURE-HERE-->",
+        '<div role="listitem" class="portfolio-collection-item w-dyn-item">'
+        '<div class="portfolio-def-info"><div class="portfolio-title-wrap">'
+        '<div class="para-xxl-24">Wearside Optics</div></div>'
+        '<div class="portfolio-def-cohort">'
+        '<div fs-list-field="cohort" class="label-s-14">CX26</div></div>'
+        "</div></div>")
+    assert grown != page, "fixture lost its append marker"
     third = conception_x.ADAPTER.diff(conception_x.ADAPTER.parse(grown),
                                       _ctx(StubHttp(), db=db))
     assert [i.title for i in third] == ["Wearside Optics"]

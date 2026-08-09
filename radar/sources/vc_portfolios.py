@@ -43,6 +43,7 @@ from radar.sources.base import FetchContext, RawItem
 from radar.store.db import now_iso
 
 CARD_SELECTORS = (
+    ".tile--company",              # Outward VC — same template as joinef.com
     ".portfolio-item",
     ".portfolio__item",
     ".w-dyn-item",
@@ -50,7 +51,8 @@ CARD_SELECTORS = (
     "li.company",
     ".portfolio-grid > a",
 )
-NAME_SELECTORS = (".portfolio-item__title", ".company-name", "h3", "h4", "h2",
+NAME_SELECTORS = (".portfolio-item__title", ".company-name", ".tile__name",
+                  "h3", "h4", "h2",
                   ".title", "img[alt]")
 
 

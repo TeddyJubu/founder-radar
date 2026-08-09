@@ -39,15 +39,21 @@ PORTFOLIO = f"{BASE}/portfolio/"
 #: joinef.com robots.txt. Enforced here as well as by `HttpClient`.
 CRAWL_DELAY = 10.0
 
+# `.tile--company` is the live joinef.com layout as of August 2026. Outward VC
+# runs the same template, so `vc_portfolios` carries the selector too.
 CARD_SELECTORS = (
+    ".tile--company",
     ".portfolio__item",
     ".portfolio-item",
     ".w-dyn-item",
     "article.company",
     ".company-card",
 )
-NAME_SELECTORS = (".portfolio__name", "h3", "h4", "h2", ".title")
-DESC_SELECTORS = (".portfolio__desc", ".description", "p")
+NAME_SELECTORS = (".portfolio__name", ".tile__name", "h3", "h4", "h2", ".title")
+DESC_SELECTORS = (".portfolio__desc", ".tile__description", ".description", "p")
+#: Location moved onto a tag link; it drives the London filter, so a miss here
+#: silently drops every company rather than mislabelling one.
+LOCATION_SELECTORS = (".portfolio__location", ".locationtag")
 
 LONDON = ("london", "uk", "united kingdom", "gb")
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
@@ -131,7 +137,21 @@ class EntrepreneurFirstAdapter:
         name = _first_text(card, NAME_SELECTORS)
         if not name:
             return None
-        href = attr_of(card, None, "href") or attr_of(card, "a[href]", "href")
+        # Identity, carefully. The live card's first `a[href]` is a *tag* link
+        # ("/location/london/"), so taking it blindly gave 48 companies six
+        # external ids — 35 of them "london". Every one of those would have
+        # collapsed into one row on the next snapshot diff. Prefer the slug the
+        # page states outright, then a link that is not a tag, then the name.
+        slug = (attr_of(card, None, "data-companyslug")
+                or attr_of(card, ".tile__link", "data-companyslug"))
+        href = attr_of(card, None, "href")
+        if not href:
+            for node in card.css("a[href]"):
+                classes = node.attributes.get("class") or ""
+                if "locationtag" in classes or "categorytag" in classes:
+                    continue
+                href = node.attributes.get("href")
+                break
         website = None
         for node in card.css("a[href]"):
             link = node.attributes.get("href", "")
@@ -139,7 +159,8 @@ class EntrepreneurFirstAdapter:
                 website = link
                 break
 
-        location = attr_of(card, None, "data-location") or text_of(card, ".portfolio__location")
+        location = (attr_of(card, None, "data-location")
+                    or _first_text(card, LOCATION_SELECTORS))
         year_text = attr_of(card, None, "data-year") or text_of(card, ".portfolio__year")
         year_match = _YEAR.search(year_text or "")
         founded_year = int(year_match.group(0)) if year_match else None
@@ -160,7 +181,7 @@ class EntrepreneurFirstAdapter:
         return RawItem(
             source_key=self.key,
             source_url=absolute_url(BASE, href) or PORTFOLIO,
-            external_id=slug_of(href or "") or name.lower().replace(" ", "-"),
+            external_id=slug or slug_of(href or "") or name.lower().replace(" ", "-"),
             published_at=None,
             title=name,
             body_text=structured["one_line_description"],
