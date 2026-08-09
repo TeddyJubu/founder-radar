@@ -19,6 +19,7 @@ here. The CLI renders the result; the sheet's Tuning tab is a view.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -26,8 +27,12 @@ WORTH_CONTACTING = "worth contacting"
 NOT_FOR_ME = "not for me"
 UNSURE = "unsure"
 
-DEFAULT_FIT_GRID = (55, 60, 65, 70, 75, 80, 85)
 DEFAULT_EDGE_GRID = (40, 45, 50, 55, 60, 65, 70)
+
+# A sweep is only worth a row if it would give a different answer. 30 is the
+# most rows worth putting in front of a person; past that the table stops
+# being read.
+MAX_SWEEP_ROWS = 30
 
 
 # ------------------------------------------------------------------ labels
@@ -102,10 +107,46 @@ def _score_rows(db: Any, *, fund_key: str | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def change_points(rows: Iterable[Mapping[str, Any]], *,
+                  limit: int = MAX_SWEEP_ROWS) -> list[int]:
+    """The integer thresholds at which the shortlist actually changes.
+
+    `shortlist_fit` is an `int`, so there are only 101 thresholds to choose
+    between and most of them are indistinguishable. A company scoring 86.8 is
+    shortlisted at every threshold up to 86 and at none above it, so
+    `floor(fit)` is the last threshold that keeps it — and the set of those
+    floors is exactly the set of thresholds that give different answers. It is
+    the complete set, not a sample: there is no threshold between two adjacent
+    floors that produces a shortlist either of them doesn't.
+
+    On the live database this returns seven values spanning 0 to 100. The
+    fixed grid it replaces spent three of its seven rows on 60/65 and 80/85 —
+    pairwise identical shortlists — and never showed the cliff at 91, where
+    the shortlist drops from several hundred companies to a few dozen. A row
+    that cannot change the outcome is a decision dressed up as a choice.
+
+    Above `limit` distinct floors the range is sampled evenly, keeping both
+    ends. That is a real loss of resolution, so `sweep` reports it.
+    """
+    floors = _floors(rows)
+    if len(floors) <= limit:
+        return floors
+    step = (len(floors) - 1) / (limit - 1)
+    return sorted({floors[round(index * step)] for index in range(limit)})
+
+
+def _floors(rows: Iterable[Mapping[str, Any]]) -> list[int]:
+    """Every distinct `floor(fund_fit_pct)`, clamped to a settable threshold."""
+    return sorted({
+        max(0, min(100, math.floor(float(r["fund_fit_pct"]))))
+        for r in rows if r.get("fund_fit_pct") is not None
+    })
+
+
 def sweep(
     db: Any,
     *,
-    fit_grid: Sequence[int] = DEFAULT_FIT_GRID,
+    fit_grid: Sequence[int] | None = None,
     fund_key: str | None = None,
 ) -> dict[str, Any]:
     """Sweep the shortlist-fit threshold and score each value against verdicts.
@@ -113,12 +154,22 @@ def sweep(
     A company counts as "would shortlist" if its best score's `fund_fit_pct`
     is at or above the threshold and it was not gated (tier is not reject for
     a gate reason). Labels come from `user_field`.
+
+    With no `fit_grid` the thresholds are derived from the data — every value
+    at which the shortlist actually changes, and nothing else (`change_points`).
+    Pass an explicit grid to ask about particular numbers.
     """
     labels = labelled_companies(db)
     rows = _score_rows(db, fund_key=fund_key)
+    derived = fit_grid is None
+    # Change points must be computed over the rows the sweep actually counts.
+    # A gated company's fit still has a floor, but moving the threshold across
+    # it changes nothing — those produced three rows reading 792 in a row.
+    eligible = [r for r in rows if r["tier"] != "reject"]
+    grid = change_points(eligible) if derived else list(fit_grid)
 
     out: list[SweepRow] = []
-    for threshold in fit_grid:
+    for threshold in grid:
         shortlisted = {
             r["company_id"]
             for r in rows
@@ -150,8 +201,13 @@ def sweep(
         ))
 
     best = max((r for r in out if r.f1 is not None), key=lambda r: r.f1 or 0, default=None)
+    # No silent caps: if the range was too wide to show every change point,
+    # say so rather than letting the table read as complete.
+    dropped = len(_floors(eligible)) - len(grid) if derived else 0
     return {
         "sweep": [r.to_dict() for r in out],
+        "thresholds": "change points" if derived else "explicit grid",
+        "change_points_omitted": max(dropped, 0),
         "labels": {WORTH_CONTACTING: len([v for v in labels.values() if v == WORTH_CONTACTING]),
                    NOT_FOR_ME: len([v for v in labels.values() if v == NOT_FOR_ME])},
         "scored_companies": len(rows),
@@ -251,4 +307,5 @@ def _company_from_row(db: Any, company_id: str):
     )
 
 
-__all__ = ["sweep", "sweep_attribute", "labelled_companies", "SweepRow"]
+__all__ = ["sweep", "sweep_attribute", "labelled_companies", "change_points",
+           "SweepRow"]
