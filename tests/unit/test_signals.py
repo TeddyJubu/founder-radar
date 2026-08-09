@@ -220,7 +220,32 @@ def test_every_source_declares_the_track_the_ledger_gives_it():
         "businesscloud": "A",
         "uktn": "A",
         "vc_portfolios": "—",         # row 14, the inverted source
+        # Tier 2 — "add after Tier 1 is proven". Every one is signal-first.
+        "startups_magazine": "A",
+        "bdaily_regional": "A",
+        "edinburgh_innovations": "A",
+        "ucl_ventures": "A",
+        "bethnal_green": "A",
+        "carbon13": "A",
+        "converge": "A",
+        "sheffield": "A",
+        "founders_factory": "A",
+        "techstars_london": "A",
     }
     assert set(REGISTRY) == set(ledger), "the registry and the ledger disagree"
     for key, expected in ledger.items():
         assert getattr(REGISTRY[key], "track", "A") == expected, key
+
+
+def test_tier_2_sources_are_not_promoted_to_tier_1():
+    """`TIER_1_SOURCES` gates the Monday live check and the Tier 1 fixture
+    sweep. It used to be `tuple(SOURCE_MODULES)`, so adding a Tier 2 entry
+    would have silently promoted it — and a source that 04-sources says is
+    optional would start failing the checks reserved for the fourteen that
+    have to work."""
+    from radar.sources import ALL_SOURCES, TIER_1_SOURCES, TIER_2_SOURCES
+
+    assert set(TIER_1_SOURCES) & set(TIER_2_SOURCES) == set()
+    assert set(ALL_SOURCES) == set(TIER_1_SOURCES) | set(TIER_2_SOURCES)
+    assert "companies_house" in TIER_1_SOURCES
+    assert "bethnal_green" not in TIER_1_SOURCES

@@ -41,15 +41,24 @@ from radar.sources.base import FetchContext, RawItem
 BASE = "https://conceptionx.org"
 PORTFOLIO = f"{BASE}/portfolio"
 
+# `.portfolio-collection-item` is the live Webflow layout as of August 2026 and
+# must stay ahead of `.w-dyn-item`: the generic Webflow class also matches the
+# 18 cohort filter radios, so the loose selector returned 42 "cards" of which
+# none carried a name — a silent zero that `guard_nonempty` could not see,
+# because it counts cards and the names were lost one step later.
 CARD_SELECTORS = (
+    ".portfolio-collection-item",
     ".venture-card",
     ".portfolio-item",
     ".w-dyn-item",
     "article.venture",
     ".company-card",
 )
-NAME_SELECTORS = (".venture-name", "h3", "h4", "h2", ".title")
+NAME_SELECTORS = (".venture-name", ".portfolio-title-wrap .para-xxl-24",
+                  ".para-xxl-24", "h3", "h4", "h2", ".title")
 BLURB_SELECTORS = (".venture-blurb", ".description", "p")
+#: The live card carries cohort and sector as Finsweet list fields.
+COHORT_SELECTORS = (".venture-cohort", '[fs-list-field="cohort"]')
 
 #: Cohort codes CX18–CX26 (04-sources §2, row 6).
 COHORT = re.compile(r"\bCX\s?(\d{2})\b", re.I)
@@ -122,7 +131,8 @@ class ConceptionXAdapter:
 
         blob = clean_text(card.text(separator=" ", strip=True))
         cohort_match = COHORT.search(
-            attr_of(card, None, "data-cohort") or text_of(card, ".venture-cohort") or blob)
+            attr_of(card, None, "data-cohort")
+            or _first_text(card, COHORT_SELECTORS) or blob)
         cohort = f"CX{cohort_match.group(1)}" if cohort_match else None
         university = attr_of(card, None, "data-university") \
             or text_of(card, ".venture-university") or None

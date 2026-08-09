@@ -1,0 +1,65 @@
+[
+  {
+    "id": 4101,
+    "date": "2026-08-06T10:00:00",
+    "date_gmt": "2026-08-06T10:00:00",
+    "guid": {
+      "rendered": "https://www.convergechallenge.com/?p=4101"
+    },
+    "slug": "space-challenge-cohort-lift-off",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.convergechallenge.com/space-challenge-cohort-lift-off",
+    "title": {
+      "rendered": "Space Challenge cohort has lift-off"
+    },
+    "content": {
+      "rendered": "<p>Six Scottish university ventures join the 2026 Converge Space Challenge cohort, including a St Andrews spinout incorporated in April 2026.</p>"
+    },
+    "excerpt": {
+      "rendered": "<p>Six Scottish university ventures join the 2026 Converge Space Challeng</p>"
+    }
+  },
+  {
+    "id": 4098,
+    "date": "2026-08-01T09:30:00",
+    "date_gmt": "2026-08-01T09:30:00",
+    "guid": {
+      "rendered": "https://www.convergechallenge.com/?p=4098"
+    },
+    "slug": "kelpline-secures-seed",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.convergechallenge.com/kelpline-secures-seed",
+    "title": {
+      "rendered": "Converge alumnus Kelpline secures seed funding"
+    },
+    "content": {
+      "rendered": "<p>Kelpline, a Heriot-Watt spinout and 2025 Converge winner, has secured a seed round to scale its seaweed processing technology.</p>"
+    },
+    "excerpt": {
+      "rendered": "<p>Kelpline, a Heriot-Watt spinout and 2025 Converge winner, has secured </p>"
+    }
+  },
+  {
+    "id": 4090,
+    "date": "2026-07-28T08:00:00",
+    "date_gmt": "2026-07-28T08:00:00",
+    "guid": {
+      "rendered": "https://www.convergechallenge.com/?p=4090"
+    },
+    "slug": "applications-open-2027",
+    "status": "publish",
+    "type": "post",
+    "link": "https://www.convergechallenge.com/applications-open-2027",
+    "title": {
+      "rendered": "Applications open for the 2027 programme"
+    },
+    "content": {
+      "rendered": "<p>The Converge programme is now accepting applications from Scottish universities.</p>"
+    },
+    "excerpt": {
+      "rendered": "<p>The Converge programme is now accepting applications from Scottish uni</p>"
+    }
+  }
+]

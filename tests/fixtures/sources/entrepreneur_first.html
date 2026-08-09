@@ -11,54 +11,112 @@
     <h1>Portfolio</h1>
     <section class="portfolio">
 
-      <div class="portfolio__item" data-location="London, UK" data-year="2024">
-        <a href="/portfolio/meridian-compute/">
-          <h3 class="portfolio__name">Meridian Compute</h3>
-        </a>
-        <p class="portfolio__desc">Data-centre cooling orchestration.</p>
-        <span class="portfolio__location">London, UK</span>
-        <span class="portfolio__year">Founded 2024</span>
-        <a class="portfolio__website" href="https://meridiancompute.example.com" rel="noopener">Website</a>
+      <!--
+        The live joinef.com layout, abridged (fetched 9 August 2026). Outward VC
+        runs the same template, so `vc_portfolios` shares the `.tile--company`
+        selector.
+
+        The `.locationtag` and `.categorytag` links are the trap: they are the
+        first `a[href]` inside every card, and they point at joinef.com filter
+        pages rather than at the company. Taking the first link as identity gave
+        48 companies six external ids, 35 of them "london", which the next
+        snapshot diff would have merged into a single row. `data-companyslug` is
+        the identity the page actually states.
+
+        `data-year` is kept because the extractor supports it and the London /
+        founded-year filter is tested here. The live page omits it, so
+        `founded_year` is None in production — and unknown passes the filter,
+        which is the correct reading of an absent fact.
+      -->
+
+      <div class="tile tile--company" data-year="2024">
+        <div class="tile__link noline" data-companyname="Meridian Compute"
+             data-companyslug="meridian-compute" data-index="0">Meridian Compute</div>
+        <div class="row">
+          <div class="col col-1">
+            <div class="tile__tags text-xsml">
+              <a class="locationtag" href="https://www.joinef.com/location/london/">London</a>
+              <a class="categorytag" href="https://www.joinef.com/industry/infrastructure/">Infrastructure</a>
+            </div>
+          </div>
+          <div class="col col-3-5">
+            <h4 class="tile__name heading-xl"><span class="linkline">Meridian Compute</span></h4>
+            <div class="tile__description heading-xsml">Data-centre cooling orchestration.</div>
+            <a class="text-link" href="https://meridiancompute.example.com" rel="noopener">Website</a>
+          </div>
+        </div>
       </div>
 
-      <div class="portfolio__item" data-location="London, UK" data-year="2025">
-        <a href="/portfolio/cordage-labs/">
-          <h3 class="portfolio__name">Cordage Labs</h3>
-        </a>
-        <p class="portfolio__desc">Contract intelligence for legal teams.</p>
-        <span class="portfolio__location">London, UK</span>
-        <span class="portfolio__year">Founded 2025</span>
-        <a class="portfolio__website" href="https://cordagelabs.example.com" rel="noopener">Website</a>
+      <div class="tile tile--company" data-year="2025">
+        <div class="tile__link noline" data-companyname="Cordage Labs"
+             data-companyslug="cordage-labs" data-index="1">Cordage Labs</div>
+        <div class="row">
+          <div class="col col-1">
+            <div class="tile__tags text-xsml">
+              <a class="locationtag" href="https://www.joinef.com/location/london/">London</a>
+              <a class="categorytag" href="https://www.joinef.com/industry/legal/">Legal</a>
+            </div>
+          </div>
+          <div class="col col-3-5">
+            <h4 class="tile__name heading-xl"><span class="linkline">Cordage Labs</span></h4>
+            <div class="tile__description heading-xsml">Contract intelligence for legal teams.</div>
+            <a class="text-link" href="https://cordagelabs.example.com" rel="noopener">Website</a>
+          </div>
+        </div>
       </div>
 
-      <div class="portfolio__item" data-location="London, UK" data-year="2026">
-        <a href="/portfolio/stanchion/">
-          <h3 class="portfolio__name">Stanchion</h3>
-        </a>
-        <p class="portfolio__desc">Structural monitoring for rail infrastructure.</p>
-        <span class="portfolio__location">London, UK</span>
-        <span class="portfolio__year">Founded 2026</span>
-        <a class="portfolio__website" href="https://stanchion.example.com" rel="noopener">Website</a>
+      <div class="tile tile--company" data-year="2026">
+        <div class="tile__link noline" data-companyname="Stanchion"
+             data-companyslug="stanchion" data-index="2">Stanchion</div>
+        <div class="row">
+          <div class="col col-1">
+            <div class="tile__tags text-xsml">
+              <a class="locationtag" href="https://www.joinef.com/location/london/">London</a>
+              <a class="categorytag" href="https://www.joinef.com/industry/rail/">Rail</a>
+            </div>
+          </div>
+          <div class="col col-3-5">
+            <h4 class="tile__name heading-xl"><span class="linkline">Stanchion</span></h4>
+            <div class="tile__description heading-xsml">Structural monitoring for rail infrastructure.</div>
+            <a class="text-link" href="https://stanchion.example.com" rel="noopener">Website</a>
+          </div>
+        </div>
       </div>
 
-      <div class="portfolio__item" data-location="London, UK" data-year="2016">
-        <a href="/portfolio/keelson-analytics/">
-          <h3 class="portfolio__name">Keelson Analytics</h3>
-        </a>
-        <p class="portfolio__desc">Fleet telemetry for shipping lines.</p>
-        <span class="portfolio__location">London, UK</span>
-        <span class="portfolio__year">Founded 2016</span>
-        <a class="portfolio__website" href="https://keelson.example.com" rel="noopener">Website</a>
+      <!-- a 2016 alumnus: parsed, then dropped by the founded-year filter -->
+      <div class="tile tile--company" data-year="2016">
+        <div class="tile__link noline" data-companyname="Keelson Analytics"
+             data-companyslug="keelson-analytics" data-index="3">Keelson Analytics</div>
+        <div class="row">
+          <div class="col col-1">
+            <div class="tile__tags text-xsml">
+              <a class="locationtag" href="https://www.joinef.com/location/london/">London</a>
+            </div>
+          </div>
+          <div class="col col-3-5">
+            <h4 class="tile__name heading-xl"><span class="linkline">Keelson Analytics</span></h4>
+            <div class="tile__description heading-xsml">Fleet telemetry for shipping lines.</div>
+            <a class="text-link" href="https://keelson.example.com" rel="noopener">Website</a>
+          </div>
+        </div>
       </div>
 
-      <div class="portfolio__item" data-location="Bangalore, India" data-year="2025">
-        <a href="/portfolio/palkia-health/">
-          <h3 class="portfolio__name">Palkia Health</h3>
-        </a>
-        <p class="portfolio__desc">Diagnostics triage for rural clinics.</p>
-        <span class="portfolio__location">Bangalore, India</span>
-        <span class="portfolio__year">Founded 2025</span>
-        <a class="portfolio__website" href="https://palkia.example.com" rel="noopener">Website</a>
+      <!-- outside the UK: parsed, then dropped by the London filter -->
+      <div class="tile tile--company" data-year="2025">
+        <div class="tile__link noline" data-companyname="Palkia Health"
+             data-companyslug="palkia-health" data-index="4">Palkia Health</div>
+        <div class="row">
+          <div class="col col-1">
+            <div class="tile__tags text-xsml">
+              <a class="locationtag" href="https://www.joinef.com/location/bangalore/">Bangalore, India</a>
+            </div>
+          </div>
+          <div class="col col-3-5">
+            <h4 class="tile__name heading-xl"><span class="linkline">Palkia Health</span></h4>
+            <div class="tile__description heading-xsml">Diagnostics triage for rural clinics.</div>
+            <a class="text-link" href="https://palkia.example.com" rel="noopener">Website</a>
+          </div>
+        </div>
       </div>
 
     </section>

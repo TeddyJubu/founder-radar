@@ -1,0 +1,41 @@
+[
+  {
+    "id": 39726,
+    "date": "2026-08-07T14:41:56",
+    "date_gmt": "2026-08-07T13:41:56",
+    "guid": {"rendered": "https://startupsmagazine.co.uk/?p=39726"},
+    "slug": "orrery-labs-raises-pre-seed",
+    "status": "publish",
+    "type": "post",
+    "link": "https://startupsmagazine.co.uk/orrery-labs-raises-pre-seed",
+    "title": {"rendered": "Orrery Labs raises £900k pre-seed for satellite thermal control"},
+    "content": {"rendered": "<p>Orrery Labs, a Glasgow company incorporated in March 2026, has raised a £900,000 pre-seed round led by an angel syndicate to commercialise its passive thermal-control panels for small satellites.</p><p>The company was founded by two former engineers at a Scottish space contractor.</p>"},
+    "excerpt": {"rendered": "<p>Glasgow satellite hardware company closes pre-seed.</p>"}
+  },
+  {
+    "id": 39722,
+    "date": "2026-08-06T09:12:00",
+    "date_gmt": "2026-08-06T08:12:00",
+    "guid": {"rendered": "https://startupsmagazine.co.uk/?p=39722"},
+    "slug": "european-ai-startups-record-share",
+    "status": "publish",
+    "type": "post",
+    "link": "https://startupsmagazine.co.uk/european-ai-startups-record-share",
+    "title": {"rendered": "European AI startups secure record share of VC capital"},
+    "content": {"rendered": "<p>A new report finds European AI companies took a record share of venture capital in the first half of 2026. The analysis covers more than four hundred rounds.</p>"},
+    "excerpt": {"rendered": "<p>Sector analysis, no single company.</p>"}
+  },
+  {
+    "id": 39701,
+    "date": "2026-08-04T11:30:00",
+    "date_gmt": "2026-08-04T10:30:00",
+    "guid": {"rendered": "https://startupsmagazine.co.uk/?p=39701"},
+    "slug": "hartwell-diagnostics-seed",
+    "status": "publish",
+    "type": "post",
+    "link": "https://startupsmagazine.co.uk/hartwell-diagnostics-seed",
+    "title": {"rendered": "Hartwell Diagnostics secures seed funding for at-home testing"},
+    "content": {"rendered": "<p>Hartwell Diagnostics, incorporated in Leeds in January 2026, has secured a seed round to scale its at-home sample-collection kits. The round was led by a Yorkshire fund.</p>"},
+    "excerpt": {"rendered": "<p>Leeds diagnostics company raises seed.</p>"}
+  }
+]

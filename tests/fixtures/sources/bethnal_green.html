@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Portfolio | Bethnal Green Ventures</title>
+</head>
+<body>
+  <header class="navigation"><a href="/" class="navigation_menu-link w-inline-block">BGV</a></header>
+  <main>
+    <h3>Meet our portfolio companies</h3>
+
+    <!--
+      The live layout, abridged (fetched 9 August 2026). Webflow.
+
+      The theme filter list below is also `.w-dyn-item` — on the real page 35
+      nodes carry that class and only 12 are ventures. That is why the adapter
+      selects `.grid_item` first. `conception_x` shipped exactly this bug: the
+      guard counted cards, every name came back empty, and the source reported
+      `ok (0)` for a total failure.
+
+      The first link in a card is the venture's own site, and a third of them
+      are still plain http — which is why `source_url` is the portfolio page
+      and the website is kept as structured evidence instead.
+    -->
+
+    <div class="filter-list w-dyn-list">
+      <div role="list" class="w-dyn-items">
+        <div role="listitem" class="card_theme-item w-dyn-item">
+          <div class="theme_tag">Healthy Lives</div>
+        </div>
+        <div role="listitem" class="card_theme-item w-dyn-item">
+          <div class="theme_tag">Sustainable Future</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="portfolio_grid w-dyn-list">
+      <div role="list" class="w-dyn-items">
+
+        <div role="listitem" class="grid_item w-dyn-item">
+          <div class="card_component is-white"><div class="card_inner"><div class="card_content">
+            <div class="card_portfolio-inner">
+              <a href="https://www.aparito.com" class="card_logo-wrapper w-inline-block">
+                <img src="" loading="lazy" alt="Aparito" class="card_logo large">
+              </a>
+              <h4>Aparito</h4>
+              <div class="card_text">Patient monitoring made different</div>
+              <a href="https://www.aparito.com" class="card_link">Visit website</a>
+              <div class="card_tag">Exited</div>
+              <div class="card_theme">Healthy Lives</div>
+            </div>
+          </div></div></div>
+        </div>
+
+        <div role="listitem" class="grid_item w-dyn-item">
+          <div class="card_component is-white"><div class="card_inner"><div class="card_content">
+            <div class="card_portfolio-inner">
+              <a href="https://www.commonplace.is" class="card_logo-wrapper w-inline-block">
+                <img src="" loading="lazy" alt="Commonplace" class="card_logo large">
+              </a>
+              <h4>Commonplace</h4>
+              <div class="card_text">A platform connecting everyone involved in building decisions</div>
+              <a href="https://www.commonplace.is" class="card_link">Visit website</a>
+              <div class="card_theme">Sustainable Future</div>
+            </div>
+          </div></div></div>
+        </div>
+
+        <div role="listitem" class="grid_item w-dyn-item">
+          <div class="card_component is-white"><div class="card_inner"><div class="card_content">
+            <div class="card_portfolio-inner">
+              <a href="https://www.drdoctor.co.uk" class="card_logo-wrapper w-inline-block">
+                <img src="" loading="lazy" alt="DrDoctor" class="card_logo large">
+              </a>
+              <h4>DrDoctor</h4>
+              <div class="card_text">The patient platform to unlock effective care</div>
+              <a href="https://www.drdoctor.co.uk" class="card_link">Visit website</a>
+              <div class="card_theme">Healthy Lives</div>
+            </div>
+          </div></div></div>
+        </div>
+
+        <!--APPEND-VENTURE-HERE-->
+      </div>
+    </div>
+  </main>
+  <footer><p>&copy; 2026 Bethnal Green Ventures</p></footer>
+</body>
+</html>

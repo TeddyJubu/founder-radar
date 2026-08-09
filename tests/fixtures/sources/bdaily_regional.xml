@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>North East | Bdaily</title>
+    <link>https://bdaily.co.uk</link>
+    <description>The latest North East news from Bdaily.</description>
+    <item>
+      <title>Gateshead startup Wearside Optics raises pre-seed round</title>
+      <link>https://bdaily.co.uk/articles/2026/08/07/wearside-optics-raises-pre-seed</link>
+      <description>Wearside Optics, incorporated in Gateshead in February 2026, has raised a pre-seed round from North East angels.</description>
+      <pubDate>Fri, 07 Aug 26 08:33:50 +0000</pubDate>
+      <guid>https://bdaily.co.uk/articles/2026/08/07/wearside-optics-raises-pre-seed</guid>
+      <category>Technology</category>
+    </item>
+    <item>
+      <title>Durham spinout Kelvin Bio secures Innovate UK grant</title>
+      <link>https://bdaily.co.uk/articles/2026/08/05/kelvin-bio-innovate-uk-grant</link>
+      <description>Durham University spinout Kelvin Bio has been awarded an Innovate UK Smart grant.</description>
+      <pubDate>Wed, 05 Aug 26 10:05:00 +0000</pubDate>
+      <guid>https://bdaily.co.uk/articles/2026/08/05/kelvin-bio-innovate-uk-grant</guid>
+      <category>Science</category>
+    </item>
+    <item>
+      <title>Dance City appoints artist development manager</title>
+      <link>https://bdaily.co.uk/articles/2026/08/09/dance-city-appoints-manager</link>
+      <description>The Newcastle arts venue has appointed a new artist development manager.</description>
+      <pubDate>Sun, 09 Aug 26 08:33:50 +0000</pubDate>
+      <guid>https://bdaily.co.uk/articles/2026/08/09/dance-city-appoints-manager</guid>
+      <category>Arts</category>
+    </item>
+  </channel>
+</rss>
