@@ -552,3 +552,54 @@ def test_ci_guard_script_actually_fails_on_a_breach(tmp_path):
         done = subprocess.run(["bash", str(sandbox / "scripts" / "ci-guards.sh")],
                               capture_output=True, text=True, timeout=120)
         assert done.returncode == 1, f"{relative} slipped past the guard"
+
+
+# ------------------------------------------------------------------ .env
+
+
+def test_env_file_is_loaded_by_the_cli(tmp_path, monkeypatch):
+    """The README's quick start is `cp .env.example .env`, then `doctor`.
+
+    Nothing in the process read that file. The systemd unit loads it with
+    `EnvironmentFile=`, so the server was always fine — but anyone following
+    the documented local steps filled in a Companies House key and was then
+    told the key was missing, which is the exact wall this sits behind.
+    """
+    from radar.cli import load_env_file
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "# a comment\n"
+        "\n"
+        "COMPANIES_HOUSE_API_KEY=abc-123\n"
+        'export TELEGRAM_CHAT_ID="98765"\n'
+        "MALFORMED_LINE_NO_EQUALS\n"
+        "EMPTY_VALUE=\n"
+    )
+    for name in ("COMPANIES_HOUSE_API_KEY", "TELEGRAM_CHAT_ID", "EMPTY_VALUE"):
+        monkeypatch.delenv(name, raising=False)
+
+    assert load_env_file(env) == 2
+    assert os.environ["COMPANIES_HOUSE_API_KEY"] == "abc-123"
+    assert os.environ["TELEGRAM_CHAT_ID"] == "98765"       # export + quotes
+    assert "EMPTY_VALUE" not in os.environ                 # blank is not a value
+
+
+def test_a_real_environment_variable_beats_the_env_file(tmp_path, monkeypatch):
+    """`CH_API_KEY=... founder-radar run` has to keep working, and systemd's
+    own EnvironmentFile must not be second-guessed by a stray file on disk."""
+    from radar.cli import load_env_file
+
+    env = tmp_path / ".env"
+    env.write_text("COMPANIES_HOUSE_API_KEY=from-the-file\n")
+    monkeypatch.setenv("COMPANIES_HOUSE_API_KEY", "from-the-shell")
+
+    assert load_env_file(env) == 0
+    assert os.environ["COMPANIES_HOUSE_API_KEY"] == "from-the-shell"
+
+
+def test_a_missing_env_file_is_not_an_error(tmp_path):
+    """Most runs have no .env at all — systemd injects the variables."""
+    from radar.cli import load_env_file
+
+    assert load_env_file(tmp_path / "nope.env") == 0
