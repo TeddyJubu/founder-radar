@@ -113,6 +113,39 @@ def test_one_known_attribute_cannot_shortlist(cfg):
     assert s.tier == "watchlist"           # NOT shortlist
 
 
+def test_coverage_counts_known_attributes_not_weighted_share(cfg):
+    """The spec contradicts itself here; this names which reading won.
+
+    06-scoring §6 writes `coverage = max_ach / max_all` — a weighted share.
+    The worked table in §2.6 gives 0.40 / 0.60 / 0.80 / 1.00 for two, three,
+    four and five known attributes — a plain count. Those are different
+    formulas and both are in the document.
+
+    The count is implemented, for two reasons. It satisfies the §2.6 table,
+    and it is the more honest number: coverage answers "how much did we find
+    out?", not "how much of the weight did we find out?".
+
+    `test_one_known_attribute_cannot_shortlist` already fails under the
+    weighted reading — two known attributes carrying half the weight give
+    exactly 0.50, which does not clear a `< 0.50` assertion. But it fails
+    there as a *shortlisting* test, so the next person could reasonably
+    "fix" the assertion instead of reverting the formula. This test exists so
+    the failure names the actual decision.
+    """
+    c = C(sector="climate_tech", geography="north_east",
+          stage=None, founder_signal=None, traction_signal=None)
+    fit = fund_fit(c, "northstar", cfg)
+
+    known = sum(1 for a in SCORED_ATTRIBUTES if getattr(c, a, None) is not None)
+    assert known == 2
+    assert fit.coverage == 0.40, "coverage is a count of known attributes: 2 of 5"
+
+    weighted = fit.max_achievable / fit.max_all
+    assert weighted == 0.50, "the §6 formula on this company, for the record"
+    assert fit.coverage != weighted, (
+        "the two readings have converged — re-read 06-scoring §6 against §2.6")
+
+
 def test_derivation_lets_a_registry_company_shortlist(cfg):
     """THE regression guard on the registry-first fix. Without the
     derivation rules in 06-scoring §2 this company scores on geography

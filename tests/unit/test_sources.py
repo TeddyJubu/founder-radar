@@ -44,14 +44,24 @@ import pytest
 from radar.fetch.layout import LayoutChanged
 from radar.sources import REGISTRY, TIER_1_SOURCES
 from radar.sources import (
+    bdaily_regional,
+    bethnal_green,
     businesscloud,
     cambridge_enterprise,
+    carbon13,
     companies_house,
     conception_x,
+    converge,
+    edinburgh_innovations,
     entrepreneur_first,
+    founders_factory,
     govuk_search,
     northern_accelerator,
     oxford_innovation,
+    sheffield,
+    startups_magazine,
+    techstars_london,
+    ucl_ventures,
     uktn,
     vc_portfolios,
     zinc_vc,
@@ -217,6 +227,139 @@ def check_entrepreneur_first(items):
     assert any(i.structured["founded_year"] == 2026 for i in items)
 
 
+def check_startups_magazine(items):
+    """wp-json over RSS: the feed carries summaries, the API carries articles."""
+    assert all(i.structured["full_text_in_feed"] is True for i in items)
+    assert all(i.structured["date_confidence"] == "exact" for i in items)
+    assert all(len(i.body_text or "") > 120 for i in items)     # real article text
+    assert any(i.kind_hint == "funding_round" for i in items)
+    # A sector round-up is not a funding announcement about one company.
+    assert any(i.kind_hint == "news_mention" for i in items)
+
+
+def check_bdaily_regional(items):
+    """Excerpt-only by design, and scoped to one region.
+
+    `full_text_in_feed` is False on every item — that is a statement about the
+    source, not a measurement, and it is what makes stage ③ pay an article
+    fetch here but not for BusinessCloud.
+    """
+    assert all(i.structured["full_text_in_feed"] is False for i in items)
+    assert all(i.structured["hq_region"] == "north_east" for i in items)
+    assert all(i.structured["date_confidence"] == "exact" for i in items)
+    assert any(i.kind_hint == "funding_round" for i in items)
+    # An arts appointment is not a funding round; the adapter must not guess.
+    assert any(i.kind_hint == "news_mention" for i in items)
+
+
+def check_edinburgh_innovations(items):
+    """The date is parsed out of display text, so it is worth asserting."""
+    assert all(i.structured["university_name"] == "University of Edinburgh"
+               for i in items)
+    assert any(i.published_at == date(2026, 7, 20) for i in items)
+    assert all(i.structured["date_confidence"] == "exact" for i in items)
+    # Scotland is neither North East nor Yorkshire — these route to DSW and
+    # Outward, never to Northstar's or Anticus's regional vehicles.
+    assert all(i.structured["hq_region"] == "uk_regions" for i in items)
+    assert any("Investment" in i.structured["tags"] for i in items)
+
+
+def check_ucl_ventures(items):
+    """The only Tier 2 HTML source with a machine-readable date."""
+    assert all(i.structured["hq_city"] == "London" for i in items)
+    assert any(i.published_at == date(2026, 7, 27) for i in items)
+    assert all(i.structured["date_confidence"] == "exact" for i in items)
+    # The kicker decides whether this is a company story. Events are kept and
+    # tagged, never dropped in the adapter — the prefilter owns that call.
+    spinouts = [i for i in items if i.structured.get("is_university_spinout")]
+    assert len(spinouts) == 2
+    assert any("Events & programmes" in i.structured["tags"] for i in items)
+
+
+def check_bethnal_green(items):
+    """Undated portfolio: freshness is what changed, never a founding claim."""
+    assert all(i.published_at == RUN_DATE for i in items)       # stamped by diff()
+    assert all(i.structured["bootstrap"] is True for i in items)
+    assert all(i.structured["date_confidence"] == "inferred" for i in items)
+    assert all(i.structured["age_source"] == "unknown" for i in items)
+    assert all(i.structured["stage"] == "pre_seed" for i in items)
+    # The provenance link is the portfolio page, not the venture's own site:
+    # a third of those are still plain http (see `oxford_innovation`).
+    assert all(i.source_url == "https://bethnalgreenventures.com/portfolio"
+               for i in items)
+    assert all(i.structured["company_website"] for i in items)
+    # An exited venture is flagged, not dropped — the gates own that decision.
+    assert any(i.structured.get("exited") for i in items)
+    assert any("Healthy Lives" in i.structured["themes"] for i in items)
+
+
+def check_carbon13(items):
+    """A venture builder, so a post with no funding language is a cohort
+    announcement rather than a bare mention — that default is the difference
+    between this and the reference RSS adapter."""
+    assert all(i.structured["accelerator_name"] == "Carbon13" for i in items)
+    assert all(i.structured["sector"] == "climate_tech" for i in items)
+    assert all(i.structured["stage"] == "pre_seed" for i in items)
+    assert any(i.kind_hint == "accelerator_cohort" for i in items)
+    assert any(i.kind_hint == "funding_round" for i in items)
+
+
+def check_converge(items):
+    """04-sources calls this RSS at /updates/; that URL is an HTML page. The
+    site is WordPress and wp-json carries the full article, so that is what the
+    adapter reads — the ledger row means "there is a feed", not "call this"."""
+    assert all(i.structured["accelerator_name"] == "Converge" for i in items)
+    assert all(i.structured["full_text_in_feed"] is True for i in items)
+    # Scotland is `uk_regions`: outside every North East and Yorkshire mandate.
+    assert all(i.structured["hq_region"] == "uk_regions" for i in items)
+    assert any(i.kind_hint == "accelerator_cohort" for i in items)
+
+
+def check_sheffield(items):
+    """Yorkshire is a hard mandate for both Anticus vehicles, so the region
+    hint here is doing routing work rather than decorating a row."""
+    assert all(i.structured["hq_region"] == "yorkshire" for i in items)
+    assert all(i.structured["university_name"] == "University of Sheffield"
+               for i in items)
+    assert any(i.published_at == date(2026, 6, 1) for i in items)
+    # The card is the anchor: every item must carry a real provenance URL.
+    assert all(i.source_url.startswith("https://www.sheffield.ac.uk/commercialisation/")
+               for i in items)
+    assert any(i.structured.get("is_university_spinout") for i in items)
+
+
+def check_founders_factory(items):
+    """Relative timestamps only, so the date is unknown and says so.
+
+    Guessing the crawl day would invent a fact the freshness gate would then
+    trust. Unknown passes and flags, which is the whole `None` is not `0` rule
+    applied to a date.
+    """
+    assert all(i.published_at is None for i in items)
+    assert all(i.structured["date_confidence"] == "unknown" for i in items)
+    assert all(i.structured["age_source"] == "unknown" for i in items)
+    assert any(i.kind_hint == "funding_round" for i in items)
+    # The first card inlines a <style> block; CSS must not reach stage ③.
+    assert all("box-sizing" not in (i.body_text or "") for i in items)
+    assert all(not (i.body_text or "").startswith(".css-") for i in items)
+
+
+def check_techstars_london(items):
+    """The newsroom is global, and the adapter must not pretend otherwise.
+
+    04-sources calls this "Techstars London", but a live read returns Boston
+    and MENAT. Asserting a London geography here would put a false fact into
+    the record that the geography gate would then trust, so the adapter emits
+    no region at all and the gate throws the rest away.
+    """
+    assert all("hq_region" not in i.structured for i in items)
+    assert all("hq_city" not in i.structured for i in items)
+    assert all(i.structured["accelerator_name"] == "Techstars" for i in items)
+    assert any(i.kind_hint == "accelerator_cohort" for i in items)
+    # The fixture deliberately carries non-UK items — that is the real feed.
+    assert any("Boston" in i.title or "MENAT" in i.title for i in items)
+
+
 def check_vc_portfolios(items):
     assert all(i.structured["on_vc_portfolio"] is True for i in items)
     assert all(i.kind_hint == "vc_portfolio_listing" for i in items)
@@ -294,6 +437,66 @@ CASES: dict[str, Case] = {
         parse=lambda: _ch_items(API_FIXTURES / "ch_advanced_search_page.json"),
         changed=lambda: _ch_items(SOURCE_FIXTURES / "companies_house_CHANGED.json"),
         check=check_companies_house,
+    ),
+
+    # ---- 04-sources Tier 2 --------------------------------------------------
+    "startups_magazine": Case(
+        parse=lambda: startups_magazine.ADAPTER.parse(load("startups_magazine.json")),
+        changed=lambda: startups_magazine.ADAPTER.parse(
+            load("startups_magazine_CHANGED.json")),
+        check=check_startups_magazine,
+    ),
+    "bdaily_regional": Case(
+        parse=lambda: bdaily_regional.ADAPTER.parse(load("bdaily_regional.xml")),
+        changed=lambda: bdaily_regional.ADAPTER.parse(
+            load("bdaily_regional_CHANGED.xml")),
+        check=check_bdaily_regional,
+    ),
+    "edinburgh_innovations": Case(
+        parse=lambda: edinburgh_innovations.ADAPTER.parse(
+            load("edinburgh_innovations.html")),
+        changed=lambda: edinburgh_innovations.ADAPTER.parse(
+            load("edinburgh_innovations_CHANGED.html")),
+        check=check_edinburgh_innovations,
+    ),
+    "ucl_ventures": Case(
+        parse=lambda: ucl_ventures.ADAPTER.parse(load("ucl_ventures.html")),
+        changed=lambda: ucl_ventures.ADAPTER.parse(load("ucl_ventures_CHANGED.html")),
+        check=check_ucl_ventures,
+    ),
+    "bethnal_green": Case(
+        parse=lambda: _diffed(bethnal_green.ADAPTER, "bethnal_green.html"),
+        changed=lambda: bethnal_green.ADAPTER.parse(load("bethnal_green_CHANGED.html")),
+        check=check_bethnal_green,
+    ),
+    "carbon13": Case(
+        parse=lambda: carbon13.ADAPTER.parse(load("carbon13.xml")),
+        changed=lambda: carbon13.ADAPTER.parse(load("carbon13_CHANGED.xml")),
+        check=check_carbon13,
+    ),
+    "converge": Case(
+        parse=lambda: converge.ADAPTER.parse(load("converge.json")),
+        changed=lambda: converge.ADAPTER.parse(load("converge_CHANGED.json")),
+        check=check_converge,
+    ),
+    "sheffield": Case(
+        parse=lambda: sheffield.ADAPTER.parse(load("sheffield.html")),
+        changed=lambda: sheffield.ADAPTER.parse(load("sheffield_CHANGED.html")),
+        check=check_sheffield,
+    ),
+    "founders_factory": Case(
+        parse=lambda: founders_factory.ADAPTER.parse(load("founders_factory.html")),
+        changed=lambda: founders_factory.ADAPTER.parse(
+            load("founders_factory_CHANGED.html")),
+        check=check_founders_factory,
+        dated=False,        # relative timestamps only — see the adapter docstring
+    ),
+    "techstars_london": Case(
+        parse=lambda: techstars_london.ADAPTER.parse(load("techstars_london.html")),
+        changed=lambda: techstars_london.ADAPTER.parse(
+            load("techstars_london_CHANGED.html")),
+        check=check_techstars_london,
+        dated=False,        # the newsroom listing states no date
     ),
 }
 
@@ -410,12 +613,18 @@ def test_conception_x_returns_only_new_ventures_after_the_first_run(db):
                                        _ctx(StubHttp(), db=db))
     assert second == []
 
+    # The new venture has to arrive in the *live* markup. Appending a
+    # `.venture-card` would prove nothing: `select_any` stops at
+    # `.portfolio-collection-item`, so the legacy card would never be read.
     grown = page.replace(
-        "</section>",
-        '<div class="venture-card" data-cohort="CX26" data-university="Durham University">'
-        '<a href="/portfolio/wearside-optics"><h3 class="venture-name">Wearside Optics</h3></a>'
-        '<p class="venture-blurb">Free-space optical links for rural backhaul.</p>'
-        "</div></section>")
+        "<!--APPEND-VENTURE-HERE-->",
+        '<div role="listitem" class="portfolio-collection-item w-dyn-item">'
+        '<div class="portfolio-def-info"><div class="portfolio-title-wrap">'
+        '<div class="para-xxl-24">Wearside Optics</div></div>'
+        '<div class="portfolio-def-cohort">'
+        '<div fs-list-field="cohort" class="label-s-14">CX26</div></div>'
+        "</div></div>")
+    assert grown != page, "fixture lost its append marker"
     third = conception_x.ADAPTER.diff(conception_x.ADAPTER.parse(grown),
                                       _ctx(StubHttp(), db=db))
     assert [i.title for i in third] == ["Wearside Optics"]

@@ -30,6 +30,37 @@ class NotBuilt(click.ClickException):
         super().__init__(f"{what} is not implemented yet")
 
 
+def load_env_file(path: Path | None = None) -> int:
+    """Read `.env` into the environment. Returns how many names it set.
+
+    The systemd unit loads this file with `EnvironmentFile=`, so the server was
+    always fine — but the README's own quick start is `cp .env.example .env`
+    then `founder-radar doctor`, and nothing in the process read it. Following
+    the documented steps exactly, you filled in a Companies House key and were
+    then told the key was missing.
+
+    A real environment variable always wins, so `CH_API_KEY=... founder-radar`
+    still overrides the file, and systemd's copy is untouched. Hand-parsed
+    rather than adding python-dotenv: `KEY=value`, `#` comments, optional
+    `export`, and surrounding quotes stripped is the whole format in use.
+    """
+    path = path or Path.cwd() / ".env"
+    if not path.is_file():
+        return 0
+    loaded = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.removeprefix("export ").partition("=")
+        name, value = name.strip(), value.strip().strip('"').strip("'")
+        if not name or not value or name in os.environ:
+            continue
+        os.environ[name] = value
+        loaded += 1
+    return loaded
+
+
 def _db(ctx: click.Context) -> Db:
     db = Db(ctx.obj["db_path"])
     if not db.tables():
@@ -369,6 +400,7 @@ def doctor(ctx):
 
 
 def main() -> None:
+    load_env_file()
     cli(obj={})
 
 
