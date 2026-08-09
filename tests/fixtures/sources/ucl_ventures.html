@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>News | UCL Ventures</title>
+</head>
+<body>
+  <header class="global-navigation"><a href="/">UCL Ventures</a></header>
+  <main>
+    <h1>News</h1>
+
+    <!--
+      The live layout, abridged (fetched 9 August 2026). Drupal, so `.base-card`
+      is a real theme class rather than utility soup, and each card carries a
+      machine-readable <time datetime>. That makes this the only Tier 2 HTML
+      source whose date is not parsed out of display text.
+
+      The first `.base-card__paragraph` is the section kicker. Only
+      "Spinout & portfolio news" carries companies; events are people-news.
+      The adapter keeps the kicker as a tag and lets the prefilter decide.
+    -->
+
+    <div class="view-content">
+
+      <div data-history-node-id="705" class="base-card col-12 col-md-6">
+        <div class="base-card__container">
+          <a class="link link--overlay" href="/spinout-portfolio-news/2026/new-treatment-motor-neurone-disease">
+            <span>New treatment for Motor Neurone Disease to be trialled</span>
+          </a>
+          <div class="base-card__content">
+            <div class="base-card__paragraph">Spinout &amp; portfolio news</div>
+            <div class="base-card__paragraph">UCL spinout Trace Neurosciences reaches a major milestone.</div>
+            <time datetime="2026-07-27">27 July 2026</time>
+          </div>
+        </div>
+      </div>
+
+      <div data-history-node-id="702" class="base-card col-12 col-md-6">
+        <div class="base-card__container">
+          <a class="link link--overlay" href="/spinout-portfolio-news/2026/motioninput-games-world-cup">
+            <span>MotionInput Games’ app allows gamers with disabilities to enjoy World Cup</span>
+          </a>
+          <div class="base-card__content">
+            <div class="base-card__paragraph">Spinout &amp; portfolio news</div>
+            <div class="base-card__paragraph">The UCL spinout has released an accessibility app.</div>
+            <time datetime="2026-07-10">10 July 2026</time>
+          </div>
+        </div>
+      </div>
+
+      <!-- events are not company news: parsed, tagged, and left for the prefilter -->
+      <div data-history-node-id="698" class="base-card col-12 col-md-6">
+        <div class="base-card__container">
+          <a class="link link--overlay" href="/events-programmes/2026/autolus-founder-discusses-journey">
+            <span>Autolus founder discusses the long journey from research to impact</span>
+          </a>
+          <div class="base-card__content">
+            <div class="base-card__paragraph">Events &amp; programmes</div>
+            <div class="base-card__paragraph">A conversation with the founder.</div>
+            <time datetime="2026-06-30">30 June 2026</time>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+  <footer><p>&copy; 2026 UCL Business</p></footer>
+</body>
+</html>

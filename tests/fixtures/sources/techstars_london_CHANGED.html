@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><title>Newsroom | Techstars</title></head>
+<body>
+  <main>
+    <h1>Newsroom</h1>
+    <!--
+      Live layout, abridged (fetched 9 August 2026).
+
+      The newsroom is GLOBAL — the ledger calls this "Techstars London" but a
+      live read returns Boston and MENAT alongside London. The adapter does not
+      filter: geography is a gate, not a parse, and asserting London here would
+      put a false fact into the record that the gate would then trust. That is
+      why the fixture deliberately carries two non-UK items.
+
+      MUI component classes (`MuiCard-root`) are stable across builds; the
+      emotion hash (`mui-5kuuch`) is not, so the former is the hook.
+    -->
+    <div class="MuiGrid-root">
+      <div class="MuiPaper-root mui-5kuuch">
+        <a href="/newsroom/techstars-london-2026-class">
+          <h3>Meet the Techstars London 2026 accelerator class</h3>
+        </a>
+        <p>Twelve companies join the London programme this autumn.</p>
+      </div>
+      <div class="MuiPaper-root mui-5kuuch">
+        <a href="/newsroom/why-fall-kick-off-belongs-in-boston">
+          <h3>Why Techstars Global Fall Kick-Off Belongs in Boston</h3>
+        </a>
+        <p>Techstars is bringing its global Fall 2026 class to Boston.</p>
+      </div>
+      <div class="MuiPaper-root mui-5kuuch">
+        <a href="/newsroom/techstars-partners-with-emirates-nbd">
+          <h3>Techstars Partners with Emirates NBD across MENAT</h3>
+        </a>
+        <p>A new partnership to accelerate enterprise AI and fintech.</p>
+      </div>
+    </div>
+  </main>
+</body></html>

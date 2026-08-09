@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>News | Edinburgh Innovations</title>
+</head>
+<body>
+  <header class="nav"><a href="/">Edinburgh Innovations</a><a href="/services">Services</a></header>
+  <main>
+    <h1>News</h1>
+
+    <!--
+      The live layout, abridged (fetched 9 August 2026). The card is the <a>
+      itself, and its classes are Tailwind utilities that change with the
+      palette — so the adapter selects on `a[href*="/news/"]` instead. A link
+      into /news/ is what a news card *is*.
+
+      The date shares a flex row with a kicker ("News"), so it is pulled by
+      pattern rather than by position.
+    -->
+
+    <div class="grid md:grid-cols-3 gap-y-16">
+
+      <a href="https://edinburgh-innovations.ed.ac.uk/news/university-companies-attract-new-investment"
+         class="group bg-teal text-white transition-all py-4 flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between text-xs uppercase font-lead p-6">
+            <div class="">20 Jul 2026</div>
+            <div class="">News&nbsp;</div>
+          </div>
+          <div class="text-lg lg:text-xl p-6">
+            <div class="line-clamp-4">University companies bring new investors to Scotland, report shows</div>
+          </div>
+        </div>
+        <div class="p-6 pt-0 relative flex flex-wrap">
+          <div class="border border-white text-2xs uppercase rounded-full px-4 py-1">Investment</div>
+          <div class="border border-white text-2xs uppercase rounded-full px-4 py-1">Startups and spinouts</div>
+        </div>
+      </a>
+
+      <a href="https://edinburgh-innovations.ed.ac.uk/news/thermal-spinout-launches-with-seed"
+         class="group bg-teal text-white transition-all py-4 flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between text-xs uppercase font-lead p-6">
+            <div class="">06 Jul 2026</div>
+            <div class="">News&nbsp;</div>
+          </div>
+          <div class="text-lg lg:text-xl p-6">
+            <div class="line-clamp-4">Edinburgh spinout Cairnwell Thermal launches with seed funding</div>
+          </div>
+        </div>
+        <div class="p-6 pt-0 relative flex flex-wrap">
+          <div class="border border-white text-2xs uppercase rounded-full px-4 py-1">Spinout</div>
+        </div>
+      </a>
+
+      <a href="https://edinburgh-innovations.ed.ac.uk/news/edinburgh-tops-global-innovation-ranking"
+         class="group bg-teal text-white transition-all py-4 flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between text-xs uppercase font-lead p-6">
+            <div class="">29 Jun 2026</div>
+            <div class="">News&nbsp;</div>
+          </div>
+          <div class="text-lg lg:text-xl p-6">
+            <div class="line-clamp-4">Edinburgh tops global innovation ranking for a third year</div>
+          </div>
+        </div>
+        <div class="p-6 pt-0 relative flex flex-wrap">
+          <div class="border border-white text-2xs uppercase rounded-full px-4 py-1">Commercialisation</div>
+        </div>
+      </a>
+
+    </div>
+  </main>
+  <footer><p>&copy; 2026 The University of Edinburgh</p></footer>
+</body>
+</html>
