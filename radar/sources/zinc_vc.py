@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from radar.sources._common import after, clean_text, unique_by_id, wp_fingerprint, wp_posts
+from radar.sources._common import after, clean_text, require_ok, unique_by_id, wp_fingerprint, wp_posts
 from radar.sources.base import FetchContext, RawItem
 
 BASE = "https://www.zinc.vc"
@@ -44,8 +44,7 @@ class ZincVcAdapter:
         resp = ctx.http.get(ENDPOINT, params={"per_page": PER_PAGE, "page": 1})
         if resp.status == 304:
             return []
-        if not resp.ok:
-            raise RuntimeError(f"{self.key}: HTTP {resp.status} from {ENDPOINT}")
+        require_ok(resp, self.key, ENDPOINT)
         return list(after(unique_by_id(self.parse(resp.text)), ctx.since))
 
     def parse(self, payload: str | bytes) -> list[RawItem]:

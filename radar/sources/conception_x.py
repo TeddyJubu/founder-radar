@@ -31,6 +31,7 @@ from radar.sources._common import (
     guard_nonempty,
     html_doc,
     node_fingerprint,
+    require_ok,
     select_any,
     slug_of,
     snapshot_diff,
@@ -77,8 +78,7 @@ class ConceptionXAdapter:
         resp = ctx.http.get(PORTFOLIO)
         if resp.status == 304:
             return []
-        if not resp.ok:
-            raise RuntimeError(f"{self.key}: HTTP {resp.status} from {PORTFOLIO}")
+        require_ok(resp, self.key, PORTFOLIO)
         return self.diff(self.parse(resp.text), ctx)
 
     # ------------------------------------------------------------------ parse

@@ -72,6 +72,47 @@ def test_one_source_failure_does_not_stop_run(db, config, monkeypatch):
     assert result.items_fetched >= 0                 # the run completed
 
 
+def test_degraded_source_is_a_run_log_warning_not_a_failure(db, config, monkeypatch):
+    """A 403 from a Tier 1 source is a run-log warning, not a failed run.
+
+    The site is up, the crawler is not welcome — degraded, so the run still
+    counts as successful (a block is not an outage and is usually fixable by
+    allowlisting), but the warning is on the run row where the heartbeat and
+    a human reading `status` can see it.
+    """
+    import radar.sources.uktn as uktn
+    from radar.sources.base import SourceBlocked
+
+    def blocked(self, ctx):  # noqa: ARG002 - the adapter protocol
+        raise SourceBlocked(
+            "uktn",
+            "HTTP 403 from https://www.uktech.news/wp-json/wp/v2/posts/latest "
+            "— the site is refusing us (possible anti-bot block)",
+        )
+
+    monkeypatch.setattr(type(uktn.ADAPTER), "fetch", blocked)
+
+    from radar.pipeline import run_pipeline
+
+    result = run_pipeline(db, config=config, http=FakeHttp(), use_llm=False,
+                          gateway=None, now=date(2026, 8, 8))
+    # The run-wide status is `partial` here only because the offline chaos
+    # harness's empty responses trip `LayoutChanged` on other adapters — the
+    # point is that uktn's block is its own `degraded` verdict, not `failed`.
+    uktn_row = next(s for s in result.sources if s["key"] == "uktn")
+    assert uktn_row["status"] == "degraded"
+    assert any("uktn" in w and "degraded" in w for w in result.warnings)
+
+    row = db.one("SELECT * FROM run ORDER BY id DESC LIMIT 1")
+    assert "uktn" in (row["warnings"] or "")
+    assert "degraded" in (row["warnings"] or "")
+
+    src = db.one(
+        "SELECT status FROM run_source WHERE source_key = 'uktn' "
+        "ORDER BY run_id DESC LIMIT 1")
+    assert src["status"] == "degraded"
+
+
 def test_every_run_writes_a_run_log_row(db, config):
     """FR-9.2 — the row every deployment gets checked against."""
     from radar.pipeline import run_pipeline

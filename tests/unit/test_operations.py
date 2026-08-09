@@ -129,6 +129,109 @@ def test_status_without_the_flag_sends_nothing(tmp_path, telegram_outbox):
     assert result.exit_code == 0
 
 
+def _db_with_blocked_source(path: Path, *, blocked_checks: int,
+                            source_key: str = "northern_accelerator") -> Db:
+    """A healthy recent run plus `blocked_checks` consecutive `degraded` days
+    for one source — the shape the blocked-source heartbeat reads."""
+    db = Db(path)
+    db.migrate()
+    stamp = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    db.execute(
+        """INSERT INTO run(started_at, finished_at, mode, status, items_fetched,
+                           items_extracted, companies_new, companies_merged,
+                           gated_out, shortlisted, llm_calls, llm_cost_usd)
+           VALUES (?,?,'daily','ok',0,0,0,0,0,0,0,0)""",
+        (stamp, stamp),
+    )
+    today = date.today()
+    for offset in range(blocked_checks):
+        day = (today - timedelta(days=offset)).isoformat()
+        db.execute(
+            """INSERT INTO source_health(source_key, observed_on, items, status, note)
+               VALUES (?,?,0,'degraded',?)""",
+            (source_key, day,
+             f"HTTP 403 from https://{source_key}.example — the site is "
+             "refusing us (possible anti-bot block)"),
+        )
+    db.close()
+    return db
+
+
+def test_heartbeat_alerts_when_a_tier1_source_is_blocked_twice(tmp_path, telegram_outbox):
+    """A Tier 1 source refused on two consecutive checks is dying, not flaky
+    — the WAF variant of the source-down alert. One blocked day can be a WAF
+    sneeze; two in a row is worth paging."""
+    path = tmp_path / "radar.db"
+    _db_with_blocked_source(path, blocked_checks=2)
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+
+    assert len(telegram_outbox) == 1, telegram_outbox
+    assert "Source blocked" in telegram_outbox[0]
+    assert "northern_accelerator" in telegram_outbox[0]
+    assert "2 consecutive checks" in telegram_outbox[0]
+    assert result.exit_code == 1
+
+
+def test_heartbeat_reports_the_full_block_streak(tmp_path, telegram_outbox):
+    """The alert says how long the block has been going on, so a month-long
+    WAF block escalates visibly instead of repeating the same "2 checks" line
+    every day."""
+    path = tmp_path / "radar.db"
+    _db_with_blocked_source(path, blocked_checks=5)
+
+    _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+
+    assert len(telegram_outbox) == 1, telegram_outbox
+    assert "northern_accelerator (5 consecutive checks)" in telegram_outbox[0]
+
+
+def test_heartbeat_ignores_a_broken_block_streak(tmp_path, telegram_outbox):
+    """Consecutive means consecutive — a day the source came back resets the
+    count, so a WAF that lets us through every other day never pages."""
+    path = tmp_path / "radar.db"
+    _db_with_blocked_source(path, blocked_checks=0)     # healthy run only
+    db = Db(path)
+    today = date.today()
+    for offset, status in ((0, "degraded"), (1, "ok"), (2, "degraded")):
+        db.execute(
+            """INSERT INTO source_health(source_key, observed_on, items, status, note)
+               VALUES (?,?,0,?,?)""",
+            ("northern_accelerator", (today - timedelta(days=offset)).isoformat(),
+             status, "x"),
+        )
+    db.close()
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+
+    assert telegram_outbox == []
+    assert result.exit_code == 0
+
+
+def test_heartbeat_is_quiet_after_a_single_blocked_check(tmp_path, telegram_outbox):
+    """One refused check is not yet an alert — the WAF sneeze case."""
+    path = tmp_path / "radar.db"
+    _db_with_blocked_source(path, blocked_checks=1)
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+
+    assert telegram_outbox == []
+    assert result.exit_code == 0
+
+
+def test_heartbeat_ignores_blocked_tier2_sources(tmp_path, telegram_outbox):
+    """Tier 2 sources are allowed to be flaky — a blocked Tier 2 source is a
+    row on the Sources tab, not a pager."""
+    path = tmp_path / "radar.db"
+    _db_with_blocked_source(path, blocked_checks=2, source_key="startups_magazine")
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+
+    assert telegram_outbox == []
+    assert result.exit_code == 0
+
+
 # ------------------------------------------------------------ FR-9.4 backups
 
 

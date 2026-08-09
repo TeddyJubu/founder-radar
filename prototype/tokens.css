@@ -1,0 +1,85 @@
+/* Apple HIG design tokens and base type, shared by every page in the
+ * prototype. Defined once so two surfaces cannot drift into two design
+ * systems — the onboarding page and Today must look like one product.
+ */
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Apple HIG tokens.
+
+   Type scale, 8pt grid and semantic colours taken from the Human Interface
+   Guidelines rather than approximated. Dark mode is a designed peer, not an
+   inversion: elevation is carried by surface lightness, never by shadow.
+   ─────────────────────────────────────────────────────────────────────── */
+:root {
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+          "Helvetica Neue", Inter, system-ui, sans-serif;
+
+  /* HIG type scale — size / line-height */
+  --large-title: 34px;  --large-title-lh: 41px;
+  --title2: 22px;       --title2-lh: 28px;
+  --title3: 20px;       --title3-lh: 25px;
+  --headline: 17px;     --headline-lh: 22px;
+  --body: 17px;         --body-lh: 25px;
+  --subhead: 15px;      --subhead-lh: 20px;
+  --footnote: 13px;     --footnote-lh: 18px;
+  --caption: 12px;      --caption-lh: 16px;
+
+  /* 8pt grid, 4pt sub-increments */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
+  --s6: 32px; --s7: 40px; --s8: 56px;
+
+  --r-control: 10px; --r-card: 16px; --r-sheet: 20px;
+
+  /* System colours */
+  --blue: #007AFF; --green: #34C759; --orange: #FF9500; --red: #FF3B30;
+  --purple: #AF52DE;
+
+  /* Semantic — light */
+  --label: rgba(0,0,0,0.92);
+  --label-2: rgba(60,60,67,0.60);
+  --label-3: rgba(60,60,67,0.30);
+  --bg: #FFFFFF;
+  --bg-2: #F2F2F7;
+  --bg-3: #FFFFFF;
+  --separator: rgba(60,60,67,0.14);
+  --fill: rgba(120,120,128,0.12);
+  --material: rgba(255,255,255,0.72);
+
+  /* Apple's standard easing — used everywhere, no exceptions */
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --label: rgba(255,255,255,0.94);
+    --label-2: rgba(235,235,245,0.60);
+    --label-3: rgba(235,235,245,0.28);
+    --bg: #000000;
+    --bg-2: #1C1C1E;
+    --bg-3: #1C1C1E;
+    --separator: rgba(84,84,88,0.50);
+    --fill: rgba(120,120,128,0.24);
+    --material: rgba(30,30,32,0.72);
+    --blue: #0A84FF; --green: #30D158; --orange: #FF9F0A; --red: #FF453A;
+    --purple: #BF5AF2;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  /* `min-height`, not `height`. A fixed 100% pins the body box to the viewport
+     while long content overflows it — Today never noticed because it fits on
+     one screen, but the onboarding page ran to 5052px inside a 644px box.
+     min-height keeps Today full-bleed and lets a long page grow. */
+  margin: 0; min-height: 100%;
+  background: var(--bg-2);
+  color: var(--label);
+  font-family: var(--font);
+  font-size: var(--body);
+  line-height: var(--body-lh);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv01";
+}
+

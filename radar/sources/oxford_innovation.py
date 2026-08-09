@@ -29,6 +29,7 @@ from radar.sources._common import (
     html_doc,
     node_fingerprint,
     parse_date,
+    require_ok,
     select_any,
     slug_of,
     text_of,
@@ -64,8 +65,7 @@ class OxfordInnovationAdapter:
         resp = ctx.http.get(PORTFOLIO)
         if resp.status == 304:
             return []
-        if not resp.ok:
-            raise RuntimeError(f"{self.key}: HTTP {resp.status} from {PORTFOLIO}")
+        require_ok(resp, self.key, PORTFOLIO)
         return self.parse(resp.text)
 
     def parse(self, payload: str | bytes) -> list[RawItem]:

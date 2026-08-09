@@ -44,7 +44,10 @@ from urllib.parse import urlsplit
 from xml.etree import ElementTree as ET
 
 from radar.sources._common import (
+    BLOCKED_STATUSES,
     LayoutChanged,
+    SourceBlocked,
+    SourceError,
     clean_text,
     guard_nonempty,
     norm_key,
@@ -275,7 +278,16 @@ def _download(http, url: str) -> bytes:
     http.limiter.acquire(urlsplit(url).netloc)
     resp = client.get(url)
     if resp.status_code != 200:
-        raise RuntimeError(f"innovate_uk: HTTP {resp.status_code} from {url}")
+        # innovate_uk fetches bytes through the raw httpx client, so it cannot
+        # use the `require_ok` helper; classify the same way here so a WAF
+        # block is recorded as `degraded`, not `failed` (sources/base.py).
+        if resp.status_code in BLOCKED_STATUSES:
+            raise SourceBlocked(
+                "innovate_uk",
+                f"HTTP {resp.status_code} from {url} — the site is refusing us "
+                "(possible anti-bot block)",
+            )
+        raise SourceError("innovate_uk", f"HTTP {resp.status_code} from {url}")
     return resp.content
 
 

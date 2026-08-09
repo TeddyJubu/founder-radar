@@ -26,6 +26,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from itertools import groupby
 from typing import Callable
 
 log = logging.getLogger(__name__)
@@ -108,6 +109,39 @@ def free_gb(path: str | None = None) -> float | None:
     return None
 
 
+def blocked_sources(db, *, checks: int = 2) -> list[tuple[str, int]]:
+    """Tier 1 sources refused on `checks` or more consecutive recorded runs.
+
+    Returns `(source_key, streak)` — `streak` is how many consecutive
+    observations are `degraded`, so the alert can say how long the block has
+    been going on. A 403 (or 401/429/451) is recorded as `degraded` in
+    `source_health` — the site is up, the crawler is not welcome, and unlike a
+    quiet week it raises a real exception, so it never needs the zero-streak
+    machinery. One blocked day can be a WAF sneeze; a streak is a source dying
+    and is worth the alert. "Recorded runs, not calendar days" — the same
+    convention as `zero_streak` — so a weekly pipeline counts weekly checks
+    and a daily one daily runs.
+
+    Tier 1 only: Tier 2 sources are allowed to be flaky and are a row on the
+    Sources tab, not a pager (radar/sources.__init__).
+    """
+    from radar.sources import TIER_1_SOURCES
+
+    rows = db.query(
+        "SELECT source_key, status FROM source_health "
+        "ORDER BY source_key, observed_on DESC")
+    out: list[tuple[str, int]] = []
+    for key, group in groupby(rows, key=lambda r: r["source_key"]):
+        if key not in TIER_1_SOURCES:
+            continue
+        streak = 0
+        for row in group:                       # newest first
+            streak = streak + 1 if row["status"] == "degraded" else 0
+        if streak >= checks:
+            out.append((key, streak))
+    return out
+
+
 def stale_sources(db, *, days: int = 7, min_avg: float = 2.0) -> list[str]:
     """Sources that went quiet: zero items for `days`, having averaged > `min_avg`.
 
@@ -178,6 +212,13 @@ def check(
             quiet = []
         if quiet:
             alerts.append(f"⚠️ Source down: {', '.join(quiet)} — zero items for 7 days.")
+        try:
+            blocked = blocked_sources(db)
+        except Exception:  # noqa: BLE001 - an alerting path must not itself crash
+            blocked = []
+        if blocked:
+            detail = "; ".join(f"{key} ({n} consecutive checks)" for key, n in blocked)
+            alerts.append(f"⚠️ Source blocked: {detail} — possible anti-bot block.")
 
     if check_disk:
         free = free_gb()

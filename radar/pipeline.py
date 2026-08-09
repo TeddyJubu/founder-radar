@@ -92,12 +92,13 @@ def _finish_run(db: Db, run_id: int, result: RunResult) -> None:
         """UPDATE run SET finished_at = ?, items_fetched = ?, items_extracted = ?,
                  companies_new = ?, companies_merged = ?, gated_out = ?,
                  shortlisted = ?, llm_calls = ?, llm_cost_usd = ?, status = ?,
-                 error = ?
+                 error = ?, warnings = ?
            WHERE id = ?""",
         (now_iso(), result.items_fetched, result.items_extracted,
          result.companies_new, result.companies_merged, result.gated_out,
          result.shortlisted, result.llm_calls, result.llm_cost_usd,
-         result.status, result.error, run_id),
+         result.status, result.error,
+         "\n".join(result.warnings) if result.warnings else None, run_id),
     )
 
 
@@ -1066,6 +1067,15 @@ def run_pipeline(
         result.sources = [vars(s) for s in fetch.sources]
         if fetch.status == "partial":
             result.status = "partial"
+        # A degraded source is not an outage — the site answered but refused
+        # the crawler (401/403/429/451). It stays a `degraded` row on the
+        # Sources tab and a warning on the run row, so two consecutive blocks
+        # can trip the heartbeat without every one of those days looking like
+        # a failed run (sources/base.SourceBlocked).
+        for source in fetch.sources:
+            if source.status == "degraded":
+                result.warnings.append(
+                    f"{source.key} degraded: {source.error or 'site is refusing us'}")
 
         # ③ extract + ④ resolve
         for item in extract_stage(items, cfg, use_llm=use_llm, db=db, llm=llm):

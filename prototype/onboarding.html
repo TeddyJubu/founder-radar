@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<title>How this works — UK Founder Radar</title>
+<link rel="stylesheet" href="/tokens.css" />
+<style>
+/* Written for one reader: a student who opens this at 7am and has never seen
+   a scoring model. Short sentences, no jargon that isn't explained on the
+   spot, and a picture wherever a picture is faster than a paragraph.
+
+   Every diagram is inline SVG using the shared tokens, so it inherits dark
+   mode and the type scale rather than being a screenshot that goes stale. */
+
+.page { max-width: 720px; margin: 0 auto; padding: 0 var(--s5) var(--s8); }
+
+.nav {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s4) 0;
+  background: var(--material);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--separator);
+  margin: 0 calc(var(--s5) * -1) var(--s6);
+  padding-left: var(--s5); padding-right: var(--s5);
+}
+.nav .brand { font-size: var(--headline); font-weight: 600; margin-right: auto; }
+.nav a {
+  font-size: var(--subhead); color: var(--blue); text-decoration: none;
+  padding: 7px var(--s3); border-radius: 999px; background: var(--fill);
+}
+.nav a:hover { background: color-mix(in srgb, var(--blue) 14%, var(--fill)); }
+
+.hero { padding: var(--s6) 0 var(--s7); }
+.hero h1 {
+  font-size: 44px; line-height: 50px; font-weight: 700;
+  letter-spacing: -1px; margin: 0 0 var(--s4);
+}
+.hero p {
+  font-size: var(--title3); line-height: 30px; color: var(--label-2);
+  margin: 0; max-width: 34ch;
+}
+
+section {
+  padding: var(--s7) 0; border-top: 0.5px solid var(--separator);
+  /* Clear the sticky nav when jumping to a section, or the heading
+     lands underneath it. */
+  scroll-margin-top: 72px;
+}
+section > h2 {
+  font-size: var(--title2); line-height: var(--title2-lh); font-weight: 700;
+  letter-spacing: -0.3px; margin: 0 0 var(--s2);
+}
+.kicker {
+  font-size: var(--caption); font-weight: 600; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--blue); margin-bottom: var(--s2);
+}
+section p { font-size: var(--body); line-height: var(--body-lh); margin: 0 0 var(--s4); }
+section p:last-child { margin-bottom: 0; }
+strong { font-weight: 600; }
+
+figure {
+  margin: var(--s5) 0;
+  padding: var(--s5);
+  background: var(--bg-3);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--r-card);
+}
+figure svg { display: block; width: 100%; height: auto; }
+figcaption {
+  margin-top: var(--s4); font-size: var(--footnote); line-height: var(--footnote-lh);
+  color: var(--label-2); text-align: center;
+}
+
+.callouts { display: grid; gap: var(--s3); margin: var(--s5) 0 0; }
+.callout {
+  display: flex; gap: var(--s3); align-items: flex-start;
+  padding: var(--s4); border-radius: var(--r-control); background: var(--fill);
+}
+.callout .num {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--blue); color: #fff;
+  font-size: var(--footnote); font-weight: 600;
+  display: grid; place-items: center;
+}
+.callout .txt { font-size: var(--subhead); line-height: 21px; }
+.callout .txt b { display: block; font-weight: 600; color: var(--label); }
+.callout .txt span { color: var(--label-2); }
+
+.keys { display: flex; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s4); }
+.key {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 10px var(--s4); border-radius: var(--r-control);
+  border: 0.5px solid var(--separator); background: var(--bg-3);
+  font-size: var(--subhead);
+}
+.key kbd {
+  font-family: inherit; font-weight: 600; font-size: var(--footnote);
+  background: var(--fill); border-radius: 6px; padding: 3px 8px;
+}
+.key.yes { background: var(--green); border-color: transparent; color: #fff; }
+.key.yes kbd { background: rgba(255,255,255,0.22); }
+
+.funds { display: grid; gap: var(--s3); margin-top: var(--s5); }
+.fund-row {
+  display: flex; gap: var(--s4); align-items: baseline;
+  padding: var(--s4); border-radius: var(--r-control);
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+}
+.fund-row .nm { font-weight: 600; font-size: var(--headline); flex: none; width: 9.5em; }
+.fund-row .rule { font-size: var(--subhead); color: var(--label-2); }
+
+.expect { display: grid; gap: var(--s3); margin-top: var(--s5); }
+.expect div {
+  padding: var(--s4); border-radius: var(--r-control);
+  border-left: 3px solid var(--orange);
+  background: color-mix(in srgb, var(--orange) 6%, transparent);
+  font-size: var(--subhead); line-height: 21px;
+}
+.expect b { display: block; font-weight: 600; margin-bottom: 2px; }
+
+.cta {
+  display: block; margin-top: var(--s7); text-align: center;
+  padding: var(--s4); border-radius: var(--r-control);
+  background: var(--blue); color: #fff; text-decoration: none;
+  font-size: var(--headline); font-weight: 600;
+  transition: transform .18s var(--spring);
+}
+.cta:active { transform: scale(0.985); }
+
+@media (max-width: 640px) {
+  .page { padding: 0 var(--s4) var(--s7); }
+  .nav { margin-left: calc(var(--s4) * -1); margin-right: calc(var(--s4) * -1);
+         padding-left: var(--s4); padding-right: var(--s4); }
+  .hero h1 { font-size: 32px; line-height: 38px; }
+  .hero p { font-size: var(--headline); line-height: 24px; }
+  .fund-row { flex-direction: column; gap: var(--s1); }
+  .fund-row .nm { width: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="page" data-testid="onboarding">
+
+  <nav class="nav">
+    <span class="brand">UK Founder Radar</span>
+    <a href="/" data-testid="nav-today">Open Today →</a>
+  </nav>
+
+  <div class="hero">
+    <h1>Find them first.</h1>
+    <p>Every morning, this hands you a small number of UK startups that are new
+       enough to be worth an email — and tells you which fund to send each one to.</p>
+  </div>
+
+  <!-- ─────────────────────────────────────────────── what it actually does -->
+  <section data-testid="section-problem">
+    <div class="kicker">The problem it solves</div>
+    <h2>Most startup lists are already old news</h2>
+    <p>The obvious way to find startups is to read what venture funds have
+       invested in, and what the tech press writes about. Both come <strong>too
+       late</strong>. By the time a company appears on a fund's website, that
+       fund has already given it money. You cannot introduce someone to a
+       company they already own.</p>
+    <p>So this starts somewhere else: <strong>the UK company register</strong>.
+       Every company in Britain has a legal birthday recorded there, the day it
+       was created. A company born ninety days ago simply cannot be six years
+       old. That one change is the whole idea.</p>
+
+    <figure>
+      <svg viewBox="0 0 640 190" role="img"
+           aria-label="Old way: a fund's website lists a company five years after it started. New way: the company register lists it the month it is created.">
+        <!-- old way -->
+        <text x="0" y="16" font-size="12" font-weight="600" fill="var(--label-2)">THE OLD WAY</text>
+        <line x1="0" y1="46" x2="600" y2="46" stroke="var(--separator)" stroke-width="2"/>
+        <circle cx="20" cy="46" r="7" fill="var(--label-3)"/>
+        <text x="8" y="72" font-size="12" fill="var(--label-2)">company starts</text>
+        <circle cx="470" cy="46" r="9" fill="var(--red)"/>
+        <text x="404" y="72" font-size="12" fill="var(--label)">you hear about it</text>
+        <text x="404" y="88" font-size="12" fill="var(--red)">5 years later</text>
+        <path d="M30 46 H460" stroke="var(--label-3)" stroke-width="2" stroke-dasharray="4 5"/>
+
+        <!-- new way -->
+        <text x="0" y="128" font-size="12" font-weight="600" fill="var(--blue)">THIS WAY</text>
+        <line x1="0" y1="158" x2="600" y2="158" stroke="var(--separator)" stroke-width="2"/>
+        <circle cx="20" cy="158" r="7" fill="var(--label-3)"/>
+        <text x="8" y="184" font-size="12" fill="var(--label-2)">company starts</text>
+        <circle cx="70" cy="158" r="9" fill="var(--green)"/>
+        <text x="88" y="152" font-size="12" fill="var(--label)">you hear about it</text>
+        <text x="88" y="168" font-size="12" fill="var(--green)">weeks later</text>
+      </svg>
+      <figcaption>Same company. The difference is where you look for it.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────── your morning -->
+  <section data-testid="section-morning">
+    <div class="kicker">Your morning</div>
+    <h2>Six companies. Four minutes.</h2>
+    <p>You get one company at a time, biggest opportunity first. Read it, decide,
+       move on. There is nothing to scroll through and no list to manage — when
+       you have seen them all, you are finished for the day.</p>
+
+    <div class="keys">
+      <span class="key yes"><kbd>1</kbd> Worth contacting</span>
+      <span class="key"><kbd>2</kbd> Unsure</span>
+      <span class="key"><kbd>3</kbd> Not for me</span>
+      <span class="key"><kbd>←</kbd> <kbd>→</kbd> move</span>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 640 260" role="img"
+           aria-label="An annotated company card showing the name, the two scores, the fund it suits, and the reason it was chosen.">
+        <rect x="0" y="0" width="440" height="250" rx="14"
+              fill="var(--bg-3)" stroke="var(--separator)"/>
+        <text x="24" y="46" font-size="22" font-weight="700" fill="var(--label)">Kelvin Bio</text>
+        <text x="24" y="68" font-size="12" fill="var(--label-2)">Newcastle · started 2 months ago</text>
+
+        <rect x="286" y="22" width="66" height="60" rx="9" fill="var(--fill)"/>
+        <text x="319" y="58" font-size="22" font-weight="600" text-anchor="middle" fill="var(--green)">88</text>
+        <text x="319" y="72" font-size="9" text-anchor="middle" fill="var(--label-2)">FIT</text>
+        <rect x="358" y="22" width="66" height="60" rx="9" fill="var(--fill)"/>
+        <text x="391" y="58" font-size="22" font-weight="600" text-anchor="middle" fill="var(--green)">90</text>
+        <text x="391" y="72" font-size="9" text-anchor="middle" fill="var(--label-2)">EDGE</text>
+
+        <rect x="24" y="96" width="392" height="46" rx="9"
+              fill="color-mix(in srgb, var(--blue) 8%, transparent)"
+              stroke="color-mix(in srgb, var(--blue) 22%, transparent)"/>
+        <text x="40" y="116" font-size="13" font-weight="600" fill="var(--label)">Northstar Ventures</text>
+        <text x="40" y="132" font-size="11" fill="var(--label-2)">Spinout Inspire Fund · £200k–£750k</text>
+
+        <text x="24" y="168" font-size="12" fill="var(--label)">Found via Northern Accelerator. Matches on</text>
+        <text x="24" y="186" font-size="12" fill="var(--label)">location, sector and founder background.</text>
+        <rect x="24" y="204" width="120" height="26" rx="13" fill="var(--fill)"/>
+        <text x="40" y="221" font-size="11" fill="var(--label)">the proof ↗</text>
+
+        <!-- pointers -->
+        <path d="M470 52 H452" stroke="var(--label-3)" stroke-width="1.5"/>
+        <text x="478" y="50" font-size="11" font-weight="600" fill="var(--label)">Two scores</text>
+        <text x="478" y="64" font-size="11" fill="var(--label-2)">explained below</text>
+        <path d="M470 120 H432" stroke="var(--label-3)" stroke-width="1.5"/>
+        <text x="478" y="118" font-size="11" font-weight="600" fill="var(--label)">Who to send it to</text>
+        <text x="478" y="132" font-size="11" fill="var(--label-2)">and the cheque size</text>
+        <path d="M470 200 H432" stroke="var(--label-3)" stroke-width="1.5"/>
+        <text x="478" y="198" font-size="11" font-weight="600" fill="var(--label)">Why it's here</text>
+        <text x="478" y="212" font-size="11" fill="var(--label-2)">with links to check</text>
+      </svg>
+      <figcaption>Everything you need to decide, on one screen.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────── the two numbers -->
+  <section data-testid="section-scores">
+    <div class="kicker">The two numbers</div>
+    <h2>Fit and Edge</h2>
+    <p><strong>Fit</strong> answers: does this company match what the fund says
+       it invests in? Right size, right place, right stage.</p>
+    <p><strong>Edge</strong> answers something different: how likely is it that
+       the fund <em>hasn't already seen this</em>? A company nobody has written
+       about, found straight from the register, scores high.</p>
+    <p>You need both. A perfect company that three funds already track is worth
+       less to you than a good one nobody has found — because your job is to
+       introduce them to something new.</p>
+
+    <figure>
+      <svg viewBox="0 0 460 320" role="img"
+           aria-label="A grid: high fit and high edge is the sweet spot; high fit but low edge means they already know it.">
+        <line x1="60" y1="20" x2="60" y2="270" stroke="var(--separator)" stroke-width="2"/>
+        <line x1="60" y1="270" x2="420" y2="270" stroke="var(--separator)" stroke-width="2"/>
+        <text x="14" y="30" font-size="11" fill="var(--label-2)">high</text>
+        <text x="14" y="268" font-size="11" fill="var(--label-2)">low</text>
+        <text x="10" y="150" font-size="12" font-weight="600" fill="var(--label)"
+              transform="rotate(-90 18 150)">EDGE</text>
+        <text x="230" y="300" font-size="12" font-weight="600" text-anchor="middle" fill="var(--label)">FIT →</text>
+
+        <rect x="245" y="35" width="165" height="105" rx="12"
+              fill="color-mix(in srgb, var(--green) 14%, transparent)"
+              stroke="var(--green)" stroke-width="1.5"/>
+        <text x="327" y="80" font-size="14" font-weight="700" text-anchor="middle" fill="var(--green)">Send this one</text>
+        <text x="327" y="100" font-size="11" text-anchor="middle" fill="var(--label-2)">right fund, nobody</text>
+        <text x="327" y="115" font-size="11" text-anchor="middle" fill="var(--label-2)">has found it yet</text>
+
+        <rect x="245" y="155" width="165" height="105" rx="12" fill="var(--fill)"/>
+        <text x="327" y="200" font-size="13" font-weight="600" text-anchor="middle" fill="var(--label-2)">They know already</text>
+        <text x="327" y="220" font-size="11" text-anchor="middle" fill="var(--label-3)">good company, but</text>
+        <text x="327" y="235" font-size="11" text-anchor="middle" fill="var(--label-3)">you're not first</text>
+
+        <rect x="72" y="35" width="160" height="105" rx="12" fill="var(--fill)"/>
+        <text x="152" y="88" font-size="12" text-anchor="middle" fill="var(--label-3)">early, but not</text>
+        <text x="152" y="105" font-size="12" text-anchor="middle" fill="var(--label-3)">what they invest in</text>
+
+        <rect x="72" y="155" width="160" height="105" rx="12" fill="var(--fill)"/>
+        <text x="152" y="212" font-size="12" text-anchor="middle" fill="var(--label-3)">not a match</text>
+      </svg>
+      <figcaption>The top-right corner is the whole point of the job.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ────────────────────────────────────────────────────── amber cards -->
+  <section data-testid="section-coverage">
+    <div class="kicker">When a card looks orange</div>
+    <h2>It means we're guessing</h2>
+    <p>To judge a company properly we want five things: what it does, where it
+       is, how far along it is, who founded it, and whether anyone is buying.
+       Sometimes we only know one or two.</p>
+    <p>When that happens the card gets an orange tint and says so —
+       <em>"we know 2 of 5 things about this company"</em>. The score might look
+       high, but it is high on very little. <strong>Check it yourself before you
+       email anyone.</strong></p>
+
+    <figure>
+      <svg viewBox="0 0 560 130" role="img"
+           aria-label="Five dots showing how much is known. Two filled means low confidence; five filled means high confidence.">
+        <text x="0" y="16" font-size="12" font-weight="600" fill="var(--orange)">WE KNOW 2 OF 5 — be careful</text>
+        <circle cx="12" cy="44" r="11" fill="var(--orange)"/>
+        <circle cx="46" cy="44" r="11" fill="var(--orange)"/>
+        <circle cx="80" cy="44" r="11" fill="none" stroke="var(--label-3)" stroke-width="2"/>
+        <circle cx="114" cy="44" r="11" fill="none" stroke="var(--label-3)" stroke-width="2"/>
+        <circle cx="148" cy="44" r="11" fill="none" stroke="var(--label-3)" stroke-width="2"/>
+        <text x="176" y="49" font-size="12" fill="var(--label-2)">a score built on almost nothing</text>
+
+        <text x="0" y="90" font-size="12" font-weight="600" fill="var(--green)">WE KNOW 5 OF 5 — trust it</text>
+        <circle cx="12" cy="116" r="11" fill="var(--green)"/>
+        <circle cx="46" cy="116" r="11" fill="var(--green)"/>
+        <circle cx="80" cy="116" r="11" fill="var(--green)"/>
+        <circle cx="114" cy="116" r="11" fill="var(--green)"/>
+        <circle cx="148" cy="116" r="11" fill="var(--green)"/>
+        <text x="176" y="121" font-size="12" fill="var(--label-2)">a score you can lean on</text>
+      </svg>
+      <figcaption>The colour is a confidence warning, not a quality rating.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ───────────────────────────────────────────────────────── the funds -->
+  <section data-testid="section-funds">
+    <div class="kicker">Who you're sending to</div>
+    <h2>Four funds, and their hard rules</h2>
+    <p>These aren't preferences — they're conditions attached to the money these
+       funds manage. If a company breaks one, that fund legally cannot invest,
+       no matter how good it is. The system checks these before you ever see a
+       card, so anything that reaches you already passed.</p>
+
+    <div class="funds">
+      <div class="fund-row"><span class="nm">Northstar</span>
+        <span class="rule">Must be in North East England. One of its funds also
+          requires the company to have come out of a North East university.</span></div>
+      <div class="fund-row"><span class="nm">Anticus</span>
+        <span class="rule">Must be in Yorkshire, or moving there.</span></div>
+      <div class="fund-row"><span class="nm">DSW</span>
+        <span class="rule">Must qualify for UK startup tax relief. Its earliest
+          fund deliberately looks outside London, Oxford and Cambridge.</span></div>
+      <div class="fund-row"><span class="nm">Outward</span>
+        <span class="rule">Government-backed, so there are caps on how much the
+          company has raised before, and most of the team must be UK-based.</span></div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────────────────────────────── expectations -->
+  <section data-testid="section-expect">
+    <div class="kicker">What to expect</div>
+    <h2>Honest limits</h2>
+    <p>This is a research tool, not an oracle. Three things will happen regularly,
+       and none of them means it is broken.</p>
+
+    <div class="expect">
+      <div><b>Some mornings will be quiet</b>
+        Not every day produces six good companies. An empty list is a real
+        answer, not a bug — it is better than padding it out with weak ones.</div>
+      <div><b>Some cards will say the age is unknown</b>
+        If we can't confirm when a company started, we say so rather than guess.
+        Those never reach the top of your list, on purpose.</div>
+      <div><b>Websites change and sources break</b>
+        Around fourteen places are checked each morning. When one changes its
+        layout, it stops working until it's fixed — the others carry on, and the
+        failure is recorded rather than hidden.</div>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────── your feedback -->
+  <section data-testid="section-feedback">
+    <div class="kicker">Why your answers matter</div>
+    <h2>Every verdict makes the next list better</h2>
+    <p>When you mark a company <em>worth contacting</em> or <em>not for me</em>,
+       that's recorded. Once there are around fifty of them, the system can work
+       out where the cut-off should sit — how picky to be before something
+       reaches you.</p>
+    <p>Until then it's using a sensible guess. <strong>The fastest way to improve
+       this is simply to use it.</strong></p>
+
+    <figure>
+      <svg viewBox="0 0 600 108" role="img"
+           aria-label="Your verdicts feed a setting that decides how strict the list is.">
+        <rect x="0" y="26" width="150" height="56" rx="12" fill="var(--fill)"/>
+        <text x="75" y="50" font-size="12" font-weight="600" text-anchor="middle" fill="var(--label)">your verdicts</text>
+        <text x="75" y="68" font-size="11" text-anchor="middle" fill="var(--label-2)">1, 2 or 3</text>
+
+        <path d="M158 54 H212" stroke="var(--label-3)" stroke-width="2"/>
+        <path d="M204 48 L214 54 L204 60 Z" fill="var(--label-3)"/>
+
+        <rect x="222" y="26" width="156" height="56" rx="12" fill="var(--fill)"/>
+        <text x="300" y="50" font-size="12" font-weight="600" text-anchor="middle" fill="var(--label)">how picky to be</text>
+        <text x="300" y="68" font-size="11" text-anchor="middle" fill="var(--label-2)">tuned to your taste</text>
+
+        <path d="M386 54 H440" stroke="var(--label-3)" stroke-width="2"/>
+        <path d="M432 48 L442 54 L432 60 Z" fill="var(--label-3)"/>
+
+        <rect x="450" y="26" width="150" height="56" rx="12"
+              fill="color-mix(in srgb, var(--green) 14%, transparent)" stroke="var(--green)"/>
+        <text x="525" y="50" font-size="12" font-weight="600" text-anchor="middle" fill="var(--green)">a better list</text>
+        <text x="525" y="68" font-size="11" text-anchor="middle" fill="var(--label-2)">tomorrow morning</text>
+      </svg>
+      <figcaption>Nothing you mark is wasted.</figcaption>
+    </figure>
+  </section>
+
+  <a class="cta" href="/" data-testid="cta-today">Start today's list →</a>
+</div>
+</body>
+</html>

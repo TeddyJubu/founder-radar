@@ -43,3 +43,27 @@ jobs:
       # drift apart.
       - name: Offline suite
         run: python -m pytest
+
+  # Separate job on purpose. It installs a ~130MB browser, so it must never be
+  # a prerequisite of the offline suite above — that one has to stay the fast,
+  # dependency-light gate. This job covers the Today prototype only
+  # (prototype/TESTING.md); `radar/` is unaffected by it.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: pip install -e ".[dev,browser]"
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      # The suite builds its own database from the committed Companies House
+      # fixtures, so it needs no API key, no network and no live sources.
+      - name: Today screen
+        run: python -m pytest -m browser tests/browser

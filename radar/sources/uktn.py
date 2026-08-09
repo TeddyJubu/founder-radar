@@ -29,6 +29,7 @@ from radar.sources._common import (
     guard_nonempty,
     html_doc,
     parse_date,
+    require_ok,
     selector_fingerprint,
     strip_html,
     unique_by_id,
@@ -77,8 +78,7 @@ class UktnAdapter:
         resp = ctx.http.get(_assert_no_query(INDEX))
         if resp.status == 304:
             return []
-        if not resp.ok:
-            raise RuntimeError(f"{self.key}: HTTP {resp.status} from {INDEX}")
+        require_ok(resp, self.key, INDEX)
 
         items = list(after(unique_by_id(self.parse(resp.text)), ctx.since))
         return [self._with_body(ctx, item) for item in items[:MAX_ARTICLE_FETCHES]] \

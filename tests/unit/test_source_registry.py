@@ -298,6 +298,55 @@ def test_sources_test_runs_one_adapter_and_reports_what_it_found(db):
     assert health["items"] == 4 and health["status"] == "ok"
 
 
+def test_fetch_all_records_a_blocked_source_as_degraded(db, config):
+    """A WAF-style refusal (401/403/429/451) is `degraded`, not `failed`.
+
+    The site is up, the crawler is not welcome, and a block is usually fixable
+    by allowlisting — unlike an outage, and unlike a quiet week, it raises a
+    real exception so it never needs the zero-streak machinery. This is the
+    classification `require_ok` produces and the heartbeat's blocked-source
+    check reads (02-architecture §7).
+    """
+    from radar.sources import fetch_all
+    from radar.sources.base import FetchContext, SourceBlocked
+
+    class BlockedAdapter:
+        key = "blocked_test"
+        kind = "news"
+        schedule = "daily"
+        requires_browser = False
+
+        def fetch(self, ctx):  # noqa: ARG002 - the adapter protocol
+            raise SourceBlocked(
+                self.key, "HTTP 403 from https://example.org/feed — "
+                "the site is refusing us (possible anti-bot block)")
+
+    result = fetch_all(FetchContext(http=None, config=config),
+                       adapters=[BlockedAdapter()], db=db)
+
+    run = result.sources[0]
+    assert run.status == "degraded"
+    assert "403" in run.error
+    assert result.status == "ok"          # a block is a warning, not an outage
+
+    health = db.one(
+        "SELECT status, note FROM source_health WHERE source_key = ?",
+        ("blocked_test",))
+    assert health["status"] == "degraded"
+    assert "403" in health["note"]
+
+    # a plain outage stays `failed` — the two must not blur together
+    class DownAdapter(BlockedAdapter):
+        key = "down_test"
+
+        def fetch(self, ctx):  # noqa: ARG002
+            raise ConnectionError("simulated outage")
+
+    result2 = fetch_all(FetchContext(http=None, config=config),
+                        adapters=[DownAdapter()], db=db)
+    assert result2.sources[0].status == "failed"
+
+
 def test_sources_test_surfaces_a_layout_change_instead_of_a_quiet_zero(db):
     """A source that returns 200 and nothing must not read as "0 items today"."""
     http = StubHttp(load("northern_accelerator_CHANGED.json"))
