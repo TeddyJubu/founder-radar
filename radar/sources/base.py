@@ -57,3 +57,15 @@ class SourceError(Exception):
         super().__init__(f"{source_key}: {message}")
         self.source_key = source_key
         self.message = message
+
+
+class SourceBlocked(SourceError):
+    """The site answered but refused *us* — 401/403/429/451 from a WAF or an
+    anti-bot plugin, as opposed to the site being down.
+
+    This is a distinct failure mode and is recorded as `degraded`, not
+    `failed`: the distinction matters because a block is usually fixable on
+    our side (contact the site, get allowlisted) and because a Tier 1 source
+    blocked for two consecutive checks is worth a heartbeat alert
+    (02-architecture §7, `radar.notify.heartbeat`).
+    """

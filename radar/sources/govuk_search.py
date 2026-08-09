@@ -20,6 +20,7 @@ from radar.sources._common import (
     clean_text,
     guard_nonempty,
     parse_date,
+    require_ok,
     selector_fingerprint,
     unique_by_id,
 )
@@ -51,8 +52,7 @@ class GovUkSearchAdapter:
                 **query, "order": "-public_timestamp", "fields": FIELDS})
             if resp.status == 304:
                 continue
-            if not resp.ok:
-                raise RuntimeError(f"{self.key}: HTTP {resp.status} from {ENDPOINT}")
+            require_ok(resp, self.key, ENDPOINT)
             items.extend(self.parse(resp.text))
         return list(after(unique_by_id(items), ctx.since))
 

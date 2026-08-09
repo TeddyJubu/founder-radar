@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<title>Today — UK Founder Radar</title>
+<link rel="stylesheet" href="/tokens.css" />
+<style>
+/* ─────────────────────────────────────────────────────────── shell */
+
+.app {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 var(--s5);
+}
+
+header {
+  display: flex; align-items: baseline; gap: var(--s3);
+  padding: var(--s7) 0 var(--s5);
+}
+h1 {
+  font-size: var(--large-title); line-height: var(--large-title-lh);
+  font-weight: 700; letter-spacing: -0.4px; margin: 0;
+}
+.date {
+  font-size: var(--subhead); color: var(--label-2); margin-right: auto;
+  white-space: nowrap;      /* "Monday / 10 / August" over three lines, once */
+}
+
+/* One quiet way out to the explanation. It sits before the dots so it is
+   never mistaken for progress. */
+.help {
+  flex: none; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--fill); color: var(--label-2);
+  font-size: var(--footnote); font-weight: 600; text-decoration: none;
+  transition: background .2s var(--spring), color .2s var(--spring);
+}
+.help:hover { background: color-mix(in srgb, var(--blue) 16%, var(--fill)); color: var(--blue); }
+.help:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+/* Progress: dots, not "2 of 6". A count invites counting; dots are glanceable. */
+.dots { display: flex; gap: 6px; align-items: center; }
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--label-3);
+  transition: background .3s var(--spring), transform .3s var(--spring);
+}
+.dot.done { background: var(--label-2); }
+.dot.now  { background: var(--blue); transform: scale(1.45); }
+
+/* ─────────────────────────────────────────────────────────── card */
+
+/* Room for the sticky verdict bar: the explanation is the point of the
+   card and must never sit behind it. */
+main { display: flex; align-items: flex-start; padding-bottom: var(--s5); }
+
+.card {
+  width: 100%;
+  background: var(--bg-3);
+  border-radius: var(--r-card);
+  padding: var(--s6);
+  border: 0.5px solid var(--separator);
+  animation: rise .42s var(--spring) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.995); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Coverage below the floor tints the whole card. `min_coverage` made visible
+   instead of silently suppressing a shortlist. */
+.card.thin {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--orange) 5%, var(--bg-3)) 0%, var(--bg-3) 190px);
+}
+
+.top { display: flex; gap: var(--s5); align-items: flex-start; }
+.ident { min-width: 0; flex: 1; }
+
+h2 {
+  font-size: var(--large-title); line-height: var(--large-title-lh);
+  font-weight: 700; letter-spacing: -0.5px; margin: 0 0 var(--s2);
+  overflow-wrap: anywhere;
+}
+.meta {
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label-2);
+  display: flex; flex-wrap: wrap; gap: var(--s2) 0;
+}
+.meta > * + *::before { content: "·"; margin: 0 var(--s2); color: var(--label-3); }
+.meta a { color: var(--blue); text-decoration: none; }
+.meta a:hover { text-decoration: underline; }
+.age { color: var(--label); font-weight: 500; }
+
+/* Fit and Edge are the same size on purpose. Edge is the whole v2 thesis —
+   "nobody has found this yet" — and shrinking it reproduces the v1 ranking
+   error visually. */
+.scores { display: flex; gap: var(--s2); flex: none; }
+.score {
+  width: 84px; padding: var(--s3) var(--s2) var(--s2);
+  background: var(--fill); border-radius: var(--r-control);
+  text-align: center;
+}
+.score .n {
+  font-size: 30px; line-height: 34px; font-weight: 600;
+  letter-spacing: -0.6px; font-variant-numeric: tabular-nums;
+}
+.score .k {
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-2); text-transform: uppercase; letter-spacing: 0.4px;
+  margin-top: 2px;
+}
+.score.high .n { color: var(--green); }
+.score.mid  .n { color: var(--label); }
+.score.low  .n { color: var(--orange); }
+
+/* Route chip: which fund, which vehicle, what cheque. The actual answer to
+   "who do I send this to". */
+.route {
+  margin: var(--s5) 0 0;
+  padding: var(--s4);
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--blue) 22%, transparent);
+}
+.route .fund {
+  font-size: var(--headline); line-height: var(--headline-lh); font-weight: 600;
+}
+.route .veh {
+  font-size: var(--subhead); line-height: var(--subhead-lh); color: var(--label-2);
+}
+
+/* The spec's explanation sentence, verbatim. Its arithmetic already
+   reconciles; re-deriving it here would create a second source of truth. */
+.why {
+  margin: var(--s5) 0 0;
+  font-size: var(--body); line-height: var(--body-lh);
+  color: var(--label);
+}
+
+.evidence { margin: var(--s5) 0 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.ev {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px var(--s3);
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--label); text-decoration: none;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  transition: background .2s var(--spring), transform .2s var(--spring);
+}
+.ev:hover { background: color-mix(in srgb, var(--blue) 14%, var(--fill)); }
+.ev:active { transform: scale(0.97); }
+.ev .chev { color: var(--label-3); }
+
+.foot {
+  margin-top: var(--s5); padding-top: var(--s4);
+  border-top: 0.5px solid var(--separator);
+  display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5);
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  color: var(--label-2);
+}
+/* Flags read as sentences, never as badges. A badge says "alert"; these are
+   caveats on confidence. */
+.flag { color: var(--orange); }
+.also strong { color: var(--label); font-weight: 500; }
+
+/* ─────────────────────────────────────────────────────── verdict bar */
+
+footer {
+  position: sticky; bottom: 0;
+  padding: var(--s4) 0 var(--s6);
+  background: var(--material);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--separator);
+  margin: var(--s6) calc(var(--s5) * -1) 0;
+  padding-left: var(--s5); padding-right: var(--s5);
+}
+.actions { display: flex; gap: var(--s2); }
+button {
+  flex: 1;
+  font-family: inherit;
+  font-size: var(--headline); line-height: var(--headline-lh); font-weight: 500;
+  padding: 13px var(--s4);
+  border-radius: var(--r-control);
+  border: 0.5px solid var(--separator);
+  background: var(--bg-3); color: var(--label);
+  cursor: pointer; white-space: nowrap;
+  transition: transform .18s var(--spring), background .18s var(--spring);
+}
+button:hover { background: var(--fill); }
+button:active { transform: scale(0.975); }
+button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+button .kbd {
+  font-size: var(--caption); color: var(--label-3); margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+button.yes { background: var(--green); border-color: transparent; color: #fff; }
+button.yes .kbd { color: rgba(255,255,255,0.7); }
+button.no  { color: var(--red); }
+
+.hint {
+  margin-top: var(--s3); text-align: center;
+  font-size: var(--caption); line-height: var(--caption-lh); color: var(--label-3);
+}
+
+/* ─────────────────────────────────────────────────────────── states */
+
+.empty, .done-state {
+  text-align: center; padding: var(--s8) var(--s5);
+  animation: rise .42s var(--spring) both;
+}
+.done-state .tick {
+  font-size: 56px; line-height: 1; color: var(--green); margin-bottom: var(--s4);
+}
+.done-state h2 { font-size: var(--title2); line-height: var(--title2-lh); }
+.done-state p { color: var(--label-2); font-size: var(--subhead); }
+
+.toast {
+  position: fixed; left: 50%; bottom: var(--s8);
+  transform: translateX(-50%) translateY(12px);
+  background: var(--material);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 0.5px solid var(--separator);
+  border-radius: 999px; padding: 10px var(--s5);
+  font-size: var(--subhead); color: var(--label);
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s var(--spring), transform .3s var(--spring);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .app { padding: 0 var(--s4); }
+  /* The bar bleeds to the edges with a negative margin that must mirror
+     `.app`'s padding exactly. Leaving it at --s5 while the app drops to --s4
+     made the footer 16px wider than the viewport and put a horizontal
+     scrollbar on every phone. */
+  footer {
+    margin-left: calc(var(--s4) * -1); margin-right: calc(var(--s4) * -1);
+    padding-left: var(--s4); padding-right: var(--s4);
+  }
+  header { padding: var(--s5) 0 var(--s4); }
+  h1 { font-size: 28px; line-height: 34px; }
+  .card { padding: var(--s5); }
+  .top { flex-direction: column; gap: var(--s4); }
+  .scores { width: 100%; }
+  .score { flex: 1; width: auto; padding: var(--s2) var(--s2) 6px; }
+  .score .n { font-size: 26px; line-height: 30px; }
+  h2 { font-size: 26px; line-height: 32px; }
+  .why { font-size: var(--subhead); line-height: 21px; }
+  button { font-size: var(--subhead); padding: 11px var(--s2); }
+  .route { padding: var(--s3); margin-top: var(--s4); }
+  .why, .evidence { margin-top: var(--s4); }
+}
+@media (max-width: 460px) {
+  .date { display: none; }             /* the header already says Today */
+  button .kbd { display: none; }       /* no hardware keyboard to hint at */
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header data-testid="today-header">
+    <h1 data-testid="today-title">Today</h1>
+    <span class="date" id="date" data-testid="today-date"></span>
+    <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
+    <div class="dots" id="dots" data-testid="progress" aria-hidden="true"></div>
+  </header>
+
+  <main id="main" data-testid="today-main" aria-live="polite"></main>
+
+  <footer id="footer" data-testid="verdict-bar" hidden>
+    <div class="actions" data-testid="verdict-actions">
+      <button class="yes" data-v="worth contacting" data-testid="verdict-worth-contacting">Worth contacting<span class="kbd">1</span></button>
+      <button data-v="unsure" data-testid="verdict-unsure">Unsure<span class="kbd">2</span></button>
+      <button class="no" data-v="not for me" data-testid="verdict-not-for-me">Not for me<span class="kbd">3</span></button>
+    </div>
+    <div class="hint" data-testid="shortcut-hint">1 · 2 · 3 to decide &nbsp;·&nbsp; ← → to move &nbsp;·&nbsp; ⌘Z to undo</div>
+  </footer>
+</div>
+<div class="toast" id="toast" data-testid="toast" role="status"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let data = null, i = 0, history = [];
+
+const fmtMoney = (n) =>
+  n == null ? null : "£" + (n >= 1e6 ? (n/1e6).toFixed(n % 1e6 ? 1 : 0) + "m"
+                                     : Math.round(n/1000) + "k");
+
+const band = (v, hi, lo) => v >= hi ? "high" : (v >= lo ? "mid" : "low");
+
+// Flags are the system's own words, turned into caveats a human reads.
+const FLAG_COPY = {
+  age_unknown: "incorporation date not confirmed",
+  gate_unverified: "a fund rule could not be checked",
+  uk_unverified: "UK presence not confirmed",
+};
+
+function evidenceLabel(sig) {
+  const kind = (sig.kind || "").replace(/_/g, " ");
+  return sig.headline ? sig.headline.slice(0, 52) : kind;
+}
+
+function render() {
+  const main = $("#main"), footer = $("#footer");
+  if (!data) return;
+
+  const pending = data.companies;
+  if (!pending.length) {
+    main.innerHTML = `<div class="empty" data-testid="empty-state"><h2>Nothing to review</h2>
+      <p style="color:var(--label-2)">No company cleared the gates in the last run.</p></div>`;
+    footer.hidden = true; renderDots(); return;
+  }
+  if (i >= pending.length) {
+    main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
+      <h2>That's the morning</h2>
+      <p>${pending.length} companies reviewed. Verdicts saved for the next tuning sweep.</p></div>`;
+    footer.hidden = true; renderDots(); return;
+  }
+
+  const c = pending[i];
+  const thin = c.coverage < 0.5;
+  const cheque = c.cheque_min && c.cheque_max
+    ? `${fmtMoney(c.cheque_min)}–${fmtMoney(c.cheque_max)}` : null;
+
+  const metaBits = [];
+  if (c.domain) metaBits.push(`<a data-testid="company-domain" href="${c.website || "https://" + c.domain}" target="_blank" rel="noopener">${c.domain}</a>`);
+  if (c.city) metaBits.push(`<span>${c.city}</span>`);
+  else if (c.region) metaBits.push(`<span>${c.region.replace(/_/g, " ")}</span>`);
+  metaBits.push(`<span class="age" data-testid="company-age" data-exact="${c.age_exact || ""}" ${c.age_exact ? `title="${c.age_exact}"` : ""}>${c.age_phrase}</span>`);
+
+  const evidence = (c.signals || []).filter(s => s.source_url).map(s =>
+    `<a class="ev" data-testid="evidence-link" data-kind="${s.kind || ""}"
+        href="${s.source_url}" target="_blank" rel="noopener">
+       ${evidenceLabel(s)} <span class="chev">↗</span></a>`).join("");
+
+  // The explanation sentence already names its own caveats. Repeating them
+  // below turns one warning into three, which reads as three problems.
+  const said = (c.explanation || "").toLowerCase();
+  const flags = (c.flags || [])
+    .filter(f => !said.includes(f.replace(/_/g, " ")))
+    .map(f => `<span class="flag" data-testid="caveat" data-flag="${f}">${FLAG_COPY[f] || f.replace(/_/g, " ")}</span>`)
+    .join("");
+
+  const also = (c.also_fits || []).length
+    ? `<span class="also" data-testid="also-fits">Also fits ${c.also_fits.slice(0,2).map(a =>
+        `<strong>${a.fund_key}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</span>`
+    : "";
+
+  const coverageNote = thin
+    ? `<span class="flag" data-testid="coverage-note" data-coverage="${c.coverage}">we know ${Math.round(c.coverage * 5)} of 5 things about this company</span>` : "";
+
+  // Every hook a test needs is a data-testid. The CSS classes are for
+  // styling and may be renamed freely; the testids are the contract.
+  // `score-fit` and `score-edge` are named rather than positional so a test
+  // can never silently assert Edge against Fit if the tiles are reordered.
+  main.innerHTML = `
+    <article class="card ${thin ? "thin" : ""}" data-testid="card"
+             data-company-id="${c.company_id}" data-tier="${c.tier}"
+             data-coverage="${c.coverage}" data-thin="${thin}">
+      <div class="top">
+        <div class="ident">
+          <h2 data-testid="company-name">${c.name}</h2>
+          <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
+        </div>
+        <div class="scores" data-testid="scores">
+          <div class="score ${band(c.fit, 70, 45)}" data-testid="score-fit"
+               data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}">
+            <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
+            <div class="k" data-testid="score-label">Fit</div></div>
+          <div class="score ${band(c.edge, 70, 45)}" data-testid="score-edge"
+               data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}">
+            <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
+            <div class="k" data-testid="score-label">Edge</div></div>
+        </div>
+      </div>
+
+      <div class="route" data-testid="route" data-fund="${c.fund}">
+        <div class="fund" data-testid="route-fund">${c.fund_name || c.fund}</div>
+        <div class="veh" data-testid="route-vehicle">${c.vehicle || ""}${cheque ? " · " + cheque : ""}</div>
+      </div>
+
+      <p class="why" data-testid="explanation">${c.explanation || ""}</p>
+
+      ${evidence ? `<div class="evidence" data-testid="evidence">${evidence}</div>` : ""}
+
+      <div class="foot" data-testid="card-footnote">${coverageNote}${flags}${also}</div>
+    </article>`;
+
+  footer.hidden = false;
+  renderDots();
+}
+
+function renderDots() {
+  const n = data?.companies?.length || 0;
+  $("#dots").innerHTML = Array.from({length: Math.min(n, 12)}, (_, k) =>
+    `<span class="dot ${k < i ? "done" : ""} ${k === i ? "now" : ""}"
+            data-testid="progress-dot"
+            data-state="${k < i ? "done" : (k === i ? "now" : "todo")}"></span>`).join("");
+}
+
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600);
+}
+
+async function decide(verdict) {
+  const c = data.companies[i];
+  if (!c) return;
+  history.push({ index: i, company_id: c.company_id });
+  await fetch("/api/verdict", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ company_id: c.company_id, verdict }),
+  });
+  c.verdict = verdict;
+  toast(`${c.name} — ${verdict}`);
+  i += 1; render();
+}
+
+function undo() {
+  const last = history.pop();
+  if (!last) return;
+  i = last.index; render(); toast("Undone");
+}
+
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); return undo(); }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "1") return decide("worth contacting");
+  if (e.key === "2") return decide("unsure");
+  if (e.key === "3") return decide("not for me");
+  if (e.key === "ArrowRight") { if (i < (data?.companies?.length || 0)) { i += 1; render(); } }
+  if (e.key === "ArrowLeft")  { if (i > 0) { i -= 1; render(); } }
+});
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-v]");
+  if (b) decide(b.dataset.v);
+});
+
+(async function boot() {
+  data = await (await fetch("/api/today")).json();
+  $("#date").textContent = new Date(data.date + "T00:00:00").toLocaleDateString("en-GB",
+    { weekday: "long", day: "numeric", month: "long" });
+  render();
+})();
+</script>
+</body>
+</html>

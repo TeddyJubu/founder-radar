@@ -26,6 +26,7 @@ from radar.sources._common import (
     guard_nonempty,
     html_doc,
     node_fingerprint,
+    require_ok,
     select_any,
     slug_of,
     snapshot_diff,
@@ -74,8 +75,7 @@ class EntrepreneurFirstAdapter:
         resp = ctx.http.get(PORTFOLIO)
         if resp.status == 304:
             return []
-        if not resp.ok:
-            raise RuntimeError(f"{self.key}: HTTP {resp.status} from {PORTFOLIO}")
+        require_ok(resp, self.key, PORTFOLIO)
 
         min_year = _min_year(ctx.now)
         items = [i for i in self.parse(resp.text) if self._wanted(i, min_year)]

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from radar.sources._common import after, rss_entries, selector_fingerprint, unique_by_id
+from radar.sources._common import after, require_ok, rss_entries, selector_fingerprint, unique_by_id
 from radar.sources.base import FetchContext, RawItem
 
 BASE = "https://businesscloud.co.uk"
@@ -38,8 +38,7 @@ class BusinessCloudAdapter:
         resp = ctx.http.get(FEED)
         if resp.status == 304:
             return []
-        if not resp.ok:
-            raise RuntimeError(f"{self.key}: HTTP {resp.status} from {FEED}")
+        require_ok(resp, self.key, FEED)
         return list(after(unique_by_id(self.parse(resp.text)), ctx.since))
 
     def parse(self, payload: str | bytes) -> list[RawItem]:

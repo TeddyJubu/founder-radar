@@ -32,6 +32,10 @@ dependencies = [
 [project.optional-dependencies]
 extract = ["trafilatura>=1.12", "anthropic>=0.40"]
 dev = ["pytest>=8.2", "pytest-cov>=5.0"]
+# Browser suite for prototype/ (see prototype/TESTING.md). Deliberately its
+# own extra: it pulls a ~130MB chromium and must never be a prerequisite of
+# the offline suite.
+browser = ["pytest-playwright>=0.5"]
 
 [project.scripts]
 founder-radar = "radar.cli:main"
@@ -46,9 +50,10 @@ radar = ["store/*.sql", "store/migrations/*.sql"]
 testpaths = ["tests"]
 # The bare `pytest` is the offline 60-second suite (09-test-plan.md §0). A
 # later `-m` on the command line wins, so `pytest -m integration` still works.
-addopts = "-q --strict-markers -m 'not integration and not perf and not live and not llm and not eval'"
+addopts = "-q --strict-markers -m 'not integration and not perf and not live and not llm and not eval and not browser'"
 markers = [
   "eval: opt-in evaluation tests that may call the network (deselected by default)",
+  "browser: drives the Today prototype in a real browser; needs playwright + chromium",
   "integration: needs a scratch spreadsheet and a Companies House key; not in CI",
   "perf: performance targets; sits outside the 60-second offline budget (NFR-4)",
   "live: hits real source websites; run weekly, not in CI (09-test-plan.md §4)",

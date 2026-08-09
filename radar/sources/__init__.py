@@ -26,7 +26,7 @@ from datetime import date
 from typing import Any, Iterable, Iterator, Sequence
 from urllib.parse import urljoin, urlsplit
 
-from radar.sources.base import FetchContext, RawItem, SourceError
+from radar.sources.base import FetchContext, RawItem, SourceBlocked, SourceError
 
 # Declaration order is fetch order. Track B first: Companies House has the
 # tightest rate-limit budget and the most valuable output, and news sources are
@@ -162,7 +162,7 @@ REGISTRY = _Registry(SOURCE_MODULES)
 @dataclass
 class SourceRun:
     key: str
-    status: str                 # ok | failed | skipped | disabled | layout_changed
+    status: str                 # ok | failed | skipped | disabled | layout_changed | degraded
     items: int = 0
     duration_ms: int = 0
     error: str | None = None
@@ -238,6 +238,11 @@ def fetch_all(
             got = list(adapter.fetch(ctx))
         except LayoutChanged as exc:
             status, error = "layout_changed", str(exc)
+        except SourceBlocked as exc:
+            # The site answered but refused the crawler (401/403/429/451) —
+            # degraded, not failed: a block is usually fixable by allowlisting
+            # and, left alone, is the early warning for a quietly dying source.
+            status, error = "degraded", str(exc)
         except SourceError as exc:
             status, error = "failed", str(exc)
         except Exception as exc:                         # noqa: BLE001 — isolation
@@ -248,9 +253,13 @@ def fetch_all(
                         duration_ms=elapsed, error=error)
 
         if db is not None:
+            # `degraded` is its own health status, preserved through to the
+            # Sources tab and the heartbeat's consecutive-blocked check;
+            # everything else that is not ok is a failed day.
+            health_status = status if status in ("ok", "degraded") else "failed"
             verdict = check_health(
                 db, key, len(got),
-                status="failed" if status != "ok" else "ok",
+                status=health_status,
                 observed_on=observed_on, note=error,
             )
             run.warning = verdict.warning

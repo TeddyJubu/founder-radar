@@ -21,9 +21,12 @@ from typing import Any, Iterable, Iterator, Sequence
 from urllib.parse import urljoin, urlsplit
 
 from radar.fetch.layout import LayoutChanged, guard_nonempty, selector_fingerprint
+from radar.sources.base import SourceBlocked, SourceError
 
 __all__ = [
     "LayoutChanged",
+    "SourceBlocked",
+    "SourceError",
     "absolute_url",
     "clean_text",
     "guard_nonempty",
@@ -31,6 +34,7 @@ __all__ = [
     "norm_key",
     "norm_name",
     "parse_date",
+    "require_ok",
     "rss_entries",
     "selector_fingerprint",
     "slug_of",
@@ -206,6 +210,37 @@ def parse_date(value: Any) -> date | None:
         except ValueError:
             return None
     return None
+
+
+# ------------------------------------------------------------- HTTP status
+
+#: Statuses that mean "the site is up but refusing this crawler" — a WAF,
+#: an anti-bot plugin, or a geo/UA rule — rather than "the site is down".
+#: Recorded as `degraded` so the Sources tab and the heartbeat can tell a
+#: block (fixable by allowlisting) from an outage. 429 is rate-limiting: it
+#: is a block *of us right now*, and repeated 429s mean the polite backoff
+#: is not being honoured — still our problem to fix, not the site's.
+BLOCKED_STATUSES = frozenset({401, 403, 429, 451})
+
+
+def require_ok(resp, source_key: str, what: str) -> None:
+    """Raise for a non-2xx/304 response, classifying the failure.
+
+    `SourceBlocked` for a WAF-style refusal (401/403/429/451) — the site is
+    up, the crawler is not welcome — and `SourceError` for anything else
+    (5xx, 404, network-level verdicts). Every adapter that checks `resp.ok`
+    should go through here so a future 403 is recorded as `degraded`, never
+    quietly promoted to a full `failed`.
+    """
+    if resp.ok or resp.status == 304:
+        return
+    if resp.status in BLOCKED_STATUSES:
+        raise SourceBlocked(
+            source_key,
+            f"HTTP {resp.status} from {what} — the site is refusing us "
+            "(possible anti-bot block)",
+        )
+    raise SourceError(source_key, f"HTTP {resp.status} from {what}")
 
 
 # ----------------------------------------------------------- WordPress JSON

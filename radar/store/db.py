@@ -111,12 +111,19 @@ class Db:
             for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
                 if path.name in applied:
                     continue
-                with self.tx():
-                    self.conn.executescript(path.read_text())
-                    self.execute(
-                        "INSERT OR REPLACE INTO _meta(key, value) VALUES (?, ?)",
-                        (f"migration:{path.name}", path.name),
-                    )
+                # `executescript` implicitly COMMITs any open transaction before
+                # it runs, so it cannot live inside `db.tx()` — the trailing
+                # COMMIT would find no transaction (this only bites once a
+                # migration exists). Wrap the script in its own BEGIN/COMMIT so
+                # a multi-statement migration still applies atomically; the
+                # `_meta` marker is written after, so a failure leaves the
+                # migration un-recorded and re-runnable.
+                script = path.read_text()
+                self.conn.executescript(f"BEGIN;\n{script}\nCOMMIT;")
+                self.execute(
+                    "INSERT OR REPLACE INTO _meta(key, value) VALUES (?, ?)",
+                    (f"migration:{path.name}", path.name),
+                )
 
         self.executemany(
             "INSERT OR IGNORE INTO placeholder_name(norm_key) VALUES (?)",
