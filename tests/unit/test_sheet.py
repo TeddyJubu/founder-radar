@@ -314,7 +314,13 @@ def test_tuning_tab_carries_the_sweep_not_just_headers(db, sheet):
                           "Precision", "Recall", "F1"]
     assert rows, "Tuning tab is headers-only — the sweep never landed"
 
-    assert [r[1] for r in rows] == ["55", "60", "65", "70", "75", "80", "85"]
+    # Thresholds come from the data, not a fixed grid — so assert the property
+    # that matters rather than the numbers a particular fixture happens to
+    # produce: every row is a threshold that gives a *different* shortlist.
+    counts = [int(_padded(r)[2]) for r in rows]
+    assert len(set(counts)) == len(counts), (
+        f"rows with identical shortlists — the grid is back: {counts}")
+    assert [r[1] for r in rows] == sorted(r[1] for r in rows), "thresholds unsorted"
     # Every row must carry a real count; a blank here is a sweep that ran on
     # nothing, which looks identical to a sweep that never ran.
     assert all(_padded(r)[2] != "" for r in rows)

@@ -200,7 +200,7 @@ def test_gate_reject_returns_one_row_per_fund(cfg):
 # ------------------------------------------------- the tuning sweep (§8)
 
 
-def _seed_scored(db, count: int, *, fit_from: float = 90.0):
+def _seed_scored(db, count: int, *, fit_from: float = 90.0, tier: str = "watchlist"):
     """`count` companies with descending fit, so any threshold splits them."""
     from radar.store.db import now_iso
     from tests.factories import store_company
@@ -218,7 +218,7 @@ def _seed_scored(db, count: int, *, fit_from: float = 90.0):
                   flags, config_hash, scorer_version, scored_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (company.id, "northstar", None, fit_from - index, 0.9,
-             70.0, fit_from - index, "watchlist", None, "x", None,
+             70.0, fit_from - index, tier, None, "x", None,
              "h", "1", stamp))
         ids.append(company.id)
     return ids
@@ -247,13 +247,78 @@ def test_unjudged_companies_are_not_false_positives(db):
     _label(db, ids[1], "worth contacting")  # fit 89
     _label(db, ids[2], "not for me")        # fit 88
 
-    row = next(r for r in sweep(db)["sweep"] if r["threshold"] == 55)
+    # An explicit grid keeps this test about the precision arithmetic; the
+    # derived thresholds are exercised in test_sweep_uses_change_points.
+    row = next(r for r in sweep(db, fit_grid=[55])["sweep"] if r["threshold"] == 55)
 
     # All 30 clear a threshold of 55, but only three are judged: two good,
     # one bad. Precision is 2/3 over the judged set — not 2/30.
     assert row["would_shortlist"] == 30
     assert row["precision"] == round(2 / 3, 2)
     assert row["recall"] == 1.0
+
+
+def test_sweep_uses_change_points_not_a_fixed_grid(db):
+    """No two rows may give the same answer.
+
+    The fixed grid (55, 60, ... 85) spent rows on thresholds that were
+    pairwise identical — on the live database 60 and 65 both shortlisted 787
+    companies — while missing the cliff at 91 entirely. A row that cannot
+    change the outcome is a decision dressed up as a choice.
+    """
+    from radar.score.tune import sweep
+
+    _seed_scored(db, 30)                                    # fit 90 down to 61
+    # Gated companies below the eligible range. Their fit still has a floor,
+    # but no threshold crossing it changes the shortlist — on live data these
+    # produced three consecutive rows all reading 792.
+    _seed_scored(db, 8, fit_from=50.0, tier="reject")
+
+    result = sweep(db)
+
+    counts = [r["would_shortlist"] for r in result["sweep"]]
+    assert len(set(counts)) == len(counts), f"duplicate shortlists: {counts}"
+    assert min(r["threshold"] for r in result["sweep"]) >= 61, (
+        "a gated company's fit became a phantom threshold")
+    assert result["thresholds"] == "change points"
+    assert result["change_points_omitted"] == 0
+
+
+def test_change_points_cover_every_distinct_shortlist(db):
+    """Completeness: the change points are the whole answer, not a sample.
+
+    Sweeping 0-100 by hand can produce no shortlist that the change points
+    miss. The one exception is the empty shortlist above the highest score,
+    which is never a threshold worth recommending.
+    """
+    from radar.score.tune import _score_rows, change_points
+
+    _seed_scored(db, 30)
+    rows = _score_rows(db)
+    fits = [float(r["fund_fit_pct"]) for r in rows]
+
+    def shortlist(threshold: int) -> frozenset:
+        return frozenset(i for i, v in enumerate(fits) if v >= threshold)
+
+    exhaustive = {shortlist(t) for t in range(0, 101)}
+    covered = {shortlist(t) for t in change_points(rows)}
+
+    assert exhaustive - covered <= {frozenset()}
+
+
+def test_sweep_reports_the_change_points_it_had_to_drop(db):
+    """No silent caps — a truncated table must not read as a complete one."""
+    from radar.score.tune import MAX_SWEEP_ROWS, sweep
+
+    _seed_scored(db, 60)                       # 60 distinct floors
+    result = sweep(db)
+
+    assert len(result["sweep"]) <= MAX_SWEEP_ROWS
+    assert result["change_points_omitted"] > 0
+    # The extremes survive sampling: the widest and narrowest shortlists are
+    # the two a person most wants to see.
+    thresholds = [r["threshold"] for r in result["sweep"]]
+    assert thresholds[0] == 31 and thresholds[-1] == 90
 
 
 def test_sweep_precision_is_none_without_any_verdicts(db):
