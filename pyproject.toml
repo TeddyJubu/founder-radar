@@ -9,12 +9,20 @@ description = "UK Founder Radar — daily scan for early-stage UK startups, rout
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "pydantic>=2.7,<3",
+  # Imported directly by config/loader.py. Pydantic happens to require it, but
+  # a direct import satisfied only transitively breaks the day that changes.
+  "annotated-types>=0.6",
   "click>=8.1",
   "httpx>=0.27",
   "tenacity>=8.2",
   "rapidfuzz>=3.9,<4",
   "protego>=0.3",
   "tldextract>=5.1",
+  # The HTML and RSS parsers behind every adapter. `html_doc` turns a missing
+  # parser into `LayoutChanged`, which reads as "the website changed" — so an
+  # undeclared parser looks like eleven broken sources, not one missing wheel.
+  "selectolax>=0.3,<1",
+  "feedparser>=6.0,<7",
   "gspread>=6.1,<7",
   "google-auth>=2.30",
   "python-dateutil>=2.9",
