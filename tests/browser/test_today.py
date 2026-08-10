@@ -185,15 +185,19 @@ def test_c1_c2_c3_arrow_navigation(today):
     assert today.locator(tid("company-name")).inner_text() == first
 
 
-@pytest.mark.parametrize("key,verdict", [
-    ("1", "worth contacting"), ("2", "unsure"), ("3", "not for me"),
+@pytest.mark.parametrize("key,toast_bit", [
+    # Keep-worthy keys confirm the company landed on Kept, not the raw verdict
+    # string — matching the shortlist UX (`saved to Kept`).
+    ("1", "saved to Kept"),
+    ("2", "saved to Kept"),
+    ("3", "not for me"),
 ])
-def test_c4_c5_c6_keyboard_verdicts(today, key, verdict):
+def test_c4_c5_c6_keyboard_verdicts(today, key, toast_bit):
     name = today.locator(tid("company-name")).inner_text()
     today.keyboard.press(key)
     today.wait_for_selector(f'{tid("toast")}.show')
     toast = today.locator(tid("toast")).inner_text()
-    assert verdict in toast and name.split()[0] in toast
+    assert toast_bit in toast and name.split()[0] in toast
     assert today.locator(tid("company-name")).inner_text() != name
 
 
@@ -201,7 +205,7 @@ def test_c7_buttons_match_keyboard(today):
     name = today.locator(tid("company-name")).inner_text()
     today.locator(tid("verdict-unsure")).click()
     today.wait_for_selector(f'{tid("toast")}.show')
-    assert "unsure" in today.locator(tid("toast")).inner_text()
+    assert "saved to Kept" in today.locator(tid("toast")).inner_text()
     assert today.locator(tid("company-name")).inner_text() != name
 
 
@@ -514,12 +518,15 @@ def test_k3_kept_page_reaches_today_and_back(page, server, api):
 
 def test_k4_kept_badge_counts_on_today(page, server, api):
     """The header badge is how Kept stays visible without opening the list."""
+    # Session-scoped DB accumulates verdicts from earlier interaction tests.
+    # Force a known "not for me" first so the next keep must raise the count.
+    company_id = api["companies"][-1]["company_id"]
+    assert _post(server, {"company_id": company_id, "verdict": "not for me"})[0] == 200
+
     page.goto(server + "/", wait_until="networkidle")
     page.wait_for_selector(tid("card"))
     before = int((page.locator(tid("kept-badge")).get_attribute("data-count") or "0"))
 
-    # Pick a company that is not already kept, so the count must rise by one.
-    company_id = api["companies"][-1]["company_id"]
     status, body = _post(server, {"company_id": company_id, "verdict": "worth contacting"})
     assert status == 200
     payload = json.loads(body)
