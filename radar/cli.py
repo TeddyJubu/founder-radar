@@ -101,6 +101,7 @@ def cli(ctx: click.Context, db_path: str | None, as_json: bool) -> None:
 @click.pass_context
 def run(ctx, fund_key, source_key, since, dry_run, no_llm):
     """The daily run: fetch → extract → resolve → enrich → score → render."""
+    from radar.extract.llm import build_llm
     from radar.pipeline import run_pipeline
 
     try:
@@ -110,6 +111,10 @@ def run(ctx, fund_key, source_key, since, dry_run, no_llm):
             _db(ctx), fund_key=fund_key, source_key=source_key,
             since=since.date() if since else None,
             dry_run=dry_run, use_llm=not no_llm,
+            # `--no-llm` is the explicit switch; otherwise the provider comes
+            # from env (LLM_PROVIDER/LLM_API_KEY/LLM_MODEL/LLM_BASE_URL), and
+            # no key at all means the documented heuristic-only mode.
+            llm=None if no_llm else build_llm(),
         )
     except ValueError as exc:                 # unknown --fund, before any crawl
         raise click.BadParameter(str(exc), param_hint="--fund") from exc

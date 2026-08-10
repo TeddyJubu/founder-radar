@@ -37,6 +37,12 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"  # dated snapshot, never an alias
 
 MAX_PROMPT_WORDS = 1500  # startup articles put who/what/how-much up front
 MAX_OUTPUT_TOKENS = 2048
+# The OpenAI-compatible provider needs far more output headroom than the
+# Anthropic one: gateways often route `kilo-auto/free`-style ids to a
+# *reasoning* model, whose thinking trace can burn 2-6k tokens before the JSON
+# answer appears (verified against api.kilo.ai, Aug 2026). 2048 was enough for
+# Anthropic's strict server-side schema; the OpenAI provider gets this instead.
+OPENAI_MAX_OUTPUT_TOKENS = 8192
 NEAR_DUP_SLICE = (200, 1200)
 
 # USD per million tokens, keyed by model id. Used for the cost ledger only —
@@ -277,6 +283,155 @@ class AnthropicLLM:
             cost_usd=estimate_cost(self.model_id, tokens_in, tokens_out),
             raw_text=text,
         )
+
+
+class OpenAILLM:
+    """OpenAI-format chat completions — OpenAI itself, or any compatible gateway.
+
+    The second provider for the seam, for the case where the only AI credential
+    on the box is an OpenAI-shaped key (08-deployment §3 reserves `LLM_PROVIDER`
+    and `LLM_API_KEY` for exactly this). Same contract as `AnthropicLLM`: every
+    provider exception becomes `ProviderDown`, the caller still has exactly one
+    failure mode to handle, and `estimate_cost` prices the ledger (an unknown
+    model id — e.g. a gateway's free tier — records £0.00 honestly).
+
+    Two robustness details the Anthropic client does not need:
+
+    * `response_format` json_object is sent because the prompt is already a
+      strict "return only JSON" contract, but a gateway that rejects the field
+      must degrade to heuristic, not crash — so the whole call is one try.
+    * Reasoning models sometimes wrap the JSON in markdown fences, so fences
+      are stripped before `json.loads`; and a `content: null` (the reasoning
+      ate the whole token budget) is a `ProviderDown`, i.e. heuristic, not a
+      quarantine.
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        max_tokens: int = OPENAI_MAX_OUTPUT_TOKENS,
+        client: Any | None = None,
+    ) -> None:
+        self.model_id = model_id
+        self.max_tokens = max_tokens
+        self._api_key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        self._base_url = (base_url or os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+        self._client = client
+
+    def _connect(self) -> Any:
+        if self._client is None:
+            try:
+                import httpx  # type: ignore
+            except ImportError as exc:  # pragma: no cover - env dependent
+                raise ProviderDown(f"httpx not installed: {exc}") from exc
+            self._client = httpx.Client(timeout=90)
+        return self._client
+
+    def complete(self, *, key: str, system: str, user: str) -> LLMResponse:
+        client = self._connect()
+        # The Anthropic client gets the schema enforced server-side via
+        # `output_config`; an OpenAI-format gateway usually only honours
+        # `json_object`, so the schema must be *told* to the model. Without it,
+        # the free tier answers close-enough shapes (founders as strings, extra
+        # keys) that fail `Extraction` validation and get quarantined.
+        schema_hint = (
+            "\n\nYour JSON output MUST match this exact schema — the same key "
+            "names, the same types, no extra keys, no omitted required keys. "
+            "Arrays keep the exact element shape shown (e.g. founders is an "
+            "array of objects with name and role, never strings).\n"
+            + json.dumps(llm_json_schema(), sort_keys=True)
+        )
+        content: str | None = None
+        data: dict = {}
+        for attempt in range(2):
+            # A reasoning model (e.g. the free tier of a gateway) can spend the
+            # whole token budget thinking and answer `content: null`. That is a
+            # bad draw, not a dead provider, so one retry happens here — before
+            # the pipeline's heuristic fallback — rather than degrading a whole
+            # article over a coin flip.
+            try:
+                response = client.post(
+                    f"{self._base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json={
+                        "model": self.model_id,
+                        "max_tokens": self.max_tokens,
+                        "temperature": 0,
+                        "response_format": {"type": "json_object"},
+                        "messages": [
+                            {"role": "system", "content": system + schema_hint},
+                            {"role": "user", "content": user},
+                        ],
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+            except Exception as exc:  # network, 4xx, 5xx, timeout — all the same
+                raise ProviderDown(f"{type(exc).__name__}: {exc}") from exc
+
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise ProviderDown(f"no content in completion: {exc}") from exc
+            if content and str(content).strip():
+                break
+        if not content or not str(content).strip():
+            raise ProviderDown("empty completion content on both attempts")
+        content = str(content).strip()
+        # A reasoning model may fence the JSON; the Anthropic client never sees
+        # fences because output_config enforces the schema server-side.
+        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content).strip()
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise InvalidModelJSON(f"not JSON: {exc}") from exc
+
+        usage = data.get("usage") or {}
+        tokens_in = int(usage.get("prompt_tokens", 0) or 0)
+        tokens_out = int(usage.get("completion_tokens", 0) or 0)
+        return LLMResponse(
+            payload=payload,
+            model_id=self.model_id,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=estimate_cost(self.model_id, tokens_in, tokens_out),
+            raw_text=content,
+        )
+
+
+# ------------------------------------------------------------------- factory
+
+
+def build_llm(
+    *,
+    provider: str | None = None,
+    api_key: str | None = None,
+    model_id: str | None = None,
+    base_url: str | None = None,
+) -> LLMClient | None:
+    """One client from env, or `None` for the documented heuristic-only mode.
+
+    `LLM_PROVIDER` is `anthropic` (default) or `openai` — any OpenAI-format
+    chat-completions gateway. The generic `LLM_API_KEY` (the name 08-deployment
+    §3 and the README promise) is read first, then the provider-specific key.
+    No key → `None` → heuristic extraction at £0 AI cost, which is a supported
+    mode, not an error (README: "with no LLM_API_KEY the system falls back to
+    a deterministic heuristic extractor").
+    """
+    provider = (provider or os.environ.get("LLM_PROVIDER") or "anthropic").lower()
+    model_id = model_id or os.environ.get("LLM_MODEL") or DEFAULT_MODEL
+    if provider in ("openai", "openai_compatible", "openai-compatible"):
+        key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            return None
+        return OpenAILLM(model_id, api_key=key, base_url=base_url)
+    key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    return AnthropicLLM(model_id, api_key=key)
 
 
 # ------------------------------------------------------------------- replay

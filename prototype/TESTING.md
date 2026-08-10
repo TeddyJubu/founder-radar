@@ -158,10 +158,8 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 Concatenate `card` `innerText` and assert it contains **none** of:
 
 ```
-undefined   null   NaN   [object Object]   None
+undefined   null   NaN   [object Object]   (None)
 ```
-
-> ⚠️ `None` **will currently fail** on some cards. See [Known defects](#known-defects) — report it as `KNOWN`, not as a new finding.
 
 ### B13 — No tofu glyphs *(high value)*
 
@@ -325,11 +323,13 @@ backgrounds. **Pass:** ≥ 4.5:1 for body text, ≥ 3:1 for text ≥ 24px.
 Confirm these are **still present or fixed**. Report as `KNOWN` or `FIXED` —
 do not file them as new findings.
 
+*The three `explain.py` defects previously listed here (a `(None)` date, a
+caveat stated three times, and a date echoed after itself) were fixed on
+10 August 2026. `test_b12_no_placeholder_leakage` now sweeps for `(None)`
+directly, and `tests/unit/test_scoring.py` pins each behaviour.*
+
 | # | Defect | Where | Detect |
 |---|---|---|---|
-| K1 | Explanation renders `(None)` when a signal has no date | `radar/score/explain.py` | `explanation` text contains `(None)` — currently **8 of 11** cards |
-| K2 | Caveats stated up to three times in one sentence | `radar/score/explain.py` | `explanation` contains `age unknown` more than once — currently **8 of 11** |
-| K3 | Date repeated after a headline that already contains it | `radar/score/explain.py` | `explanation` matches `(\d{4}-\d{2}-\d{2})\s*\(\1\)` — currently **3 of 11** |
 | K4 | SF Symbols glyphs render as tofu off Apple platforms | `prototype/index.html` | covered by B13 — should now be `FIXED` |
 
 ---

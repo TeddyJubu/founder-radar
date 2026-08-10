@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
@@ -365,3 +366,77 @@ def test_sweep_precision_is_none_without_any_verdicts(db):
                for r in result["sweep"])
     assert result["best"] is None
     assert "No verdicts yet" in result["recommendation"]
+
+
+# ------------------------------------------------- the explanation sentence
+
+
+def _fit_stub(**over):
+    from radar.score.criteria import ComponentScore as Comp
+
+    base = dict(pct=100.0, coverage=0.2, components=[
+        Comp(key="founder_signal", label="Founder signal", sub_score=1.0,
+             weight=4, evidence="research/spinout"),
+        Comp(key="sector", label="Sector", sub_score=None, weight=4, evidence="unknown"),
+    ])
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def test_explanation_never_renders_a_none_date():
+    """`Found via Acme Robotics (None)` told the reader the system was broken
+    when the truth was only that a signal carried no date."""
+    from radar.score.explain import explain
+
+    undated = SimpleNamespace(headline="Allos AI", occurred_on=None)
+    text = explain(_fit_stub(), 67.0, [undated])
+    assert "(None)" not in text
+    assert "Found via Allos AI." in text
+
+    dated = SimpleNamespace(headline="SH01 filed", occurred_on="2026-07-30")
+    assert "SH01 filed (2026-07-30)" in explain(_fit_stub(), 67.0, [dated])
+
+
+def test_each_caveat_is_stated_exactly_once():
+    """It used to read: `age unknown — verify before sending. ⚠ age unknown.
+    ⚠ gate unverified. ⚠ uk unverified. Age unknown — verify before sending.`
+    One unknown, said three times, looks like three problems."""
+    from radar.score.explain import explain
+
+    text = explain(_fit_stub(), 67.0, [],
+                   flags=["age_unknown", "gate_unverified", "uk_unverified"],
+                   tier_reason="age unknown — verify before sending")
+
+    assert text.lower().count("age unknown") == 1, text
+    # The caveats the sentence has not already made appear once, together.
+    assert text.count("⚠") == 1, text
+    assert "gate unverified, uk unverified" in text
+
+
+def test_a_flag_the_sentence_never_mentions_is_still_shown():
+    """Suppression must not swallow a caveat nobody else stated."""
+    from radar.score.explain import explain
+
+    text = explain(_fit_stub(), 67.0, [], flags=["uk_unverified"])
+    assert "⚠ uk unverified" in text
+
+
+def test_the_tier_reason_is_appended_once_by_the_caller_chain(db, cfg):
+    """`explain` owns the tier reason. The daily path used to append it a
+    second time while the bulk rescore path did not, so the two produced
+    different text for the same company — a divergence
+    `test_rescore_bulk_equals_daily` compares but could not see, because its
+    fixture has no watchlist rows."""
+    from radar.pipeline import score_company
+    from tests.factories import store_company
+
+    company = C(sector="climate_tech", geography="north_east",
+                stage=None, founder_signal=None, traction_signal=None)
+    cid = store_company(db, company)
+    score_company(db, cid, cfg, today=date(2026, 8, 8))
+
+    for row in db.query("SELECT tier, explanation FROM score WHERE company_id = ?", (cid,)):
+        text = (row["explanation"] or "").lower()
+        for phrase in ("below fit threshold", "verify before sending",
+                       "eligibility unconfirmed"):
+            assert text.count(phrase) <= 1, f"{phrase!r} repeated in: {text}"

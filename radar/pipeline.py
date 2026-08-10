@@ -242,13 +242,17 @@ def evaluate(company: Any, cfg: Any, *, today: date | None = None,
         priority = priority_of(best.pct, edge, cfg)
         flags = sorted(set(gate.flags) | set(vehicle_flags))
         tier, why = tier_of(best, edge, flags, cfg)
+        # `explain` already appends `tier_reason`. Appending it again here put
+        # the same sentence in twice — once lower-case mid-paragraph and once
+        # capitalised at the end — and, worse, the bulk rescore path never did
+        # it, so the two paths produced different text for the same company.
+        # `test_rescore_bulk_equals_daily` compares `explanation` and missed it
+        # only because its fixture has no watchlist rows, where `why` is empty.
         explanation = explain(
             best, edge, company.signals, vehicle, flags,
             tier_reason=why,
             reject_reason=gate.reason,
         )
-        if why:
-            explanation += f" {why.capitalize()}."
 
         results.append(Score(
             company_id=company.id,
@@ -670,11 +674,12 @@ def _bulk_score_rows(company: dict, cfg: Any, attributes: tuple[str, ...], *,
                                      for _, label, sub, weight, _, evidence
                                      in best["components"]])
         tier, why = tier_of(fit_ns, edge, flags, cfg)
+        # `explain` owns the tier reason — see the note on the daily path.
+        # Both paths carried this duplicate append, which is why the two agreed
+        # with each other and were wrong together.
         explanation = explain(fit_ns, edge, company.get("signals", []),
                               best_vehicle, flags, tier_reason=why,
                               reject_reason=gate.reason)
-        if why:
-            explanation += f" {why.capitalize()}."
 
         vehicle_key = best_vehicle.vehicle_key
         rows_out.append((_score_row(
@@ -960,6 +965,12 @@ def _fields_from_extraction(extraction: Any, cfg: Any) -> dict[str, Any]:
         fields["spinout_university"] = extraction.university_name
     if extraction.grant_amount_gbp:
         fields["total_funding_gbp"] = extraction.grant_amount_gbp
+    if extraction.extraction_method:
+        # The Extraction record already carries "llm" vs "heuristic" (set in
+        # extract._finish_llm/_finish_heuristic). Without this the company
+        # column stayed NULL for every prose-sourced company, which broke the
+        # Sources/evidence display and the sheet's confidence column.
+        fields["extraction_method"] = extraction.extraction_method
     return fields
 
 
