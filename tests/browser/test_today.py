@@ -117,11 +117,16 @@ def test_b1_b2_single_card_with_a_name(today):
 
 
 def test_b3_b4_both_tiles_named_not_positional(today):
-    """Named tiles: a reordering can never make a test compare Edge to Fit."""
-    for testid, label in ((tid("score-fit"), "Fit"), (tid("score-edge"), "Edge")):
+    """Named tiles: a reordering can never make a test compare Fresh to Match."""
+    for testid, label in ((tid("score-fit"), "Match"), (tid("score-edge"), "Fresh")):
         tile = today.locator(testid)
         assert tile.count() == 1
         assert tile.locator(tid("score-label")).text_content() == label
+    hint = today.locator(tid("score-hint"))
+    assert hint.count() == 1
+    assert "fund fit" in hint.inner_text().lower()
+    assert today.locator(tid("score-fit")).get_attribute("title")
+    assert today.locator(tid("score-edge")).get_attribute("title")
 
 
 def test_b5_scores_render_as_integers(today):

@@ -1,11 +1,12 @@
-"""Discovery Edge — how likely is it that this fund has *not* already seen it?
+"""Discovery Edge (UI: Fresh) — how likely is it that this fund has *not*
+already seen the company?
 
 06-scoring §7. 0-100, deterministic, evidence-backed, scored with the same
-`ComponentScore` machinery as Fund Fit.
+`ComponentScore` machinery as Fund Fit (UI: Match).
 
 | component      | weight | sub-score                                            |
 |----------------|--------|------------------------------------------------------|
-| company age    | 30     | ≤6m → 1.0 · 7-18 → 0.8 · 19-30 → 0.5 · 31-36 → 0.2   |
+| company age    | 30     | continuous curve 0→36 months (younger = fresher)     |
 | press coverage | 30     | 0 → 1.0 · 1 → 0.7 · 2-4 → 0.4 · ≥5 → 0.0             |
 | funding        | 20     | known none → 1.0 · **unknown → 0.5** · <£500k → 0.6  |
 | route          | 20     | register-first → 1.0 · spinout page → 0.6 · news 0.2 |
@@ -22,6 +23,12 @@ Four things this model deliberately does **not** do:
 4. **Route rewards the register.** A company found by sweeping Companies House
    with no press attached is, by construction, the least-visible thing the
    system can produce.
+
+Age used to be four coarse step bands (≤6 / ≤18 / ≤30 / ≤36). Every young
+registry company landed on the same sub-score, so the Fresh tile looked
+identical across a morning's cards. The curve is piecewise-linear now so
+companies of different ages separate when evidence differs — without inventing
+press or funding we do not have.
 """
 
 from __future__ import annotations
@@ -50,8 +57,14 @@ _LABELS = {
     "discovery_route": "Discovery route",
 }
 
+# Piecewise-linear age curve: [months, sub_score], evaluated between knots.
+# Declines steadily so same-route candidates still separate on age alone.
+_DEFAULT_AGE_CURVE = [[0, 1.0], [12, 0.85], [24, 0.55], [36, 0.15]]
+
 _FALLBACK = {
     "weights": {"age": 30, "press_coverage": 30, "disclosed_funding": 20, "discovery_route": 20},
+    "age_curve": _DEFAULT_AGE_CURVE,
+    # Kept for back-compat if a config snapshot only has step bands.
     "age_bands": [[6, 1.0], [18, 0.8], [30, 0.5], [36, 0.2]],
     "age_unknown": 0.5,
     "press_bands": [[0, 1.0], [1, 0.7], [4, 0.4]],
@@ -71,6 +84,37 @@ def _cfg(config: Any) -> dict:
     return merged
 
 
+def curve_score(value: float | int | None, curve: list, unknown: float) -> float:
+    """Piecewise-linear score along `[[x, sub], ...]` knots (x ascending).
+
+    Below the first knot → first sub-score. Above the last → 0.0 (same as
+    `band_score` past the final band). Unknown → configured mid/neutral.
+    """
+    if value is None:
+        return float(unknown)
+    if not curve:
+        return float(unknown)
+    x = float(value)
+    points = [(float(px), float(ps)) for px, ps in curve]
+    if x <= points[0][0]:
+        return points[0][1]
+    for (x0, s0), (x1, s1) in zip(points, points[1:]):
+        if x <= x1:
+            if x1 == x0:
+                return s1
+            t = (x - x0) / (x1 - x0)
+            return s0 + t * (s1 - s0)
+    return 0.0
+
+
+def _age_sub(age: float | None, settings: dict) -> float:
+    """Prefer a continuous `age_curve`; fall back to legacy step `age_bands`."""
+    curve = settings.get("age_curve")
+    if curve:
+        return curve_score(age, curve, settings["age_unknown"])
+    return band_score(age, settings["age_bands"], settings["age_unknown"])
+
+
 def _edge_parts(
     company: Any, config: Any = None, *, today: date | None = None
 ) -> tuple[float, list[tuple[str, str, float, float, str]]]:
@@ -86,7 +130,7 @@ def _edge_parts(
     weights = settings["weights"]
 
     age = age_months(company, today)
-    age_sub = band_score(age, settings["age_bands"], settings["age_unknown"])
+    age_sub = _age_sub(age, settings)
 
     press = _get(company, "news_mention_count")
     press_sub = band_score(press, settings["press_bands"], settings["press_unknown"])

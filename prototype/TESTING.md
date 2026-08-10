@@ -88,10 +88,11 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Domain link | `company-domain` | | absent when the company has no domain |
 | Age phrase | `company-age` | `data-exact` | empty when the date is unknown |
 | Scores wrapper | `scores` | | |
-| Fit tile | `score-fit` | `data-value` (**raw**), `data-band` | named, not positional |
-| Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | named, not positional |
+| Fit tile | `score-fit` | `data-value` (**raw**), `data-band` | labelled **Match** in UI; testid unchanged |
+| Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | labelled **Fresh** in UI; testid unchanged |
 | Score number | `score-value` | | rounded display text; two per card |
-| Score label | `score-label` | | `Fit` / `Edge` (uppercase is CSS only) |
+| Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
+| Score hint | `score-hint` | | one-line explainer under the tiles |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |
@@ -144,7 +145,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B1 | First card renders | exactly one `card` in the DOM |
 | B2 | Name non-empty | `company-name` text length > 0 |
 | B3 | Both tiles exist | `score-fit` and `score-edge` each present exactly once |
-| B4 | Tiles labelled | `score-fit`'s `score-label` is `Fit`; `score-edge`'s is `Edge` |
+| B4 | Tiles labelled | `score-fit`'s `score-label` is `Match`; `score-edge`'s is `Fresh` |
 | B5 | Scores are integers | both `score-value` match `/^\d+$/` |
 | B6 | Fund present | `route-fund` text length > 0 |
 | B7 | Explanation present | `explanation` text length > 20 |
