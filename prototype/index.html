@@ -42,6 +42,8 @@ h1 {
 }
 .help:hover { background: color-mix(in srgb, var(--blue) 16%, var(--fill)); color: var(--blue); }
 .help:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+/* `.help` is a 24px circle for the single "?" glyph; a word needs to grow. */
+.kept-link { width: auto; border-radius: 999px; padding: 0 11px; }
 
 /* Progress: dots, not "2 of 6". A count invites counting; dots are glanceable. */
 .dots { display: flex; gap: 6px; align-items: center; }
@@ -287,6 +289,7 @@ button.no  { color: var(--red); }
   <header data-testid="today-header">
     <h1 data-testid="today-title">Today</h1>
     <span class="date" id="date" data-testid="today-date"></span>
+    <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept</a>
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
     <div class="dots" id="dots" data-testid="progress" aria-hidden="true"></div>
   </header>
