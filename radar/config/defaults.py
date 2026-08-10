@@ -368,11 +368,13 @@ VALUE_LABELS: dict[str, str] = {
     "pre_revenue_concept": "pre-revenue concept",
 }
 
-# Discovery Edge bands (06-scoring §7). **Judgement** — to be tuned against
-# Aryan's verdicts in Phase 9.
+# Discovery Edge / Fresh curve (06-scoring §7). Continuous age so co-aged
+# step-bands no longer flatten every young registry company to the same Fresh
+# tile. **Judgement** — tune against Aryan's verdicts in Phase 9.
 DISCOVERY_EDGE: dict[str, Any] = {
     "weights": {"age": 30, "press_coverage": 30, "disclosed_funding": 20, "discovery_route": 20},
-    "age_bands": [[6, 1.0], [18, 0.8], [30, 0.5], [36, 0.2]],
+    "age_curve": [[0, 1.0], [12, 0.85], [24, 0.55], [36, 0.15]],
+    "age_bands": [[6, 1.0], [18, 0.8], [30, 0.5], [36, 0.2]],  # legacy fallback
     "age_unknown": 0.5,
     "press_bands": [[0, 1.0], [1, 0.7], [4, 0.4]],
     "press_unknown": 0.5,

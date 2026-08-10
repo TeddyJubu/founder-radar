@@ -97,23 +97,39 @@ h2 {
 .meta a:hover { text-decoration: underline; }
 .age { color: var(--label); font-weight: 500; }
 
-/* Fit and Edge are the same size on purpose. Edge is the whole v2 thesis —
-   "nobody has found this yet" — and shrinking it reproduces the v1 ranking
-   error visually. */
-.scores { display: flex; gap: var(--s2); flex: none; }
+/* Match is the primary number (fund criteria strength). Fresh is secondary —
+   younger / less covered / register-first. Testids stay score-fit / score-edge
+   so the API contract does not churn. */
+.scores {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: var(--s2); flex: none;
+}
+.score-row { display: flex; gap: var(--s2); }
 .score {
   width: 84px; padding: var(--s3) var(--s2) var(--s2);
   background: var(--fill); border-radius: var(--r-control);
   text-align: center;
+  cursor: help;
+}
+.score-fit {
+  width: 96px; padding: var(--s3) var(--s3) var(--s2);
+  background: color-mix(in srgb, var(--blue) 8%, var(--fill));
+  border: 0.5px solid color-mix(in srgb, var(--blue) 18%, transparent);
 }
 .score .n {
   font-size: 30px; line-height: 34px; font-weight: 600;
   letter-spacing: -0.6px; font-variant-numeric: tabular-nums;
 }
+.score-fit .n { font-size: 34px; line-height: 36px; }
 .score .k {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-2); text-transform: uppercase; letter-spacing: 0.4px;
   margin-top: 2px;
+}
+.score-hint {
+  max-width: 180px;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-3); text-align: right;
 }
 .score.high .n { color: var(--green); }
 .score.mid  .n { color: var(--label); }
@@ -267,9 +283,13 @@ button.no  { color: var(--red); }
   h1 { font-size: 28px; line-height: 34px; }
   .card { padding: var(--s5); }
   .top { flex-direction: column; gap: var(--s4); }
-  .scores { width: 100%; }
+  .scores { width: 100%; align-items: stretch; }
+  .score-row { width: 100%; }
+  .score-fit { width: auto; }
   .score { flex: 1; width: auto; padding: var(--s2) var(--s2) 6px; }
   .score .n { font-size: 26px; line-height: 30px; }
+  .score-fit .n { font-size: 28px; line-height: 32px; }
+  .score-hint { max-width: none; text-align: left; }
   h2 { font-size: 26px; line-height: 32px; }
   .why { font-size: var(--subhead); line-height: 21px; }
   button { font-size: var(--subhead); padding: 11px var(--s2); }
@@ -442,8 +462,10 @@ function render() {
 
   // Every hook a test needs is a data-testid. The CSS classes are for
   // styling and may be renamed freely; the testids are the contract.
-  // `score-fit` and `score-edge` are named rather than positional so a test
-  // can never silently assert Edge against Fit if the tiles are reordered.
+  // `score-fit` / `score-edge` stay named (Match / Fresh in the label) so a
+  // reordering can never silently assert Fresh against Match.
+  const matchTitle = "Match — how strongly this company fits this fund's criteria. Unknown fields are skipped, never guessed.";
+  const freshTitle = "Fresh — how likely it is the fund hasn't already seen this (age, tracked press, disclosed funding, discovery route). Unknown funding stays mid, not perfect.";
   main.innerHTML = `
     <article class="card ${thin ? "thin" : ""}" data-testid="card"
              data-company-id="${esc(c.company_id)}" data-tier="${esc(c.tier)}"
@@ -454,14 +476,19 @@ function render() {
           <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
         </div>
         <div class="scores" data-testid="scores">
-          <div class="score ${band(c.fit, 70, 45)}" data-testid="score-fit"
-               data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}">
-            <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
-            <div class="k" data-testid="score-label">Fit</div></div>
-          <div class="score ${band(c.edge, 70, 45)}" data-testid="score-edge"
-               data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}">
-            <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
-            <div class="k" data-testid="score-label">Edge</div></div>
+          <div class="score-row">
+            <div class="score score-fit ${band(c.fit, 70, 45)}" data-testid="score-fit"
+                 data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}"
+                 title="${esc(matchTitle)}">
+              <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
+              <div class="k" data-testid="score-label">Match</div></div>
+            <div class="score score-edge ${band(c.edge, 70, 45)}" data-testid="score-edge"
+                 data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}"
+                 title="${esc(freshTitle)}">
+              <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
+              <div class="k" data-testid="score-label">Fresh</div></div>
+          </div>
+          <div class="score-hint" data-testid="score-hint">Match = fund fit · Fresh = new to them</div>
         </div>
       </div>
 

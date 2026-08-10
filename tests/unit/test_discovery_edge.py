@@ -1,4 +1,4 @@
-"""09-test-plan §2.4 — Discovery Edge.
+"""09-test-plan §2.4 — Discovery Edge (UI label: Fresh).
 
 The number that encodes Aryan's actual job: *"there's a good chance these
 funds have already come across them, and I'm not really adding much value."*
@@ -13,6 +13,8 @@ import pytest
 
 from radar.config.defaults import default_config
 from radar.score.discovery_edge import (
+    curve_score,
+    discovery_edge,
     discovery_edge_component,
     discovery_edge_components,
 )
@@ -63,3 +65,26 @@ def test_discovery_edge_has_no_portfolio_component():
     keys = {c.key for c in discovery_edge_components(C())}
     assert "vc_portfolio" not in keys
     assert keys == {"age", "press_coverage", "disclosed_funding", "discovery_route"}
+
+
+def test_age_curve_interpolates():
+    """Knots define a continuous decline — not a flat early plateau."""
+    curve = [[0, 1.0], [12, 0.85], [24, 0.55], [36, 0.15]]
+    assert curve_score(0, curve, 0.5) == pytest.approx(1.0)
+    assert curve_score(6, curve, 0.5) == pytest.approx(0.925)
+    assert curve_score(12, curve, 0.5) == pytest.approx(0.85)
+    assert curve_score(None, curve, 0.5) == 0.5
+    assert curve_score(48, curve, 0.5) == 0.0
+
+
+def test_registry_siblings_separate_on_age(cfg):
+    """Same route/press/funding — different ages must produce different Fresh.
+
+    Coarse month bands used to pin every ≤6-month register find to the same
+    Edge number, which is why the client saw identical tiles across Today.
+    """
+    common = dict(news_mention_count=0, funding=None, discovery_route="registry")
+    younger = discovery_edge(C(**common, age_months=3), cfg)
+    older = discovery_edge(C(**common, age_months=14), cfg)
+    assert younger > older
+    assert younger - older >= 2.0
