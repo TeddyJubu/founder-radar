@@ -260,9 +260,44 @@ def test_d2_d3_scores_are_the_raw_database_values(today, api):
 
 
 def test_d4_explanation_is_character_for_character(today, api):
-    """The spec's sentence, verbatim. Its arithmetic already reconciles; any
-    edit here would be the UI re-deriving a claim it does not own."""
-    assert today.locator(tid("explanation")).inner_text() == api["companies"][0]["explanation"]
+    """The spec's sentence, verbatim. Layout may split it into clauses for
+    scanning, but every character still comes from `score.explanation` —
+    the UI must not re-derive or paraphrase a claim it does not own."""
+    expected = api["companies"][0]["explanation"]
+    why = today.locator(tid("explanation"))
+    assert why.get_attribute("data-text") == expected
+    # All clauses (including any collapsed preview tail) reconstruct the
+    # template sentence when joined with a single space — the same delimiter
+    # `explain.py` used between parts.
+    joined = today.evaluate(
+        """() => [...document.querySelectorAll('[data-testid="explanation-clause"]')]
+                   .map(el => el.textContent).join(' ')"""
+    )
+    assert joined == expected
+
+
+def test_d4b_one_liner_is_honest_when_absent_and_verbatim_when_present(today, api):
+    """Registry companies have no description. Fabricating one from a SIC or
+    sector would fail the client's "say unknown rather than guess" rule. When
+    the extractor did write a one-liner, the card must show that string
+    verbatim — and above the explanation, so the company describes itself
+    before the scoring prose does."""
+    # The demo shortlist is mostly registry-derived: no one-liner may appear.
+    if not api["companies"][0].get("one_liner"):
+        assert today.locator(tid("one-liner")).count() == 0
+
+    blurb = "Turns brewery waste into packaging foam."
+    today.evaluate(
+        """(blurb) => {
+             data.companies[i].one_liner = blurb;
+             render();
+           }""",
+        blurb,
+    )
+    assert today.locator(tid("one-liner")).inner_text() == blurb
+    blurb_y = today.locator(tid("one-liner")).bounding_box()["y"]
+    why_y = today.locator(tid("explanation")).bounding_box()["y"]
+    assert blurb_y < why_y
 
 
 def test_d5_display_text_is_the_rounding_of_its_own_tile(today):
