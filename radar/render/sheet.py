@@ -54,6 +54,7 @@ from radar.render.formatting import (
     UNTOUCHABLE_TABS,
     USER_COLUMNS,
     USER_COLUMN_FIELD,
+    USER_FIELD_COLUMN,
     a1,
     col_index,
     col_letter,
@@ -470,11 +471,26 @@ def read_user_columns(grid: Sequence[Sequence[Any]]) -> dict[str, dict[str, str]
 
 
 def save_user_fields(db: Any, user: Mapping[str, Mapping[str, str]]) -> int:
-    """The sheet always wins for Aryan's columns; the pipeline never overwrites
-    them (07-interfaces §4). It only mirrors them into `user_field`, which is
-    also the labelled data `founder-radar tune` needs."""
+    """Fold Aryan's edits to Z–AC into `user_field`.
+
+    The sheet still wins for these columns; the pipeline never originates a
+    value there (07-interfaces §4). But "the sheet wins" has to mean *an edit
+    in the sheet wins*, not *a blank cell beats everything else*.
+
+    `read_user_columns` returns a row for every company, with `""` for cells
+    nobody has touched, so the old rule — empty means delete — wiped any verdict
+    that arrived from somewhere other than the sheet. The Today prototype writes
+    to exactly this table, so every pick made there was silently deleted by the
+    next daily run and never reached the sheet at all.
+
+    A blank cell now only deletes when it is blank *because it was cleared*:
+    `sheet_row_state` records what the pipeline last rendered into that cell, so
+    "we wrote a verdict there and it is gone now" is a real edit, while "it was
+    always empty" is not an edit and leaves the stored value alone.
+    """
     from radar.store.db import now_iso
 
+    last_rendered = _load_state(db, COMPANIES)
     known = {r["id"] for r in db.query("SELECT id FROM company")}
     stamp = now_iso()
     written = 0
@@ -490,7 +506,7 @@ def save_user_fields(db: Any, user: Mapping[str, Mapping[str, str]]) -> int:
                         "value = excluded.value, updated_at = excluded.updated_at",
                         (company_id, name, value, stamp))
                     written += 1
-                else:
+                elif last_rendered.get(company_id, {}).get(USER_FIELD_COLUMN[name], ""):
                     db.execute("DELETE FROM user_field WHERE company_id = ? AND field = ?",
                                (company_id, name))
     return written
@@ -1036,10 +1052,14 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
         width = col_letter(max(len(r) for r in grid) - 1)
         seed_writes.append(ValueRange(a1(tab, "A", 1, width, len(grid)), grid))
 
-    user = read_user_columns(raw.get(COMPANIES, []))
-    save_user_fields(db, user)
-    if not user:
-        user = user_fields_from_db(db)
+    # Fold the sheet's edits in first, then render from the database — which is
+    # by then the union of what Aryan typed and what he decided in the Today
+    # interface. Rendering from `read_user_columns` instead meant a verdict the
+    # sheet had never seen could not appear in it, so a pick made anywhere else
+    # stayed invisible even when it survived. The old `if not user` fallback
+    # only covered the empty-sheet case and is subsumed by this.
+    save_user_fields(db, read_user_columns(raw.get(COMPANIES, [])))
+    user = user_fields_from_db(db)
 
     result = load_config(raw, db=db)
     cfg = result.config

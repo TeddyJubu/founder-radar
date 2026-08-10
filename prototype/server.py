@@ -268,6 +268,118 @@ def render_fund_rows(cfg: Any) -> str:
     return "\n      ".join(rows)
 
 
+# ------------------------------------------------------------ the kept list
+#
+# "If I see a company I like and want to keep it, where does that go?" — until
+# now, nowhere he could look at: the verdict landed in `user_field` and the
+# only view of it was column Z of the spreadsheet he would rather not open.
+#
+# Kept means a verdict, not a tier. `tier = 'shortlist'` is the scoring engine's
+# opinion and changes every time thresholds move; a verdict is his, and does
+# not.
+
+KEPT_VERDICTS = ("worth contacting", "unsure")
+
+
+def _short_date(stamp: str | None) -> str:
+    """`2026-08-11T09:12:00` → `11 Aug`. Blank rather than a guess."""
+    if not stamp:
+        return ""
+    try:
+        return datetime.fromisoformat(str(stamp)[:19]).strftime("%-d %b")
+    except ValueError:
+        return ""
+
+
+def build_kept(conn: sqlite3.Connection) -> dict[str, list[dict]]:
+    """Every company carrying a verdict, newest decision first, by verdict.
+
+    Reads `user_field` — the same table the sheet's column Z mirrors — so a
+    decision made here and one typed into the sheet are the same decision.
+    """
+    rows = conn.execute(
+        """SELECT u.company_id, u.value AS verdict, u.updated_at,
+                  c.canonical_name, c.one_liner, c.domain, c.website_url,
+                  c.hq_city, c.hq_region, c.sector, c.incorporated_on
+             FROM user_field u
+             JOIN company c ON c.id = u.company_id
+            WHERE u.field = 'verdict' AND c.merged_into IS NULL
+            ORDER BY u.updated_at DESC, c.canonical_name""").fetchall()
+
+    vehicles = _vehicles()
+    out: dict[str, list[dict]] = {v: [] for v in KEPT_VERDICTS}
+    for r in rows:
+        verdict = (r["verdict"] or "").strip().lower()
+        if verdict not in out:
+            continue                       # "not for me" is the point of saying it
+        best = conn.execute(
+            """SELECT fund_key, vehicle_key, fund_fit_pct, discovery_edge, priority
+                 FROM score WHERE company_id = ? AND tier != 'reject'
+                ORDER BY priority DESC LIMIT 1""", (r["company_id"],)).fetchone()
+        vehicle = vehicles.get((best["vehicle_key"] or "") if best else "", {})
+        source = conn.execute(
+            "SELECT source_url FROM company_source WHERE company_id = ? "
+            "ORDER BY first_seen DESC LIMIT 1", (r["company_id"],)).fetchone()
+        out[verdict].append({
+            "company_id": r["company_id"],
+            "name": r["canonical_name"],
+            "one_liner": r["one_liner"],
+            "where": r["hq_city"] or (r["hq_region"] or "").replace("_", " "),
+            "sector": (r["sector"] or "").replace("_", " "),
+            "website": r["website_url"] or (f"https://{r['domain']}" if r["domain"] else ""),
+            "source": source["source_url"] if source else "",
+            "fund": (vehicle.get("fund") or (best["fund_key"] if best else "")) or "",
+            "vehicle": vehicle.get("name") or ((best["vehicle_key"] or "") if best else ""),
+            "fit": best["fund_fit_pct"] if best else None,
+            "edge": best["discovery_edge"] if best else None,
+            "decided": _short_date(r["updated_at"]),
+        })
+    return out
+
+
+def render_kept_rows(conn: sqlite3.Connection) -> str:
+    """The markup `<!--KEPT_ROWS-->` is replaced with."""
+    from html import escape
+
+    kept = build_kept(conn)
+    if not any(kept.values()):
+        return ('<p class="empty" data-testid="kept-empty">Nothing kept yet. '
+                'Press <b>1</b> on a card in Today to keep one.</p>')
+
+    blocks: list[str] = []
+    for verdict in KEPT_VERDICTS:
+        items = kept[verdict]
+        if not items:
+            continue
+        rows = []
+        for c in items:
+            facts = " · ".join(f for f in (c["where"], c["sector"]) if f)
+            score = (f'{c["fit"]:.0f} / {c["edge"]:.0f}'
+                     if c["fit"] is not None and c["edge"] is not None else "")
+            links = "".join(
+                f'<a class="lnk" href="{escape(url)}" target="_blank" '
+                f'rel="noopener" data-testid="kept-{kind}">{label} ↗</a>'
+                for kind, url, label in (("site", c["website"], "Site"),
+                                         ("source", c["source"], "Source"))
+                if url.startswith(("http://", "https://")))
+            rows.append(
+                f'<li class="kept-row" data-testid="kept-row" '
+                f'data-company-id="{escape(c["company_id"])}" '
+                f'data-verdict="{escape(verdict)}">'
+                f'<div class="kept-main"><span class="kept-name">{escape(c["name"])}</span>'
+                f'<span class="kept-desc">{escape(c["one_liner"] or facts)}</span></div>'
+                f'<div class="kept-meta"><span>{escape(c["fund"])}'
+                f'{" · " + escape(c["vehicle"]) if c["vehicle"] else ""}</span>'
+                f'<span class="kept-score">{score}</span>'
+                f'<span class="kept-when">{escape(c["decided"])}</span>{links}</div></li>')
+        blocks.append(
+            f'<section class="kept-group" data-testid="kept-group" '
+            f'data-verdict="{escape(verdict)}">'
+            f'<h2>{escape(verdict.capitalize())} <span class="count">{len(items)}</span></h2>'
+            f'<ul>{"".join(rows)}</ul></section>')
+    return "\n".join(blocks)
+
+
 def _age_phrase(incorporated_on: str | None, today: date) -> tuple[str, str | None]:
     """Prose first, exact date on hover. The complaint was about age, so it
     reads as a sentence rather than as an ISO string in a table cell."""
@@ -448,6 +560,10 @@ def make_handler(conn: sqlite3.Connection):
                 page = (HERE / "onboarding.html").read_text(encoding="utf-8")
                 page = page.replace("<!--FUND_RULES-->",
                                     render_fund_rows(_config()))
+                self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            elif self.path in ("/kept", "/kept.html"):
+                page = (HERE / "kept.html").read_text(encoding="utf-8")
+                page = page.replace("<!--KEPT_ROWS-->", render_kept_rows(conn))
                 self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path == "/tokens.css":
                 self._send(200, (HERE / "tokens.css").read_bytes(),

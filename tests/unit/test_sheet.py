@@ -236,6 +236,56 @@ def test_a_verdict_is_never_originated_by_the_pipeline(db, sheet):
     assert db.query("SELECT * FROM user_field") == []
 
 
+def test_a_verdict_made_outside_the_sheet_survives_and_reaches_it(db, sheet):
+    """A pick made in the Today interface must not be deleted by the daily run.
+
+    `read_user_columns` returns a row per company with `""` for untouched cells,
+    so the old "empty means delete" rule wiped anything that reached
+    `user_field` from anywhere but the sheet. The Today prototype writes to
+    exactly that table, so every verdict clicked there was gone by the next
+    morning and never appeared in the sheet — the client had no durable record
+    of what he had kept.
+    """
+    from radar.store.db import now_iso
+
+    ids = seed_companies(db, 3)
+    render(db, sheet)                                   # day one
+
+    db.execute(                                         # what the prototype writes
+        "INSERT INTO user_field(company_id, field, value, updated_at) VALUES (?,?,?,?)",
+        (ids[0], "verdict", "worth contacting", now_iso()))
+
+    render(db, sheet)                                   # the next daily run
+
+    kept = db.one("SELECT value FROM user_field WHERE company_id = ? AND field = 'verdict'",
+                  (ids[0],))
+    assert kept is not None, "the daily run deleted a verdict made outside the sheet"
+    assert kept["value"] == "worth contacting"
+    # Surviving is not enough — it has to show up where he looks for it.
+    assert "worth contacting" in sheet.column(COMPANIES, "Z")
+
+
+def test_clearing_a_verdict_in_the_sheet_still_deletes_it(db, sheet):
+    """The other half: the sheet still wins. Blank must keep meaning "cleared"
+    when the pipeline had actually rendered something there — otherwise a
+    verdict could never be taken back."""
+    from radar.store.db import now_iso
+
+    ids = seed_companies(db, 3)
+    render(db, sheet)
+    db.execute(
+        "INSERT INTO user_field(company_id, field, value, updated_at) VALUES (?,?,?,?)",
+        (ids[0], "verdict", "worth contacting", now_iso()))
+    render(db, sheet)                                   # now rendered into Z
+
+    row = sheet.row_of(COMPANIES, ids[0], "A")
+    sheet.set_cell(COMPANIES, f"Z{row}", "")            # Aryan changes his mind
+    render(db, sheet)
+
+    assert db.one("SELECT value FROM user_field WHERE company_id = ? AND field = 'verdict'",
+                  (ids[0],)) is None
+
+
 def test_read_user_columns_keys_by_company_id_not_row():
     """Z:AC is read back keyed by the ULID in column A — which is what makes
     it survive a re-sort (05-pipeline ⑦)."""
