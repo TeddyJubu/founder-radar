@@ -135,13 +135,53 @@ h2 {
   font-size: var(--subhead); line-height: var(--subhead-lh); color: var(--label-2);
 }
 
-/* The spec's explanation sentence, verbatim. Its arithmetic already
-   reconciles; re-deriving it here would create a second source of truth. */
-.why {
+/* Company description leads when we have one. Absent means absent — a
+   registry-only company is not described by inventing a SIC paraphrase. */
+.blurb {
   margin: var(--s5) 0 0;
-  font-size: var(--body); line-height: var(--body-lh);
+  font-size: var(--headline); line-height: var(--headline-lh);
+  font-weight: 510; color: var(--label);
+  max-width: 40rem;
+}
+
+/* The spec's explanation, still verbatim — each template clause on its own
+   line so a morning scan can pick Matches / Unknown / Route without
+   reading a 280-character paragraph. Arithmetic stays in the sentence;
+   we only break where `explain.py` already joined with ". ". */
+.why {
+  margin: var(--s4) 0 0;
+  display: flex; flex-direction: column; gap: 6px;
+  max-width: 40rem;
+}
+.why-clause {
+  margin: 0;
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label-2);
+}
+.why-clause[data-kind="match"],
+.why-clause[data-kind="found"] {
   color: var(--label);
 }
+.why-clause[data-kind="unknown"],
+.why-clause[data-kind="against"],
+.why-clause[data-kind="warn"] {
+  color: var(--orange);
+}
+.why-more {
+  align-self: flex-start;
+  margin: 2px 0 0;
+  padding: 0;
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 510;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.why-more:hover { background: transparent; text-decoration: underline; }
+.why-more:active { transform: none; }
 
 .evidence { margin: var(--s5) 0 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
 .ev {
@@ -271,10 +311,11 @@ button.no  { color: var(--red); }
   .score { flex: 1; width: auto; padding: var(--s2) var(--s2) 6px; }
   .score .n { font-size: 26px; line-height: 30px; }
   h2 { font-size: 26px; line-height: 32px; }
-  .why { font-size: var(--subhead); line-height: 21px; }
+  .blurb { font-size: var(--subhead); line-height: 21px; margin-top: var(--s4); }
+  .why-clause { font-size: var(--footnote); line-height: 18px; }
   button { font-size: var(--subhead); padding: 11px var(--s2); }
   .route { padding: var(--s3); margin-top: var(--s4); }
-  .why, .evidence { margin-top: var(--s4); }
+  .blurb, .why, .evidence { margin-top: var(--s4); }
 }
 @media (max-width: 460px) {
   .date { display: none; }             /* the header already says Today */
@@ -329,6 +370,52 @@ function evidenceLabel(sig) {
 function sourceName(key) {
   return (key || "source").replace(/_/g, " ")
     .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+// Split where `explain.py` joined with ". ", and only when the next clause
+// opens with a known template prefix. A naive split would break on "Inc."
+// inside a headline; this keeps each clause byte-identical to the join.
+const EXPLAIN_CLAUSE =
+  /(?<=\.) (?=(?:Found via |Matches on |Against: |Unknown: |Route to |Low visibility|Only \d|Rejected: |⚠ |age |eligibility |good fit))/;
+
+function explanationClauses(text) {
+  const raw = String(text || "").trim();
+  return raw ? raw.split(EXPLAIN_CLAUSE).filter(Boolean) : [];
+}
+
+function explanationKind(clause) {
+  if (clause.startsWith("Found via ")) return "found";
+  if (clause.startsWith("Matches on ")) return "match";
+  if (clause.startsWith("Against: ")) return "against";
+  if (clause.startsWith("Unknown: ")) return "unknown";
+  if (clause.startsWith("⚠ ") || clause.startsWith("age ") ||
+      clause.startsWith("eligibility ") || clause.startsWith("Only ")) return "warn";
+  return "note";
+}
+
+// A long shortlist morning should not force-read every clause. Keep the
+// full sentence in the DOM (and in `data-text`) so D4 stays honest; only
+// hide the tail until expanded.
+const WHY_PREVIEW = 4;
+
+function renderExplanation(text) {
+  const raw = String(text || "").trim();
+  const clauses = explanationClauses(raw);
+  if (!clauses.length) {
+    return `<div class="why" data-testid="explanation" data-text=""></div>`;
+  }
+  const collapsed = clauses.length > WHY_PREVIEW;
+  const items = clauses.map((clause, idx) => {
+    const hidden = collapsed && idx >= WHY_PREVIEW ? " hidden" : "";
+    return `<p class="why-clause"${hidden} data-testid="explanation-clause"
+                data-kind="${explanationKind(clause)}">${esc(clause)}</p>`;
+  }).join("");
+  const more = collapsed
+    ? `<button type="button" class="why-more" data-testid="explanation-more"
+               data-expanded="false" aria-expanded="false">Show all</button>`
+    : "";
+  return `<div class="why" data-testid="explanation" data-text="${esc(raw)}"
+               data-collapsed="${collapsed}">${items}${more}</div>`;
 }
 
 // Everything on this card is scraped off somebody else's website — a company
@@ -470,7 +557,11 @@ function render() {
         <div class="veh" data-testid="route-vehicle">${esc(c.vehicle || "")}${cheque ? " · " + cheque : ""}</div>
       </div>
 
-      <p class="why" data-testid="explanation">${esc(c.explanation || "")}</p>
+      ${c.one_liner
+        ? `<p class="blurb" data-testid="one-liner">${esc(c.one_liner)}</p>`
+        : ""}
+
+      ${renderExplanation(c.explanation || "")}
 
       ${evidence ? `<div class="evidence" data-testid="evidence">${evidence}</div>` : ""}
 
@@ -525,6 +616,18 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
+  const more = e.target.closest("[data-testid='explanation-more']");
+  if (more) {
+    const why = more.closest("[data-testid='explanation']");
+    const willExpand = more.dataset.expanded !== "true";
+    why.querySelectorAll("[data-testid='explanation-clause']").forEach((el, idx) => {
+      el.hidden = !willExpand && idx >= WHY_PREVIEW;
+    });
+    more.dataset.expanded = willExpand ? "true" : "false";
+    more.setAttribute("aria-expanded", willExpand ? "true" : "false");
+    more.textContent = willExpand ? "Show less" : "Show all";
+    return;
+  }
   const b = e.target.closest("button[data-v]");
   if (b) decide(b.dataset.v);
 });
