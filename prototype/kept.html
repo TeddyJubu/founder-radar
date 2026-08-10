@@ -1,0 +1,75 @@
+<!doctype html>
+<!--
+  The companies Aryan has kept. Server-rendered: `render_kept_rows` in
+  server.py replaces the placeholder below, for the same reason the onboarding
+  fund rules are — this page has no JavaScript, and a list of decisions is a
+  poor thing to make depend on a script.
+-->
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kept — UK Founder Radar</title>
+<link rel="stylesheet" href="/tokens.css">
+<style>
+body {
+  margin: 0; background: var(--bg); color: var(--label);
+  font: var(--body)/var(--body-lh) var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding: var(--s6) var(--s5) var(--s7); }
+
+header {
+  display: flex; align-items: baseline; gap: var(--s4);
+  padding-bottom: var(--s5); border-bottom: 0.5px solid var(--separator);
+}
+h1 { font-size: var(--title1); margin: 0; letter-spacing: -0.02em; }
+.back { margin-left: auto; color: var(--blue); text-decoration: none; font-size: var(--subhead); }
+.back:hover { text-decoration: underline; }
+
+.kept-group { margin-top: var(--s6); }
+.kept-group h2 {
+  font-size: var(--headline); margin: 0 0 var(--s3);
+  display: flex; align-items: center; gap: var(--s3);
+}
+.count {
+  font-size: var(--footnote); font-weight: 500; color: var(--label-2);
+  background: var(--fill); border-radius: 999px; padding: 2px 9px;
+}
+.kept-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+
+.kept-row {
+  display: flex; gap: var(--s4); align-items: baseline; flex-wrap: wrap;
+  padding: var(--s4); border-radius: var(--r-control);
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+}
+.kept-main { flex: 1 1 22em; min-width: 0; }
+.kept-name { font-weight: 600; font-size: var(--headline); display: block; }
+.kept-desc { color: var(--label-2); font-size: var(--subhead); }
+.kept-meta {
+  display: flex; align-items: baseline; gap: var(--s4); flex-wrap: wrap;
+  font-size: var(--footnote); color: var(--label-2);
+}
+.kept-score { font-variant-numeric: tabular-nums; }
+.kept-when { color: var(--label-3); }
+.lnk { color: var(--blue); text-decoration: none; }
+.lnk:hover { text-decoration: underline; }
+
+.empty { color: var(--label-2); margin-top: var(--s6); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" data-testid="kept">
+  <header>
+    <h1>Kept</h1>
+    <a class="back" href="/" data-testid="nav-today">← Today</a>
+  </header>
+
+  <!--KEPT_ROWS-->
+</div>
+</body>
+</html>

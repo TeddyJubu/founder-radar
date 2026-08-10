@@ -423,6 +423,54 @@ def test_x4_external_links_are_safe(today):
         assert "noopener" in (a.get_attribute("rel") or "")
 
 
+# ══════════════════════════════════════════════════════════════════ K — kept
+
+
+def test_k1_a_kept_company_appears_on_the_kept_page(page, server, api):
+    """"If I see a company I like and want to keep it, where does that go?"
+
+    It goes to `user_field`, and this page is the answer to the question — the
+    only place he can see what he has chosen without opening the spreadsheet.
+    """
+    company_id = api["companies"][0]["company_id"]
+    name = api["companies"][0]["name"]
+    assert _post(server, {"company_id": company_id, "verdict": "worth contacting"})[0] == 200
+
+    page.goto(server + "/kept", wait_until="networkidle")
+    page.wait_for_selector(tid("kept"))
+
+    row = page.locator(f'{tid("kept-row")}[data-company-id="{company_id}"]')
+    assert row.count() == 1, f"{name} was kept but is not on the kept page"
+    assert row.get_attribute("data-verdict") == "worth contacting"
+    assert name in row.inner_text()
+
+
+def test_k2_not_for_me_is_not_a_kept_company(page, server, api):
+    """Saying no is the point of saying no — it must not come back as a pick."""
+    company_id = api["companies"][1]["company_id"]
+    assert _post(server, {"company_id": company_id, "verdict": "not for me"})[0] == 200
+
+    page.goto(server + "/kept", wait_until="networkidle")
+    page.wait_for_selector(tid("kept"))
+
+    assert page.locator(
+        f'{tid("kept-row")}[data-company-id="{company_id}"]').count() == 0
+    assert "not for me" not in page.locator(tid("kept")).inner_text().lower()
+
+
+def test_k3_kept_page_reaches_today_and_back(page, server, api):
+    """The two screens have to be reachable from each other, or the list may as
+    well not exist."""
+    assert _post(server, {"company_id": api["companies"][0]["company_id"],
+                          "verdict": "worth contacting"})[0] == 200
+    page.goto(server + "/", wait_until="networkidle")
+    page.wait_for_selector(tid("card"))
+    page.locator(tid("nav-kept")).click()
+    page.wait_for_selector(tid("kept"))
+    page.locator(tid("nav-today")).click()
+    page.wait_for_selector(tid("card"))
+
+
 def test_x4b_hostile_source_text_cannot_run_script(today):
     """Every string on this card is scraped off somebody else's site.
 
