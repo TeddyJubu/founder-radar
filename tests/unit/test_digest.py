@@ -31,18 +31,19 @@ QUIET = "2026-08-08"        # the Saturday after
 
 def seed_company(db, name, *, cid=None, incorporated_on="2026-06-14", city="Newcastle",
                  region="north_east", sector="life_sciences", stage="pre_seed",
-                 domain=None, funding=None, ch_no=None, postcode="NE1 4ST"):
+                 domain=None, funding=None, ch_no=None, postcode="NE1 4ST",
+                 one_liner=None):
     cid = cid or f"C{abs(hash(name)) % 10**10:010d}"
     stamp = f"{DAY}T06:30:00Z"
     db.execute(
         """INSERT INTO company (id, canonical_name, norm_key, companies_house_no, domain,
                                 website_url, incorporated_on, hq_postcode, hq_region, hq_city,
-                                sector, stage, total_funding_gbp, discovery_route,
+                                sector, stage, total_funding_gbp, discovery_route, one_liner,
                                 first_seen, last_seen, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (cid, name, name.lower().replace(" ", ""), ch_no, domain,
          f"https://{domain}" if domain else None, incorporated_on, postcode, region, city,
-         sector, stage, funding, "registry", stamp, stamp, stamp, stamp),
+         sector, stage, funding, "registry", one_liner, stamp, stamp, stamp, stamp),
     )
     return cid
 
@@ -134,6 +135,47 @@ def test_full_day_entry_carries_route_facts_evidence_and_link(full_day):
     assert block[2] == "   Newcastle · 1 month old · Life Sciences"
     assert "SH01 filed 22 Jul" in block[3]
     assert block[4] == "   🔗 kelvinbio.com"
+
+
+def test_a_described_company_reads_as_a_company_not_as_an_article(db):
+    """The client, 11 Aug: "I'm currently seeing articles rather than the
+    actual companies themselves, so I still have to open and scan through
+    them. Ideally I'd like the output to be the company itself, with the
+    article just used as the source."
+
+    So a company we read out of prose leads with `one_liner`. The article
+    headline stays — "the article just used as the source" is a demotion, not
+    a deletion — but it must come *below* the description, so the reader
+    already knows what the company is before they meet the headline.
+    """
+    seed_run(db, shortlisted=1)
+    cid = seed_company(db, "Loamweave", domain="loamweave.com",
+                       one_liner="Turns brewery waste into packaging foam.")
+    seed_score(db, cid, explanation="Sector and region match; no press yet.")
+    seed_signal(db, cid, "Newcastle's Loamweave raises £900k pre-seed, UKTN reports",
+                kind="funding_round")
+
+    text = render_digest(db, period="today", on_date=DAY)
+    lines = text.splitlines()
+
+    assert "   Turns brewery waste into packaging foam." in text
+    assert "UKTN reports" in text, "the article is the source — it is not removed"
+    described = next(i for i, x in enumerate(lines) if "brewery waste" in x)
+    article = next(i for i, x in enumerate(lines) if "UKTN reports" in x)
+    assert described < article, "the company describes itself before the article speaks"
+
+
+def test_a_registry_company_still_leads_with_its_filings(db):
+    """The other half of the same rule: a Track B company is met at Companies
+    House, where there is no prose to describe it. Signals are facts about the
+    company there — "incorporated 11 May", "SH01 filed 22 Jul" — so they stay.
+    """
+    seed_run(db, shortlisted=1)
+    cid = seed_company(db, "Quayside Robotics")
+    seed_score(db, cid)
+    seed_signal(db, cid, "SH01 filed 22 Jul", kind="share_issue")
+
+    assert "SH01 filed 22 Jul" in render_digest(db, period="today", on_date=DAY)
 
 
 def test_a_company_appears_once_even_when_several_funds_shortlist_it(db):

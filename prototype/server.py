@@ -131,6 +131,17 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                 ORDER BY COALESCE(occurred_on, first_seen) DESC LIMIT 5""",
             (r["company_id"],))]
 
+        # Where we met the company. `signal` only gets a row when the adapter
+        # emitted a `kind_hint` we recognise, but `resolve_item` writes a
+        # `company_source` row for *every* mention — so this is the reliable
+        # home of the article URL, and the reason the card had no link to
+        # anything: 20 of 20 companies on the queue have zero signal rows.
+        sources = [dict(s) for s in conn.execute(
+            """SELECT source_key, source_url, first_seen
+                 FROM company_source WHERE company_id = ?
+                ORDER BY first_seen DESC""",
+            (r["company_id"],))]
+
         components = [dict(c) for c in conn.execute(
             """SELECT key, label, sub_score, weight, contribution, evidence
                  FROM score_component WHERE score_id = ? ORDER BY contribution DESC""",
@@ -169,6 +180,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "explanation": r["explanation"],
             "flags": json.loads(r["flags"]) if r["flags"] else [],
             "signals": signals,
+            "sources": sources,
             "components": components,
             "also_fits": also,
             "verdict": verdicts.get(r["company_id"]),

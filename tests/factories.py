@@ -166,6 +166,7 @@ def store_company(db, company: Company) -> str:
         founder_signal=company.founder_signal,
         traction_signal=company.traction_signal,
         total_funding_gbp=company.total_funding_gbp,
+        one_liner=company.one_liner,
         sic_codes=json.dumps(company.sic_codes) if company.sic_codes else None,
         has_share_issue=1 if company.has_share_issue else 0,
         on_vc_portfolio=1 if company.on_vc_portfolio else 0,

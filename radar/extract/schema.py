@@ -105,7 +105,18 @@ class Extraction(BaseModel):
     # ---- the record
     company_name: Optional[str] = None
     company_website: Optional[str] = None
-    one_line_description: Optional[str] = Field(None, max_length=200)
+    one_line_description: Optional[str] = Field(
+        None,
+        max_length=200,
+        description=(
+            "What the company DOES — its product or service, in one plain "
+            "sentence, as the company would describe itself. Never the news "
+            "event: not 'raises £2m Seed', not 'has secured funding to "
+            "expand'. Write 'Turns brewery waste into packaging foam', not "
+            "'Newcastle startup raises £900k'. Null if the article never says "
+            "what the company actually does."
+        ),
+    )
     sector: Optional[str] = Field(None, description="One of: " + ", ".join(SECTORS))
     stage: Optional[str] = Field(None, description="One of: " + ", ".join(STAGES))
     hq_city: Optional[str] = None
