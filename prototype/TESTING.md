@@ -95,7 +95,10 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |
-| Explanation | `explanation` | | |
+| Explanation | `explanation` | `data-text` (full verbatim sentence), `data-collapsed` | stacked clauses for scanning; `data-text` is the contract |
+| Explanation clause | `explanation-clause` | `data-kind` | one template part; kinds: `found` / `match` / `against` / `unknown` / `warn` / `note` |
+| Explanation more | `explanation-more` | `data-expanded`, `aria-expanded` | present only when there are more than four clauses |
+| Company one-liner | `one-liner` | | absent when `one_liner` is null — never invented |
 | Evidence wrapper | `evidence` | | absent when there are no links |
 | Evidence link | `evidence-link` | `data-kind`, `data-primary` | zero or more; the first carries `data-primary="true"` and renders as a filled blue button — the way back to the source. Links come from `signals` first (they carry a headline to label with), then from `sources` (`company_source`, written for every mention) for any URL not already listed. A registry-only company has neither and shows no link at all. |
 | Footnote row | `card-footnote` | | |
@@ -225,7 +228,7 @@ sqlite3 -json /tmp/test-run.db "
 | D1 | Name | `company-name` == `canonical_name`, exactly |
 | D2 | Fit, raw | `score-fit` `data-value` == `fund_fit_pct` **exactly** (no rounding) |
 | D3 | Edge, raw | `score-edge` `data-value` == `discovery_edge` **exactly** |
-| D4 | Explanation verbatim | `explanation` text == DB `explanation`, character for character |
+| D4 | Explanation verbatim | `explanation` `data-text` == DB `explanation`, character for character; joining every `explanation-clause` with a space reconstructs the same string |
 | D5 | Display rounding | each `score-value` == `Math.round(data-value)` of its own tile |
 | D6 | Coverage passthrough | `card` `data-coverage` == DB `coverage` exactly |
 | D7 | Amber tint ⇔ coverage | `card[data-thin="true"]` **iff** `coverage < 0.5` |
