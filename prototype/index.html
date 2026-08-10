@@ -530,11 +530,34 @@ document.addEventListener("click", (e) => {
 });
 
 (async function boot() {
-  data = await (await fetch("/api/today")).json();
+  data = await (await fetch("/api/today", {cache: "no-store"})).json();
   $("#date").textContent = new Date(data.date + "T00:00:00").toLocaleDateString("en-GB",
     { weekday: "long", day: "numeric", month: "long" });
   render();
 })();
+
+// The daily run rewrites the score table in place, so a page left open would
+// otherwise keep showing yesterday's shortlist forever. Poll cheaply and
+// re-render only when the shortlist itself changed — mid-run counter flicker
+// and untouched runs are no-ops, so a review in progress is never reset by
+// a run that changed nothing.
+function shortlistSig(p) {
+  return (p?.companies || []).map(c =>
+    `${c.company_id}|${Math.round(c.fit)}|${Math.round(c.edge)}|${c.tier}`).join(";");
+}
+
+async function refresh() {
+  try {
+    const next = await (await fetch("/api/today", {cache: "no-store"})).json();
+    if (shortlistSig(next) === shortlistSig(data)) return;   // nothing new
+    data = next;
+    i = 0; history = [];
+    render();
+    toast("New run loaded — showing the latest shortlist");
+  } catch (e) { /* transient db lock or network — retry next tick */ }
+}
+
+setInterval(refresh, 60_000);
 </script>
 </body>
 </html>
