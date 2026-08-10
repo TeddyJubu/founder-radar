@@ -40,6 +40,9 @@ REVIEWABLE = ("shortlist", "watchlist")
 def _conn(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # The daily run writes the same file (WAL). Busy-wait instead of failing
+    # when a poll lands mid-write.
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 
@@ -426,6 +429,10 @@ def make_handler(conn: sqlite3.Connection):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            # Browsers must never serve a stale shortlist: the run rewrites
+            # the score table in place, so the same URL means different data
+            # later in the day.
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
