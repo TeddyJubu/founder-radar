@@ -88,14 +88,18 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Domain link | `company-domain` | | absent when the company has no domain |
 | Age phrase | `company-age` | `data-exact` | empty when the date is unknown |
 | Scores wrapper | `scores` | | |
-| Fit tile | `score-fit` | `data-value` (**raw**), `data-band` | named, not positional |
-| Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | named, not positional |
+| Fit tile | `score-fit` | `data-value` (**raw**), `data-band` | labelled **Match** in UI; testid unchanged |
+| Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | labelled **Fresh** in UI; testid unchanged |
 | Score number | `score-value` | | rounded display text; two per card |
-| Score label | `score-label` | | `Fit` / `Edge` (uppercase is CSS only) |
+| Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
+| Score hint | `score-hint` | | one-line explainer under the tiles |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |
-| Explanation | `explanation` | | |
+| Explanation | `explanation` | `data-text` (full verbatim sentence), `data-collapsed` | stacked clauses for scanning; `data-text` is the contract |
+| Explanation clause | `explanation-clause` | `data-kind` | one template part; kinds: `found` / `match` / `against` / `unknown` / `warn` / `note` |
+| Explanation more | `explanation-more` | `data-expanded`, `aria-expanded` | present only when there are more than four clauses |
+| Company one-liner | `one-liner` | | absent when `one_liner` is null — never invented |
 | Evidence wrapper | `evidence` | | absent when there are no links |
 | Evidence link | `evidence-link` | `data-kind`, `data-primary` | zero or more; the first carries `data-primary="true"` and renders as a filled blue button — the way back to the source. Links come from `signals` first (they carry a headline to label with), then from `sources` (`company_source`, written for every mention) for any URL not already listed. A registry-only company has neither and shows no link at all. |
 | Footnote row | `card-footnote` | | |
@@ -144,7 +148,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B1 | First card renders | exactly one `card` in the DOM |
 | B2 | Name non-empty | `company-name` text length > 0 |
 | B3 | Both tiles exist | `score-fit` and `score-edge` each present exactly once |
-| B4 | Tiles labelled | `score-fit`'s `score-label` is `Fit`; `score-edge`'s is `Edge` |
+| B4 | Tiles labelled | `score-fit`'s `score-label` is `Match`; `score-edge`'s is `Fresh` |
 | B5 | Scores are integers | both `score-value` match `/^\d+$/` |
 | B6 | Fund present | `route-fund` text length > 0 |
 | B7 | Explanation present | `explanation` text length > 20 |
@@ -185,8 +189,8 @@ Reset by reloading the page between tests where noted.
 | C1 | Press `ArrowRight` | `company-name` text changes; the `now` dot moves one right |
 | C2 | Press `ArrowLeft` | returns to the previous card |
 | C3 | `ArrowLeft` on card 1 | no change, no console error |
-| C4 | Press `1` | toast appears containing `worth contacting`; advances one card |
-| C5 | Press `2` | toast contains `unsure`; advances |
+| C4 | Press `1` | toast appears containing `saved to Kept` (and the company name); advances one card |
+| C5 | Press `2` | toast contains `saved to Kept` (and the company name); advances |
 | C6 | Press `3` | toast contains `not for me`; advances |
 | C7 | Click each `button[data-v]` | same behaviour as C4–C6 |
 | C8 | Press `Cmd/Ctrl+Z` after a verdict | returns to the company just decided |
@@ -225,7 +229,7 @@ sqlite3 -json /tmp/test-run.db "
 | D1 | Name | `company-name` == `canonical_name`, exactly |
 | D2 | Fit, raw | `score-fit` `data-value` == `fund_fit_pct` **exactly** (no rounding) |
 | D3 | Edge, raw | `score-edge` `data-value` == `discovery_edge` **exactly** |
-| D4 | Explanation verbatim | `explanation` text == DB `explanation`, character for character |
+| D4 | Explanation verbatim | `explanation` `data-text` == DB `explanation`, character for character; joining every `explanation-clause` with a space reconstructs the same string |
 | D5 | Display rounding | each `score-value` == `Math.round(data-value)` of its own tile |
 | D6 | Coverage passthrough | `card` `data-coverage` == DB `coverage` exactly |
 | D7 | Amber tint ⇔ coverage | `card[data-thin="true"]` **iff** `coverage < 0.5` |

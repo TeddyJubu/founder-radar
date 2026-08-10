@@ -137,6 +137,9 @@ HEADERS: dict[str, tuple[str, ...]] = {
 USER_COLUMNS: tuple[str, ...] = ("Z", "AA", "AB", "AC")
 USER_FIELDS: tuple[str, ...] = ("verdict", "notes", "contacted", "fund_sent")
 USER_COLUMN_FIELD: dict[str, str] = dict(zip(USER_COLUMNS, USER_FIELDS))
+# The reverse, so a field can find the cell it lives in — needed to ask "did
+# Aryan clear this cell, or was it always empty?" (`save_user_fields`).
+USER_FIELD_COLUMN: dict[str, str] = {f: c for c, f in USER_COLUMN_FIELD.items()}
 
 # Generated columns, warning-only protected.
 PIPELINE_COLUMNS_LAST = "Y"
