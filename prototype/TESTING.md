@@ -189,8 +189,8 @@ Reset by reloading the page between tests where noted.
 | C1 | Press `ArrowRight` | `company-name` text changes; the `now` dot moves one right |
 | C2 | Press `ArrowLeft` | returns to the previous card |
 | C3 | `ArrowLeft` on card 1 | no change, no console error |
-| C4 | Press `1` | toast appears containing `worth contacting`; advances one card |
-| C5 | Press `2` | toast contains `unsure`; advances |
+| C4 | Press `1` | toast appears containing `saved to Kept` (and the company name); advances one card |
+| C5 | Press `2` | toast contains `saved to Kept` (and the company name); advances |
 | C6 | Press `3` | toast contains `not for me`; advances |
 | C7 | Click each `button[data-v]` | same behaviour as C4–C6 |
 | C8 | Press `Cmd/Ctrl+Z` after a verdict | returns to the company just decided |
