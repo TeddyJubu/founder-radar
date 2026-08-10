@@ -24,7 +24,7 @@ from tests.browser.conftest import tid
 
 pytestmark = pytest.mark.browser
 
-PLACEHOLDERS = ("undefined", "null", "NaN", "[object Object]")
+PLACEHOLDERS = ("undefined", "null", "NaN", "[object Object]", "(None)")
 
 VIEWPORTS = [
     ("desktop", 1440, 900),
@@ -147,9 +147,10 @@ def test_b10_b11_verdict_bar(today):
 
 
 def test_b12_no_placeholder_leakage(today):
-    """`undefined` or `[object Object]` on screen is a rendering bug reaching
-    the client. `None` is excluded here — it is a known `explain.py` defect
-    with its own test."""
+    """`undefined`, `[object Object]` or `(None)` on screen is a rendering bug
+    reaching the client. `(None)` was a real `explain.py` defect on 8 of 11
+    cards until the signal-date fix; it is in the sweep now that it cannot
+    recur silently."""
     text = today.locator(tid("card")).inner_text()
     found = [p for p in PLACEHOLDERS if p in text]
     assert not found, f"placeholder leaked into the card: {found}"
@@ -480,34 +481,6 @@ def test_e7_network_is_clean(page, server):
     page.wait_for_timeout(400)
     assert not bad, bad
 
-
-# ═════════════════════════════════════════ K — known defects, tracked not fixed
-
-
-def test_k1_k2_known_explanation_defects_are_still_only_that(api):
-    """`explain.py` renders `(None)` for an undated signal and repeats its
-    caveats. Tracked here so the browser suite reports them once, as knowns,
-    instead of the same bug being rediscovered on every card.
-
-    Delete this test when `explain.py` is fixed — it will start failing, which
-    is the intended signal.
-    """
-    none_dates = [c["name"] for c in api["companies"] if "(None)" in (c["explanation"] or "")]
-    repeated = [c["name"] for c in api["companies"]
-                if (c["explanation"] or "").lower().count("age unknown") > 1]
-
-    # A dataset can be incapable of showing the defect. The register-derived
-    # fixtures all carry dated signals and none has an unknown age, so absence
-    # here means "not exercised", never "fixed" — reporting it as fixed would
-    # quietly close a live bug.
-    exercisable = any(
-        not s.get("occurred_on") for c in api["companies"] for s in c["signals"]
-    ) or any("age_unknown" in c["flags"] for c in api["companies"])
-    if not exercisable:
-        pytest.skip("dataset cannot exhibit K1/K2 — no undated signal, no unknown age")
-    if not none_dates and not repeated:
-        pytest.fail("K1/K2 appear fixed — delete this test and the entry in TESTING.md")
-    pytest.skip(f"KNOWN: (None) on {len(none_dates)}, repeated caveats on {len(repeated)}")
 
 
 # ═══════════════════════════════════════════════════════════ O — onboarding

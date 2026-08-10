@@ -125,6 +125,48 @@ def test_every_run_writes_a_run_log_row(db, config):
     assert row["status"] in ("ok", "partial", "failed")
 
 
+def test_extraction_method_reaches_the_company_row(db, config):
+    """The sheet's confidence column reads `company.extraction_method`, so a
+    prose extraction must persist it — `_fields_from_extraction` used to drop
+    it, leaving every Track A company NULL (heuristic 0.3 confidence hidden).
+    """
+    from datetime import date as _date
+
+    from radar.extract.schema import Extraction
+    from radar.pipeline import resolve_item
+    from radar.sources.base import RawItem
+
+    record = Extraction.model_validate({
+        "is_about_single_company": True,
+        "company_name": "Acme Robotics Ltd",
+        "company_website": "https://acme.example",
+        "one_line_description": "Warehouse robots.",
+        "sector": "industrial",
+        "stage": "seed",
+        "hq_city": "Sheffield",
+        "hq_country_iso2": "GB",
+        "founded_year": 2021,
+        "founders": [],
+        "amount_raised_gbp": None,
+        "amount_original": None,
+        "amount_currency": None,
+        "grant_amount_gbp": None,
+        "extraction_confidence": 0.9,
+        "extraction_method": "llm",
+        "needs_review": False,
+    })
+    item = RawItem(
+        source_key="probe", source_url="https://x.test/1", external_id="e1",
+        published_at=_date(2026, 8, 1), title="Acme Robotics raises pre-seed",
+        structured={},
+    )
+    object.__setattr__(item, "extraction", record)
+
+    cid = resolve_item(db, item, config)
+    row = db.one("SELECT extraction_method FROM company WHERE id = ?", (cid,))
+    assert row["extraction_method"] == "llm"
+
+
 def test_rerun_is_idempotent(db):
     """The same mention arriving twice creates one company, not two."""
     record = Record(name="Acme Robotics", ch_number="00445790")

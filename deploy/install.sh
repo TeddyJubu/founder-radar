@@ -143,6 +143,11 @@ fi
 # ------------------------------------------------------------------ 6. schema
 
 say "database"
+# Run from $ROOT, not the caller's cwd: the CLI loads .env from the working
+# directory, and RADAR_DB=$ROOT/data/radar.db lives there. Run from anywhere
+# else and migrate creates a shadow db under app/data/ that silently absorbs
+# manual CLI runs while the timers write the real one.
+cd "$ROOT"
 sudo -u "$APP_USER" "$VENV/bin/founder-radar" db migrate
 
 say "done. next:"

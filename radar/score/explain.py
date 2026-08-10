@@ -86,10 +86,7 @@ def explain(
     parts: list[str] = []
 
     if signals:
-        parts.append(
-            "Found via "
-            + "; ".join(f"{_get(s, 'headline')} ({_get(s, 'occurred_on')})" for s in signals[:2])
-        )
+        parts.append("Found via " + "; ".join(_signal_phrase(s) for s in signals[:2]))
 
     if positives:
         parts.append(
@@ -122,10 +119,32 @@ def explain(
     if tier_reason:
         parts.append(tier_reason)
 
-    for flag in flags:
-        parts.append(f"⚠ {flag.replace('_', ' ')}")
+    # One clause, and only for caveats the sentence has not already made.
+    #
+    # This used to emit `⚠ age unknown. ⚠ gate unverified. ⚠ uk unverified.`
+    # as three sentences, directly after a tier reason that had already said
+    # "age unknown — verify before sending". Aryan read one problem three
+    # times, and the repetition made a routine unknown look like an alarm.
+    if flags:
+        said = " ".join(parts).lower()
+        unsaid = [f.replace("_", " ") for f in flags
+                  if f.replace("_", " ").lower() not in said]
+        if unsaid:
+            parts.append("⚠ " + ", ".join(unsaid))
 
     return ". ".join(parts) + "." if parts else ""
+
+
+def _signal_phrase(signal: Any) -> str:
+    """`headline (2026-07-30)`, or just the headline when the date is unknown.
+
+    A signal with no `occurred_on` was rendering literally as
+    `Found via Acme Robotics (None)`. `None` is not a date, and printing it
+    tells the reader the system is broken rather than that a fact is missing.
+    """
+    headline = _get(signal, "headline") or ""
+    when = _get(signal, "occurred_on")
+    return f"{headline} ({when})" if when else headline
 
 
 def eligibility_note(unverified_rules: Sequence[str]) -> str:
