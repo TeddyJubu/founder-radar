@@ -423,6 +423,59 @@ def test_x4_external_links_are_safe(today):
         assert "noopener" in (a.get_attribute("rel") or "")
 
 
+def test_x4b_hostile_source_text_cannot_run_script(today):
+    """Every string on this card is scraped off somebody else's site.
+
+    `render()` builds one innerHTML string, so an unescaped company name or
+    article headline is script execution — and this page can read the whole
+    queue and POST verdicts. A source page only has to put markup in its
+    <title> for that headline to reach `signal.headline` verbatim.
+
+    Proved exploitable before `esc()` existed: the payload below set
+    `document.body.dataset.pwned` on a real card.
+    """
+    payload = '<img src=x onerror="window.__pwned = 1">Acme'
+    today.evaluate(
+        """(payload) => {
+             const c = data.companies[i];
+             c.name = payload;
+             c.explanation = payload;
+             c.signals = [{kind: "news_mention", headline: payload,
+                           source_url: "https://example.test/a"}];
+             render();
+           }""",
+        payload,
+    )
+
+    assert today.evaluate("window.__pwned ?? null") is None, "scraped markup executed"
+    assert today.locator(f'{tid("card")} img').count() == 0, "scraped markup became an element"
+    # Escaped, not stripped: the reader still sees exactly what the source said.
+    assert payload in today.locator(tid("company-name")).inner_text()
+
+
+def test_x4c_a_javascript_url_never_becomes_a_link(today):
+    """Escaping does not help an href — `javascript:` needs no angle bracket.
+
+    `_common.absolute_url` drops the scheme, but only the HTML adapters go
+    through it; the wp-json ones take `entry["link"]` as printed. So the
+    allowlist has to exist here, at the point of use.
+    """
+    today.evaluate(
+        """() => {
+             const c = data.companies[i];
+             c.signals = [{kind: "news_mention", headline: "Anything",
+                           source_url: "javascript:window.__jsurl = 1"}];
+             c.sources = [];
+             render();
+           }"""
+    )
+
+    hrefs = today.locator(tid("evidence-link")).evaluate_all(
+        "els => els.map(e => e.getAttribute('href'))")
+    assert not any((h or "").lower().startswith("javascript:") for h in hrefs), hrefs
+    assert today.evaluate("window.__jsurl ?? null") is None
+
+
 def test_x5_reduced_motion_is_honoured(page, server):
     page.emulate_media(reduced_motion="reduce")
     page.goto(server + "/", wait_until="networkidle")
