@@ -391,8 +391,22 @@ class TynesideTechAdapter:
             external_id="quayside-robotics",
             published_at=date(2026, 8, 1),
             title="Quayside Robotics raises \\u00a3900k pre-seed",
+            # A real article, not a stub. The prefilter floor is 400 characters
+            # precisely so a stub never reaches the reader, and a news adapter
+            # that emitted 40 characters was never exercising the path a news
+            # adapter actually takes.
             body_text="<html><body><p>Quayside Robotics Ltd has raised "
-                      "\\u00a3900k.</p></body></html>",
+                      "\\u00a3900k in pre-seed funding to expand its autonomous "
+                      "warehouse fleet across the North East. The Newcastle "
+                      "company was founded by two former marine engineers and "
+                      "builds picking robots for cold-storage sites, where "
+                      "existing automation struggles with condensation and "
+                      "sub-zero temperatures. The round was led by a regional "
+                      "angel syndicate with participation from two university "
+                      "funds. Quayside Robotics says the money will take it "
+                      "from three pilot sites to twelve by the end of next "
+                      "year, and will fund a second engineering hire in "
+                      "Gateshead.</p></body></html>",
         )
 
 
@@ -457,7 +471,7 @@ def test_adding_a_source_touches_no_shared_code(db, config, tmp_path, monkeypatc
         adapter = REGISTRY["tyneside_tech"]
         assert isinstance(adapter, SourceAdapter), "the protocol is the whole contract"
 
-        from radar.pipeline import resolve_item, score_company
+        from radar.pipeline import extract_stage, resolve_item, score_company
         from radar.sources import fetch_all
 
         ctx = FetchContext(http=None, config=config, db=db, now=date(2026, 8, 8))
@@ -465,10 +479,16 @@ def test_adding_a_source_touches_no_shared_code(db, config, tmp_path, monkeypatc
         assert result.source("tyneside_tech").status == "ok"
         assert len(result.items) == 1
 
-        company_id = resolve_item(db, result.items[0], config)
+        # Stage ③ before stage ④, as the run does. A prose source becomes a
+        # company by being *read*, never by having its headline promoted: this
+        # step used to be skipped here, and `resolve_item` covered for it by
+        # falling back to `item.title` — which is how the client ended up with
+        # a sheet full of headlines instead of companies.
+        items = extract_stage(result.items, config, use_llm=False, db=db)
+        company_id = resolve_item(db, items[0], config)
         assert company_id, "the new source produced no company"
         assert db.scalar("SELECT canonical_name FROM company WHERE id = ?",
-                         (company_id,)) == "Quayside Robotics raises £900k pre-seed"
+                         (company_id,)) == "Quayside Robotics"
         score_company(db, company_id, config, today=date(2026, 8, 8))
         assert db.scalar("SELECT COUNT(*) FROM score WHERE company_id = ?",
                          (company_id,)) > 0

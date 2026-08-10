@@ -330,6 +330,7 @@ _ENTRY_SQL = """
            s.flags           AS flags,
            s.scored_at       AS scored_at,
            c.canonical_name  AS canonical_name,
+           c.one_liner       AS one_liner,
            c.domain          AS domain,
            c.website_url     AS website_url,
            c.incorporated_on AS incorporated_on,
@@ -393,13 +394,47 @@ def _signals(db, company_id: str, limit: int = 3) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _describes(entry: dict) -> str:
+    """What the company *is* — never what was written about it.
+
+    The client's complaint, 11 Aug: "I'm currently seeing articles rather than
+    the actual companies themselves, so I still have to open and scan through
+    them." The line under each name used to be `_why_line`, which is a join of
+    signal headlines — and for a Track A company a signal headline *is* the
+    article headline. So the digest read like a news feed and every entry had
+    to be opened to find out what the company did.
+
+    `one_liner` is the extractor's description of the company, so it leads.
+    The article is not removed by this — it keeps `_why_line` below, where it
+    reads as the source rather than as the description.
+
+    ponytail: no fallback. A Track B company is met at the register, where
+    there is no prose to describe it, and the honest answer is to say nothing
+    rather than to assemble a sentence out of a SIC code. The line below still
+    carries its signal ("incorporated 2 May, SH01 filed 22 Jul"), which is a
+    fact about the company rather than a headline about it.
+    """
+    return _truncate(entry.get("one_liner") or "", 96)
+
+
 def _why_line(db, entry: dict) -> str:
     """The one evidence line under each company.
 
     ponytail: 07-interfaces §2 shows a signal-shaped line ("Durham spinout,
     SH01 filed 22 Jul, no press yet") while `score.explanation` is the canonical
-    prose that the Sheet's Why column carries. Signals win when we have them —
-    they are the specific, checkable thing — and the explanation is the fallback.
+    prose that the Sheet's Why column carries.
+
+    Signals win when we have them — they are the specific, checkable thing —
+    and the explanation is the fallback.
+
+    This line is the **source**, and it stays whether or not the company
+    described itself. An earlier pass suppressed it for any company with a
+    `one_liner`, on the theory that a headline next to a description is the
+    article coming back in through the window. That was an over-correction:
+    "the article just used as the source" means demote it, not delete it. With
+    `_describes` now on the line above, the reader already knows what the
+    company is by the time they reach this one, so the headline reads as
+    provenance rather than as the description — which was the whole complaint.
     """
     signals = _signals(db, entry["company_id"])
     if signals:
@@ -499,6 +534,10 @@ def _entry_block(db, index: int, entry: dict, ref: date, funds, vehicles) -> lis
     if vehicle:
         route += f" · {vehicle}"
     block.append(route)
+
+    describes = _describes(entry)
+    if describes:
+        block.append(f"   {describes}")
 
     facts = [
         _pretty(entry["hq_city"] or entry["hq_region"]),
@@ -637,7 +676,10 @@ def render_show(db, name: str) -> str:
     ref = _today()
     months = _months_old(company["incorporated_on"], ref)
 
-    lines = [str(company["canonical_name"]), ""]
+    lines = [str(company["canonical_name"])]
+    if company.get("one_liner"):
+        lines.append(_truncate(company["one_liner"], 200))
+    lines.append("")
 
     def field(label: str, value: str) -> None:
         if value:
@@ -748,7 +790,8 @@ def render_fund(db, fund_key: str, top: int = 10) -> str:
         """SELECT s.company_id AS company_id, s.vehicle_key AS vehicle_key,
                   s.fund_fit_pct AS fund_fit_pct, s.discovery_edge AS discovery_edge,
                   s.priority AS priority, s.tier AS tier, s.explanation AS explanation,
-                  c.canonical_name AS canonical_name, c.domain AS domain,
+                  c.canonical_name AS canonical_name, c.one_liner AS one_liner,
+                  c.domain AS domain,
                   c.website_url AS website_url, c.incorporated_on AS incorporated_on,
                   c.hq_city AS hq_city, c.hq_region AS hq_region, c.sector AS sector
              FROM score s
@@ -784,6 +827,9 @@ def render_fund(db, fund_key: str, top: int = 10) -> str:
         if vehicle:
             detail += f" · {vehicle}"
         lines.append(detail)
+        describes = _describes(entry)
+        if describes:
+            lines.append(f"   {describes}")
         facts = [
             _pretty(entry["hq_city"] or entry["hq_region"]),
             _age_phrase(_months_old(entry["incorporated_on"], ref)),
