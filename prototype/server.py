@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -42,6 +43,13 @@ def _conn(db_path: str) -> sqlite3.Connection:
     return conn
 
 
+def _config() -> Any:
+    """The seeded fund configuration — the same object scoring gates on."""
+    from radar.config.defaults import default_config
+
+    return default_config()
+
+
 def _vehicles() -> dict[str, dict]:
     """`vehicle_key -> display name and cheque range`, from the seeded config.
 
@@ -49,10 +57,8 @@ def _vehicles() -> dict[str, dict]:
     than denormalising into the row keeps the config the single owner of what
     a vehicle is called.
     """
-    from radar.config.defaults import default_config
-
     out: dict[str, dict] = {}
-    for fund in default_config().funds:
+    for fund in _config().funds:
         for v in fund.vehicles:
             out[v.vehicle_key] = {
                 "name": v.vehicle_name,
@@ -61,6 +67,202 @@ def _vehicles() -> dict[str, dict]:
                 "cheque_max": v.cheque_max,
             }
     return out
+
+
+# ------------------------------------------------- the onboarding fund rules
+#
+# The onboarding page used to state each fund's hard rules in hand-written
+# prose, and twice it was wrong: it called Outward's *company* government-backed
+# when it is the fund that takes British Business Bank money, dropped Outward's
+# £5m round cap, and said Northstar "must be in North East England" when its
+# EIS Growth Fund is only a SOFT preference across the north.
+#
+# Prose beside a rule table drifts from it, and nothing catches the drift. So
+# the page no longer contains any fund rule: it carries a placeholder, and every
+# sentence below is derived from the config those rules are actually scored
+# from. A rule that changes in the sheet changes here in the same breath, and a
+# claim the config cannot support is now unwriteable rather than merely wrong.
+
+# Full phrases including their preposition: `outside_golden_triangle` is not a
+# place you are "in", and "Must be in outside London" is how that reads if the
+# preposition is bolted on by the caller.
+GEO_LABEL = {
+    "north_east": "in North East England",
+    "north_england": "in the north of England",
+    "sunderland": "in the Sunderland city region",
+    "yorkshire": "in Yorkshire",
+    "uk_wide": "in the UK",
+    "uk_regions": "in the UK regions",
+    "outside_golden_triangle": "outside London, Oxford and Cambridge",
+}
+
+NUMBER_WORD = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+
+
+def _money_short(value: float) -> str:
+    """£5m / £750k / £250,000 — the form a person reads, not the stored float."""
+    v = float(value)
+    if v >= 1_000_000:
+        m = v / 1_000_000
+        return f"£{m:.0f}m" if m == int(m) else f"£{m:.1f}m"
+    if v >= 1_000:
+        k = v / 1_000
+        return f"£{k:.0f}k" if k == int(k) else f"£{k:.1f}k"
+    return f"£{v:,.0f}"
+
+
+def _join(parts: list[str], word: str = "or") -> str:
+    parts = [p for p in parts if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + f" {word} " + parts[-1]
+
+
+def _geo_label(values: list[str], *, bare: bool = False) -> str:
+    """"in North East England or the Sunderland city region".
+
+    `bare` drops the leading preposition, for verbs that supply their own
+    ("prefers the UK regions", not "prefers in the UK regions"). The
+    preposition also only leads — repeating it on every branch of an `or`
+    reads as a list of separate requirements rather than alternatives.
+    """
+    labels = [GEO_LABEL.get(v, "in " + str(v).replace("_", " ")) for v in values]
+    if not labels:
+        return "anywhere"
+    trimmed = [labels[0]] + [re.sub(r"^in ", "", x) for x in labels[1:]]
+    if bare:
+        trimmed[0] = re.sub(r"^in ", "", trimmed[0])
+    return _join(trimmed)
+
+
+def _reject_phrase(key: str, value: Any) -> str | None:
+    """One hard-reject key, in words. Unknown keys are skipped, never guessed.
+
+    Mirrors `HARD_REJECT_KEYS` in radar/config/models.py. A key added there and
+    not here simply does not appear, which is a silent omission — so
+    `test_every_hard_reject_key_has_a_phrase` fails the build instead.
+    """
+    if key == "round_max":
+        return f"the round must be under {_money_short(value)}"
+    if key == "prior_total_max":
+        return f"it must not have raised more than {_money_short(value)} before"
+    if key == "valuation_max":
+        return f"it must be valued under {_money_short(value)}"
+    if key == "uk_exec_pct_min":
+        return f"at least {int(value)}% of the executive team must be UK tax resident"
+    if key == "university_spinout_required":
+        return f"it must be a spinout from {_join([str(u).title() for u in (value or ())])}"
+    if key == "beyond_research_stage":
+        return "it must be past pure research" if value else None
+    if key == "requires_seis_eis":
+        return "it must qualify for SEIS/EIS tax relief" if value else None
+    if key == "max_age_years":
+        return f"it must be under {int(value)} years old"
+    return None
+
+
+def _scope_phrase(n: int, total: int) -> str:
+    """"Every fund" vs "one of its four" — the distinction the prose lost.
+
+    Northstar's page line was wrong precisely because it promoted a rule that
+    holds for three of its vehicles into one that holds for all four. Returns
+    "" for a single-vehicle fund, where there is no distinction to draw and a
+    prefix would only add noise.
+    """
+    if total == 1:
+        return ""
+    if n == total:
+        return "every fund: "
+    return f"{NUMBER_WORD.get(n, n)} of its {NUMBER_WORD.get(total, total)}: "
+
+
+def fund_rules(cfg: Any) -> list[dict]:
+    """Per fund: the hard rules its ACTIVE vehicles actually impose.
+
+    Inactive vehicles are excluded because they are never scored — listing
+    `bbi_coinvest`'s terms would describe money that cannot be deployed.
+    """
+    out: list[dict] = []
+    for fund in cfg.funds:
+        vehicles = fund.active_vehicles
+        if not vehicles:
+            continue
+        total = len(vehicles)
+        rules: list[str] = []
+
+        # --- geography, stated at the strength the config actually gives it
+        hard = [v for v in vehicles if v.geo_rule == "HARD"]
+        soft = [v for v in vehicles if v.geo_rule != "HARD"]
+        if hard:
+            places = _geo_label(sorted({g for v in hard for g in v.geo_values}))
+            if soft:
+                soft_places = _geo_label(
+                    sorted({g for v in soft for g in v.geo_values}), bare=True)
+                names = _join([v.vehicle_name for v in soft], "and")
+                rules.append(
+                    f"must be {places} — except {names}, which only prefers "
+                    f"{soft_places}")
+            else:
+                rules.append(f"must be {places}")
+        elif soft:
+            bare = _geo_label(sorted({g for v in soft for g in v.geo_values}), bare=True)
+            rules.append(f"prefers {bare}, but does not require it")
+
+        # --- hard rejects and age caps, grouped by (key, VALUE)
+        #
+        # Grouping by key alone was itself a drift bug: DSW's two vehicles both
+        # cap age, at 3 years and at 7, and reporting the first (or the lowest)
+        # under "every fund" states a limit the EIS Investment Service does not
+        # have. Two different values are two different rules.
+        counts: dict[tuple[str, Any], int] = {}
+        for v in vehicles:
+            rejects = dict(v.hard_rejects or {})
+            if v.max_age_years:
+                rejects["max_age_years"] = v.max_age_years
+            for key, value in rejects.items():
+                frozen = tuple(value) if isinstance(value, list) else value
+                counts[(key, frozen)] = counts.get((key, frozen), 0) + 1
+
+        for (key, value), n in sorted(counts.items(), key=lambda kv: str(kv[0])):
+            phrase = _reject_phrase(key, value)
+            if phrase:
+                rules.append(f"{_scope_phrase(n, total)}{phrase}")
+
+        out.append({
+            "key": fund.key,
+            "name": fund.name,
+            # Built lower-case so a scope prefix can lead ("one of its two:
+            # …"); capitalised once, here, where they become sentences.
+            "rules": [r[:1].upper() + r[1:] for r in rules],
+            # The config's own editorial line. Written by whoever owns the rules,
+            # so it cannot drift away from them the way the page's prose did.
+            "flavour": next((v.one_liner for v in vehicles if v.one_liner), ""),
+        })
+    return out
+
+
+def render_fund_rows(cfg: Any) -> str:
+    """The `.fund-row` markup the onboarding placeholder is replaced with."""
+    from html import escape
+
+    rows = []
+    for fund in fund_rules(cfg):
+        # Escape the derived text FIRST, then add markup — the other order
+        # escapes the <em> this function itself wrote.
+        body = escape(". ".join(fund["rules"]))
+        if body:
+            body += "."
+        if fund["flavour"]:
+            body += f' <em>{escape(fund["flavour"])}</em>'
+        rows.append(
+            f'<div class="fund-row" data-testid="fund-row" '
+            f'data-fund="{escape(fund["key"])}">'
+            f'<span class="nm">{escape(fund["name"])}</span>'
+            f'<span class="rule">{body}</span></div>'
+        )
+    return "\n      ".join(rows)
 
 
 def _age_phrase(incorporated_on: str | None, today: date) -> tuple[str, str | None]:
@@ -232,8 +434,14 @@ def make_handler(conn: sqlite3.Connection):
                 self._send(200, (HERE / "index.html").read_bytes(),
                            "text/html; charset=utf-8")
             elif self.path in ("/onboarding", "/onboarding.html"):
-                self._send(200, (HERE / "onboarding.html").read_bytes(),
-                           "text/html; charset=utf-8")
+                # The fund rules are substituted here rather than fetched by
+                # the page: onboarding.html has no JavaScript at all, and the
+                # one thing on it that must never be wrong is a poor candidate
+                # for the first thing that needs a script to appear.
+                page = (HERE / "onboarding.html").read_text(encoding="utf-8")
+                page = page.replace("<!--FUND_RULES-->",
+                                    render_fund_rows(_config()))
+                self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path == "/tokens.css":
                 self._send(200, (HERE / "tokens.css").read_bytes(),
                            "text/css; charset=utf-8")

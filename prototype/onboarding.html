@@ -340,29 +340,18 @@ figcaption {
   <!-- ───────────────────────────────────────────────────────── the funds -->
   <section data-testid="section-funds">
     <div class="kicker">Who you're sending to</div>
-    <h2>Four funds, and their hard rules</h2>
+    <h2>The funds, and their hard rules</h2>
     <p>These aren't preferences — they're conditions attached to the money these
        funds manage. If a company breaks one, that fund legally cannot invest,
        no matter how good it is. The system checks these before you ever see a
        card, so anything that reaches you already passed.</p>
 
-    <div class="funds">
-      <div class="fund-row"><span class="nm">Northstar</span>
-        <span class="rule">Must be in North East England — except its EIS Growth
-          Fund, which merely prefers the north of England, so a Leeds company can
-          still route there. One fund also requires a North East university
-          spinout.</span></div>
-      <div class="fund-row"><span class="nm">Anticus</span>
-        <span class="rule">Must be in Yorkshire, or moving there.</span></div>
-      <div class="fund-row"><span class="nm">DSW</span>
-        <span class="rule">Must qualify for UK startup tax relief. Its earliest
-          fund deliberately looks outside London, Oxford and Cambridge.</span></div>
-      <div class="fund-row"><span class="nm">Outward</span>
-        <span class="rule">Invests British Business Bank money, and those rules
-          come attached to <em>it</em>: the round must be under £5m, the company
-          must not have raised more than £20m before, and two thirds of the
-          executive team must be UK tax resident.</span></div>
-    </div>
+    <!-- Written by `render_fund_rows` in server.py, from the same fund config
+         the scoring engine gates on. Deliberately not hand-written: prose that
+         restates a rule table drifts from it, and this section twice said
+         something the config did not support. Do not paste rules back in here
+         — change them in the config and they change here too. -->
+    <div class="funds" data-testid="fund-rules"><!--FUND_RULES--></div>
   </section>
 
   <!-- ────────────────────────────────────────────────────── expectations -->
