@@ -81,7 +81,14 @@ READ_RANGES: dict[str, str] = {
 }
 
 TODAY_BLOCK_LABELS: tuple[str, ...] = (
-    "Company", "Send to", "Fit / Edge", "Why", "Evidence", "Also fits", "Your call",
+    # "What they do" sits directly under the name because of the client's
+    # complaint on 11 Aug: "I'm currently seeing articles rather than the actual
+    # companies themselves, so I still have to open and scan through them."
+    # Before this, the only prose in the block was `Evidence` — a join of signal
+    # headlines, which for a news-sourced company *is* the article headline. The
+    # article stays, one row down, as the source it always was.
+    "Company", "What they do", "Send to", "Fit / Edge", "Why", "Evidence",
+    "Also fits", "Your call",
 )
 TODAY_BLOCK_HEIGHT = len(TODAY_BLOCK_LABELS) + 1     # + one blank separator row
 
@@ -670,6 +677,10 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
             "Company": (f'{company["canonical_name"]} · {company["domain"] or ""} · '
                         f'{company["hq_city"] or company["hq_region"] or ""} · '
                         f'incorporated {_relative_age(months)}'),
+            # Blank for a registry-first company, which is met at Companies
+            # House where there is no prose to read. Saying nothing is the
+            # honest answer; the Evidence row below still carries its filings.
+            "What they do": company["one_liner"] or "",
             "Send to": f'{best["fund_key"]} — {best["vehicle_key"] or "fund level"}',
             "Fit / Edge": (f'{best["fund_fit_pct"]:.0f} / {best["discovery_edge"]:.0f} '
                            f'→ priority {best["priority"]:.0f}'),

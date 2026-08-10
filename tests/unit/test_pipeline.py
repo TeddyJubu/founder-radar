@@ -163,8 +163,41 @@ def test_extraction_method_reaches_the_company_row(db, config):
     object.__setattr__(item, "extraction", record)
 
     cid = resolve_item(db, item, config)
-    row = db.one("SELECT extraction_method FROM company WHERE id = ?", (cid,))
+    row = db.one("SELECT extraction_method, one_liner FROM company WHERE id = ?", (cid,))
     assert row["extraction_method"] == "llm"
+    # The client, 11 Aug: "Ideally I'd like the output to be the company
+    # itself, with the article just used as the source." `one_liner` is the
+    # only field that says what a company *does*; the model already fills it
+    # and `_fields_from_extraction` used to drop it, so every surface fell back
+    # to the article headline.
+    assert row["one_liner"] == "Warehouse robots."
+
+
+def test_an_article_headline_never_becomes_a_company(db, config):
+    """A prose item the reader could not name is a source, not a subject.
+
+    `resolve_item` used to fall back to `item.title`, so an article the
+    extractor rejected — a round-up, a market report, or anything it simply
+    could not read a name out of — was inserted as a company called
+    "Six Manchester startups to watch in 2026". Those rows scored, shortlisted
+    and reached the sheet, which is what the client meant on 11 Aug by "I'm
+    currently seeing articles rather than the actual companies themselves".
+    """
+    from datetime import date as _date
+
+    from radar.pipeline import resolve_item
+    from radar.sources.base import RawItem
+
+    item = RawItem(
+        source_key="uktn", source_url="https://uktn.test/roundup",
+        external_id="e9", published_at=_date(2026, 8, 1),
+        title="Six Manchester startups to watch in 2026",
+        structured={},
+    )
+    # No `extraction` attribute: `extract_stage` only attaches one when the
+    # record `is_usable`, i.e. when a company was actually named.
+    assert resolve_item(db, item, config) is None
+    assert db.scalar("SELECT COUNT(*) FROM company") == 0
 
 
 def test_rerun_is_idempotent(db):

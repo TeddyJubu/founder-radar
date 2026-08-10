@@ -157,6 +157,17 @@ h2 {
 .ev:active { transform: scale(0.97); }
 .ev .chev { color: var(--label-3); }
 
+/* The way back to the source is the one link on this card worth pressing, so
+   it is filled while the rest stay quiet pills. Deliberately NOT competing
+   with the verdict bar: this is blue and inline, those are the decision. */
+.ev.primary {
+  background: var(--blue);
+  color: #fff;
+  font-weight: 590;
+}
+.ev.primary:hover { background: color-mix(in srgb, #fff 12%, var(--blue)); }
+.ev.primary .chev { color: color-mix(in srgb, #fff 65%, transparent); }
+
 .foot {
   margin-top: var(--s5); padding-top: var(--s4);
   border-top: 0.5px solid var(--separator);
@@ -315,6 +326,36 @@ function evidenceLabel(sig) {
   return sig.headline ? sig.headline.slice(0, 52) : kind;
 }
 
+function sourceName(key) {
+  return (key || "source").replace(/_/g, " ")
+    .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+// Every way back to where this company came from, best label first.
+//
+// `signals` carry a headline, so they make the better button — the label IS
+// the article. But a signal row only exists when the adapter emitted a
+// recognised `kind_hint`, and most companies have none, which is why the card
+// used to show no link at all. `sources` (from `company_source`) is written
+// for every mention, so it is the fallback that guarantees a link whenever
+// one exists. Registry companies legitimately have neither: Companies House
+// is not an article, and inventing a link to it would be worse than no button.
+function articleLinks(c) {
+  const seen = new Set();
+  const out = [];
+  for (const s of c.signals || []) {
+    if (!s.source_url || seen.has(s.source_url)) continue;
+    seen.add(s.source_url);
+    out.push({ url: s.source_url, label: evidenceLabel(s), kind: s.kind || "" });
+  }
+  for (const s of c.sources || []) {
+    if (!s.source_url || seen.has(s.source_url)) continue;
+    seen.add(s.source_url);
+    out.push({ url: s.source_url, label: sourceName(s.source_key), kind: "source" });
+  }
+  return out;
+}
+
 function render() {
   const main = $("#main"), footer = $("#footer");
   if (!data) return;
@@ -343,10 +384,20 @@ function render() {
   else if (c.region) metaBits.push(`<span>${c.region.replace(/_/g, " ")}</span>`);
   metaBits.push(`<span class="age" data-testid="company-age" data-exact="${c.age_exact || ""}" ${c.age_exact ? `title="${c.age_exact}"` : ""}>${c.age_phrase}</span>`);
 
-  const evidence = (c.signals || []).filter(s => s.source_url).map(s =>
-    `<a class="ev" data-testid="evidence-link" data-kind="${s.kind || ""}"
-        href="${s.source_url}" target="_blank" rel="noopener">
-       ${evidenceLabel(s)} <span class="chev">↗</span></a>`).join("");
+  // The first link is the one to press — the article the company came from —
+  // so it is a filled button rather than another grey pill. The rest stay
+  // quiet: this screen is for deciding, not for reading everything we hold.
+  //
+  // The label is the headline itself rather than a "Read the article" prefix.
+  // The fill and the ↗ already say it is a button; spending the label on that
+  // too would cost the one thing worth knowing before you click, which is
+  // what you are about to open.
+  const evidence = articleLinks(c).map((a, i) =>
+    `<a class="ev${i === 0 ? " primary" : ""}" data-testid="evidence-link"
+        data-kind="${a.kind}"${i === 0 ? ' data-primary="true"' : ""}
+        href="${a.url}" target="_blank" rel="noopener">
+       ${a.label} <span class="chev">↗</span></a>`
+  ).join("");
 
   // The explanation sentence already names its own caveats. Repeating them
   // below turns one warning into three, which reads as three problems.
