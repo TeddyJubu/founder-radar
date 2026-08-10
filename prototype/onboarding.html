@@ -116,8 +116,7 @@ figcaption {
 .expect { display: grid; gap: var(--s3); margin-top: var(--s5); }
 .expect div {
   padding: var(--s4); border-radius: var(--r-control);
-  border-left: 3px solid var(--orange);
-  background: color-mix(in srgb, var(--orange) 6%, transparent);
+  background: color-mix(in srgb, var(--orange) 8%, var(--bg-3));
   font-size: var(--subhead); line-height: 21px;
 }
 .expect b { display: block; font-weight: 600; margin-bottom: 2px; }
@@ -379,12 +378,15 @@ figcaption {
   <section data-testid="section-feedback">
     <div class="kicker">Why your answers matter</div>
     <h2>Every verdict makes the next list better</h2>
-    <p>When you mark a company <em>worth contacting</em> or <em>not for me</em>,
-       that's recorded. Once there are around fifty of them, the system can work
+    <p>When you mark a company <em>worth contacting</em> or <em>unsure</em>, it is
+       saved to <a href="/kept">Kept</a> in this app (not only in the spreadsheet).
+       <em>Not for me</em> is recorded for tuning but stays off that list.</p>
+    <p>Once there are around fifty verdicts, the system can work
        out where the cut-off should sit — how picky to be before something
        reaches you.</p>
     <p>Until then it's using a sensible guess. <strong>The fastest way to improve
-       this is simply to use it.</strong></p>
+       this is simply to use it.</strong>
+       <a href="/help">How the sheet, this UI and Telegram connect →</a></p>
 
     <figure>
       <svg viewBox="0 0 600 108" role="img"

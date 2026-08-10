@@ -12,6 +12,10 @@ A company incorporated ninety days ago cannot be six years old. That is the fix.
 Full specification: [`docs/prd/`](docs/prd/) — start with
 [`docs/prd/README.md`](docs/prd/README.md).
 
+Day-to-day ops (sheet ↔ web UI ↔ Telegram, Kept storage, editing funds and
+sources): [`docs/ops-guide.md`](docs/ops-guide.md). In the Today prototype the
+same guide is at `/help`.
+
 ---
 
 ## Quick start

@@ -42,6 +42,19 @@ h1 {
 }
 .help:hover { background: color-mix(in srgb, var(--blue) 16%, var(--fill)); color: var(--blue); }
 .help:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+/* `.help` is a 24px circle for the single "?" glyph; a word needs to grow. */
+.kept-link {
+  width: auto; border-radius: 999px; padding: 0 11px;
+  gap: 6px; display: inline-flex; align-items: center;
+}
+.kept-badge {
+  min-width: 1.1em; padding: 0 5px; height: 16px;
+  border-radius: 999px;
+  background: var(--blue); color: #fff;
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.kept-badge:empty, .kept-badge[data-count="0"] { display: none; }
 
 /* Progress: dots, not "2 of 6". A count invites counting; dots are glanceable. */
 .dots { display: flex; gap: 6px; align-items: center; }
@@ -97,23 +110,39 @@ h2 {
 .meta a:hover { text-decoration: underline; }
 .age { color: var(--label); font-weight: 500; }
 
-/* Fit and Edge are the same size on purpose. Edge is the whole v2 thesis —
-   "nobody has found this yet" — and shrinking it reproduces the v1 ranking
-   error visually. */
-.scores { display: flex; gap: var(--s2); flex: none; }
+/* Match is the primary number (fund criteria strength). Fresh is secondary —
+   younger / less covered / register-first. Testids stay score-fit / score-edge
+   so the API contract does not churn. */
+.scores {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: var(--s2); flex: none;
+}
+.score-row { display: flex; gap: var(--s2); }
 .score {
   width: 84px; padding: var(--s3) var(--s2) var(--s2);
   background: var(--fill); border-radius: var(--r-control);
   text-align: center;
+  cursor: help;
+}
+.score-fit {
+  width: 96px; padding: var(--s3) var(--s3) var(--s2);
+  background: color-mix(in srgb, var(--blue) 8%, var(--fill));
+  border: 0.5px solid color-mix(in srgb, var(--blue) 18%, transparent);
 }
 .score .n {
   font-size: 30px; line-height: 34px; font-weight: 600;
   letter-spacing: -0.6px; font-variant-numeric: tabular-nums;
 }
+.score-fit .n { font-size: 34px; line-height: 36px; }
 .score .k {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-2); text-transform: uppercase; letter-spacing: 0.4px;
   margin-top: 2px;
+}
+.score-hint {
+  max-width: 180px;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-3); text-align: right;
 }
 .score.high .n { color: var(--green); }
 .score.mid  .n { color: var(--label); }
@@ -135,13 +164,53 @@ h2 {
   font-size: var(--subhead); line-height: var(--subhead-lh); color: var(--label-2);
 }
 
-/* The spec's explanation sentence, verbatim. Its arithmetic already
-   reconciles; re-deriving it here would create a second source of truth. */
-.why {
+/* Company description leads when we have one. Absent means absent — a
+   registry-only company is not described by inventing a SIC paraphrase. */
+.blurb {
   margin: var(--s5) 0 0;
-  font-size: var(--body); line-height: var(--body-lh);
+  font-size: var(--headline); line-height: var(--headline-lh);
+  font-weight: 510; color: var(--label);
+  max-width: 40rem;
+}
+
+/* The spec's explanation, still verbatim — each template clause on its own
+   line so a morning scan can pick Matches / Unknown / Route without
+   reading a 280-character paragraph. Arithmetic stays in the sentence;
+   we only break where `explain.py` already joined with ". ". */
+.why {
+  margin: var(--s4) 0 0;
+  display: flex; flex-direction: column; gap: 6px;
+  max-width: 40rem;
+}
+.why-clause {
+  margin: 0;
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label-2);
+}
+.why-clause[data-kind="match"],
+.why-clause[data-kind="found"] {
   color: var(--label);
 }
+.why-clause[data-kind="unknown"],
+.why-clause[data-kind="against"],
+.why-clause[data-kind="warn"] {
+  color: var(--orange);
+}
+.why-more {
+  align-self: flex-start;
+  margin: 2px 0 0;
+  padding: 0;
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 510;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.why-more:hover { background: transparent; text-decoration: underline; }
+.why-more:active { transform: none; }
 
 .evidence { margin: var(--s5) 0 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
 .ev {
@@ -231,6 +300,10 @@ button.no  { color: var(--red); }
 }
 .done-state h2 { font-size: var(--title2); line-height: var(--title2-lh); }
 .done-state p { color: var(--label-2); font-size: var(--subhead); }
+.done-state a {
+  color: var(--blue); text-decoration: none; font-weight: 500;
+}
+.done-state a:hover { text-decoration: underline; }
 
 .toast {
   position: fixed; left: 50%; bottom: var(--s8);
@@ -267,14 +340,19 @@ button.no  { color: var(--red); }
   h1 { font-size: 28px; line-height: 34px; }
   .card { padding: var(--s5); }
   .top { flex-direction: column; gap: var(--s4); }
-  .scores { width: 100%; }
+  .scores { width: 100%; align-items: stretch; }
+  .score-row { width: 100%; }
+  .score-fit { width: auto; }
   .score { flex: 1; width: auto; padding: var(--s2) var(--s2) 6px; }
   .score .n { font-size: 26px; line-height: 30px; }
+  .score-fit .n { font-size: 28px; line-height: 32px; }
+  .score-hint { max-width: none; text-align: left; }
   h2 { font-size: 26px; line-height: 32px; }
-  .why { font-size: var(--subhead); line-height: 21px; }
+  .blurb { font-size: var(--subhead); line-height: 21px; margin-top: var(--s4); }
+  .why-clause { font-size: var(--footnote); line-height: 18px; }
   button { font-size: var(--subhead); padding: 11px var(--s2); }
   .route { padding: var(--s3); margin-top: var(--s4); }
-  .why, .evidence { margin-top: var(--s4); }
+  .blurb, .why, .evidence { margin-top: var(--s4); }
 }
 @media (max-width: 460px) {
   .date { display: none; }             /* the header already says Today */
@@ -287,6 +365,7 @@ button.no  { color: var(--red); }
   <header data-testid="today-header">
     <h1 data-testid="today-title">Today</h1>
     <span class="date" id="date" data-testid="today-date"></span>
+    <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept<span class="kept-badge" id="kept-badge" data-testid="kept-badge" data-count="0"></span></a>
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
     <div class="dots" id="dots" data-testid="progress" aria-hidden="true"></div>
   </header>
@@ -329,6 +408,52 @@ function evidenceLabel(sig) {
 function sourceName(key) {
   return (key || "source").replace(/_/g, " ")
     .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+// Split where `explain.py` joined with ". ", and only when the next clause
+// opens with a known template prefix. A naive split would break on "Inc."
+// inside a headline; this keeps each clause byte-identical to the join.
+const EXPLAIN_CLAUSE =
+  /(?<=\.) (?=(?:Found via |Matches on |Against: |Unknown: |Route to |Low visibility|Only \d|Rejected: |⚠ |age |eligibility |good fit))/;
+
+function explanationClauses(text) {
+  const raw = String(text || "").trim();
+  return raw ? raw.split(EXPLAIN_CLAUSE).filter(Boolean) : [];
+}
+
+function explanationKind(clause) {
+  if (clause.startsWith("Found via ")) return "found";
+  if (clause.startsWith("Matches on ")) return "match";
+  if (clause.startsWith("Against: ")) return "against";
+  if (clause.startsWith("Unknown: ")) return "unknown";
+  if (clause.startsWith("⚠ ") || clause.startsWith("age ") ||
+      clause.startsWith("eligibility ") || clause.startsWith("Only ")) return "warn";
+  return "note";
+}
+
+// A long shortlist morning should not force-read every clause. Keep the
+// full sentence in the DOM (and in `data-text`) so D4 stays honest; only
+// hide the tail until expanded.
+const WHY_PREVIEW = 4;
+
+function renderExplanation(text) {
+  const raw = String(text || "").trim();
+  const clauses = explanationClauses(raw);
+  if (!clauses.length) {
+    return `<div class="why" data-testid="explanation" data-text=""></div>`;
+  }
+  const collapsed = clauses.length > WHY_PREVIEW;
+  const items = clauses.map((clause, idx) => {
+    const hidden = collapsed && idx >= WHY_PREVIEW ? " hidden" : "";
+    return `<p class="why-clause"${hidden} data-testid="explanation-clause"
+                data-kind="${explanationKind(clause)}">${esc(clause)}</p>`;
+  }).join("");
+  const more = collapsed
+    ? `<button type="button" class="why-more" data-testid="explanation-more"
+               data-expanded="false" aria-expanded="false">Show all</button>`
+    : "";
+  return `<div class="why" data-testid="explanation" data-text="${esc(raw)}"
+               data-collapsed="${collapsed}">${items}${more}</div>`;
 }
 
 // Everything on this card is scraped off somebody else's website — a company
@@ -381,9 +506,20 @@ function articleLinks(c) {
   return out;
 }
 
+function renderKeptBadge(n) {
+  const el = $("#kept-badge");
+  if (!el) return;
+  const count = Math.max(0, Number(n) || 0);
+  el.dataset.count = String(count);
+  el.textContent = count > 0 ? String(count) : "";
+  el.hidden = count === 0;
+}
+
 function render() {
   const main = $("#main"), footer = $("#footer");
   if (!data) return;
+
+  renderKeptBadge(data.totals?.kept);
 
   const pending = data.companies;
   if (!pending.length) {
@@ -392,9 +528,14 @@ function render() {
     footer.hidden = true; renderDots(); return;
   }
   if (i >= pending.length) {
+    const kept = Number(data.totals?.kept) || 0;
+    const keptLine = kept
+      ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. The sheet is optional sync, not the primary list.</p>`
+      : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
     main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
       <h2>That's the morning</h2>
-      <p>${pending.length} companies reviewed. Verdicts saved for the next tuning sweep.</p></div>`;
+      <p>${pending.length} companies reviewed. Verdicts saved for the next tuning sweep.</p>
+      ${keptLine}</div>`;
     footer.hidden = true; renderDots(); return;
   }
 
@@ -442,8 +583,10 @@ function render() {
 
   // Every hook a test needs is a data-testid. The CSS classes are for
   // styling and may be renamed freely; the testids are the contract.
-  // `score-fit` and `score-edge` are named rather than positional so a test
-  // can never silently assert Edge against Fit if the tiles are reordered.
+  // `score-fit` / `score-edge` stay named (Match / Fresh in the label) so a
+  // reordering can never silently assert Fresh against Match.
+  const matchTitle = "Match — how strongly this company fits this fund's criteria. Unknown fields are skipped, never guessed.";
+  const freshTitle = "Fresh — how likely it is the fund hasn't already seen this (age, tracked press, disclosed funding, discovery route). Unknown funding stays mid, not perfect.";
   main.innerHTML = `
     <article class="card ${thin ? "thin" : ""}" data-testid="card"
              data-company-id="${esc(c.company_id)}" data-tier="${esc(c.tier)}"
@@ -454,14 +597,19 @@ function render() {
           <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
         </div>
         <div class="scores" data-testid="scores">
-          <div class="score ${band(c.fit, 70, 45)}" data-testid="score-fit"
-               data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}">
-            <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
-            <div class="k" data-testid="score-label">Fit</div></div>
-          <div class="score ${band(c.edge, 70, 45)}" data-testid="score-edge"
-               data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}">
-            <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
-            <div class="k" data-testid="score-label">Edge</div></div>
+          <div class="score-row">
+            <div class="score score-fit ${band(c.fit, 70, 45)}" data-testid="score-fit"
+                 data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}"
+                 title="${esc(matchTitle)}">
+              <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
+              <div class="k" data-testid="score-label">Match</div></div>
+            <div class="score score-edge ${band(c.edge, 70, 45)}" data-testid="score-edge"
+                 data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}"
+                 title="${esc(freshTitle)}">
+              <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
+              <div class="k" data-testid="score-label">Fresh</div></div>
+          </div>
+          <div class="score-hint" data-testid="score-hint">Match = fund fit · Fresh = new to them</div>
         </div>
       </div>
 
@@ -470,7 +618,11 @@ function render() {
         <div class="veh" data-testid="route-vehicle">${esc(c.vehicle || "")}${cheque ? " · " + cheque : ""}</div>
       </div>
 
-      <p class="why" data-testid="explanation">${esc(c.explanation || "")}</p>
+      ${c.one_liner
+        ? `<p class="blurb" data-testid="one-liner">${esc(c.one_liner)}</p>`
+        : ""}
+
+      ${renderExplanation(c.explanation || "")}
 
       ${evidence ? `<div class="evidence" data-testid="evidence">${evidence}</div>` : ""}
 
@@ -499,12 +651,23 @@ async function decide(verdict) {
   const c = data.companies[i];
   if (!c) return;
   history.push({ index: i, company_id: c.company_id });
-  await fetch("/api/verdict", {
+  const res = await fetch("/api/verdict", {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ company_id: c.company_id, verdict }),
   });
+  let kept = data.totals?.kept;
+  try {
+    const body = await res.json();
+    if (typeof body.kept_count === "number") kept = body.kept_count;
+  } catch { /* older servers still return {ok:true} only */ }
   c.verdict = verdict;
-  toast(`${c.name} — ${verdict}`);
+  if (data.totals) data.totals.kept = kept;
+  renderKeptBadge(kept);
+  if (verdict === "worth contacting" || verdict === "unsure") {
+    toast(`${c.name} — saved to Kept`);
+  } else {
+    toast(`${c.name} — ${verdict}`);
+  }
   i += 1; render();
 }
 
@@ -525,6 +688,18 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
+  const more = e.target.closest("[data-testid='explanation-more']");
+  if (more) {
+    const why = more.closest("[data-testid='explanation']");
+    const willExpand = more.dataset.expanded !== "true";
+    why.querySelectorAll("[data-testid='explanation-clause']").forEach((el, idx) => {
+      el.hidden = !willExpand && idx >= WHY_PREVIEW;
+    });
+    more.dataset.expanded = willExpand ? "true" : "false";
+    more.setAttribute("aria-expanded", willExpand ? "true" : "false");
+    more.textContent = willExpand ? "Show less" : "Show all";
+    return;
+  }
   const b = e.target.closest("button[data-v]");
   if (b) decide(b.dataset.v);
 });
