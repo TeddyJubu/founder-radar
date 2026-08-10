@@ -331,6 +331,31 @@ function sourceName(key) {
     .replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
+// Everything on this card is scraped off somebody else's website — a company
+// name, an article headline, a URL out of an href. `render` builds one big
+// innerHTML string, so any of it lands as markup unless it is escaped first.
+// A source page with `<img src=x onerror=...>` in its <title> otherwise runs
+// script here, and this page can read the whole queue and POST verdicts.
+//
+// Not theoretical: proved against a real headline before this was added.
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// Escaping is not enough for an href: `javascript:...` needs no angle bracket
+// to run. `_common.absolute_url` drops that scheme, but only the HTML adapters
+// go through it — the wp-json ones take `entry["link"]` as printed — so the
+// allowlist belongs here too, at the point of use.
+function safeUrl(value) {
+  const raw = String(value ?? "").trim();
+  try {
+    const u = new URL(raw, location.origin);
+    return (u.protocol === "http:" || u.protocol === "https:") ? esc(raw) : "";
+  } catch { return ""; }
+}
+
 // Every way back to where this company came from, best label first.
 //
 // `signals` carry a headline, so they make the better button — the label IS
@@ -379,10 +404,10 @@ function render() {
     ? `${fmtMoney(c.cheque_min)}–${fmtMoney(c.cheque_max)}` : null;
 
   const metaBits = [];
-  if (c.domain) metaBits.push(`<a data-testid="company-domain" href="${c.website || "https://" + c.domain}" target="_blank" rel="noopener">${c.domain}</a>`);
-  if (c.city) metaBits.push(`<span>${c.city}</span>`);
-  else if (c.region) metaBits.push(`<span>${c.region.replace(/_/g, " ")}</span>`);
-  metaBits.push(`<span class="age" data-testid="company-age" data-exact="${c.age_exact || ""}" ${c.age_exact ? `title="${c.age_exact}"` : ""}>${c.age_phrase}</span>`);
+  if (c.domain) metaBits.push(`<a data-testid="company-domain" href="${safeUrl(c.website || "https://" + c.domain)}" target="_blank" rel="noopener">${esc(c.domain)}</a>`);
+  if (c.city) metaBits.push(`<span>${esc(c.city)}</span>`);
+  else if (c.region) metaBits.push(`<span>${esc(c.region.replace(/_/g, " "))}</span>`);
+  metaBits.push(`<span class="age" data-testid="company-age" data-exact="${esc(c.age_exact || "")}" ${c.age_exact ? `title="${esc(c.age_exact)}"` : ""}>${esc(c.age_phrase)}</span>`);
 
   // The first link is the one to press — the article the company came from —
   // so it is a filled button rather than another grey pill. The rest stay
@@ -392,11 +417,11 @@ function render() {
   // The fill and the ↗ already say it is a button; spending the label on that
   // too would cost the one thing worth knowing before you click, which is
   // what you are about to open.
-  const evidence = articleLinks(c).map((a, i) =>
+  const evidence = articleLinks(c).filter(a => safeUrl(a.url)).map((a, i) =>
     `<a class="ev${i === 0 ? " primary" : ""}" data-testid="evidence-link"
-        data-kind="${a.kind}"${i === 0 ? ' data-primary="true"' : ""}
-        href="${a.url}" target="_blank" rel="noopener">
-       ${a.label} <span class="chev">↗</span></a>`
+        data-kind="${esc(a.kind)}"${i === 0 ? ' data-primary="true"' : ""}
+        href="${safeUrl(a.url)}" target="_blank" rel="noopener">
+       ${esc(a.label)} <span class="chev">↗</span></a>`
   ).join("");
 
   // The explanation sentence already names its own caveats. Repeating them
@@ -404,12 +429,12 @@ function render() {
   const said = (c.explanation || "").toLowerCase();
   const flags = (c.flags || [])
     .filter(f => !said.includes(f.replace(/_/g, " ")))
-    .map(f => `<span class="flag" data-testid="caveat" data-flag="${f}">${FLAG_COPY[f] || f.replace(/_/g, " ")}</span>`)
+    .map(f => `<span class="flag" data-testid="caveat" data-flag="${esc(f)}">${esc(FLAG_COPY[f] || f.replace(/_/g, " "))}</span>`)
     .join("");
 
   const also = (c.also_fits || []).length
     ? `<span class="also" data-testid="also-fits">Also fits ${c.also_fits.slice(0,2).map(a =>
-        `<strong>${a.fund_key}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</span>`
+        `<strong>${esc(a.fund_key)}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</span>`
     : "";
 
   const coverageNote = thin
@@ -421,11 +446,11 @@ function render() {
   // can never silently assert Edge against Fit if the tiles are reordered.
   main.innerHTML = `
     <article class="card ${thin ? "thin" : ""}" data-testid="card"
-             data-company-id="${c.company_id}" data-tier="${c.tier}"
-             data-coverage="${c.coverage}" data-thin="${thin}">
+             data-company-id="${esc(c.company_id)}" data-tier="${esc(c.tier)}"
+             data-coverage="${esc(c.coverage)}" data-thin="${thin}">
       <div class="top">
         <div class="ident">
-          <h2 data-testid="company-name">${c.name}</h2>
+          <h2 data-testid="company-name">${esc(c.name)}</h2>
           <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
         </div>
         <div class="scores" data-testid="scores">
@@ -440,12 +465,12 @@ function render() {
         </div>
       </div>
 
-      <div class="route" data-testid="route" data-fund="${c.fund}">
-        <div class="fund" data-testid="route-fund">${c.fund_name || c.fund}</div>
-        <div class="veh" data-testid="route-vehicle">${c.vehicle || ""}${cheque ? " · " + cheque : ""}</div>
+      <div class="route" data-testid="route" data-fund="${esc(c.fund)}">
+        <div class="fund" data-testid="route-fund">${esc(c.fund_name || c.fund)}</div>
+        <div class="veh" data-testid="route-vehicle">${esc(c.vehicle || "")}${cheque ? " · " + cheque : ""}</div>
       </div>
 
-      <p class="why" data-testid="explanation">${c.explanation || ""}</p>
+      <p class="why" data-testid="explanation">${esc(c.explanation || "")}</p>
 
       ${evidence ? `<div class="evidence" data-testid="evidence">${evidence}</div>` : ""}
 
