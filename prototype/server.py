@@ -337,14 +337,53 @@ def build_kept(conn: sqlite3.Connection) -> dict[str, list[dict]]:
     return out
 
 
+def kept_count(conn: sqlite3.Connection) -> int:
+    """How many companies sit on Kept — badge on Today, total on this page.
+
+    Kept is a *verdict* (`worth contacting` / `unsure`), not the engine's
+    `tier = 'shortlist'`. Count only those two so the badge never quietly
+    includes a "not for me".
+    """
+    placeholders = ",".join("?" * len(KEPT_VERDICTS))
+    row = conn.execute(
+        f"""SELECT COUNT(*) AS n
+              FROM user_field u
+              JOIN company c ON c.id = u.company_id
+             WHERE u.field = 'verdict' AND c.merged_into IS NULL
+               AND lower(u.value) IN ({placeholders})""",
+        KEPT_VERDICTS,
+    ).fetchone()
+    return int(row["n"] if row else 0)
+
+
+def render_kept_intro(conn: sqlite3.Connection) -> str:
+    """Where the list lives, and that the sheet is an optional mirror."""
+    from html import escape
+
+    n = kept_count(conn)
+    return (
+        f'<p class="kept-intro" data-testid="kept-intro">'
+        f'<span class="count" data-testid="kept-total">{escape(str(n))}</span> '
+        f'saved in this app. The Google Sheet&rsquo;s Verdict column is an '
+        f'optional mirror after sync &mdash; not the primary list. '
+        f'<a class="lnk" href="/help" data-testid="nav-help">How the parts connect</a>.'
+        f'</p>'
+    )
+
+
 def render_kept_rows(conn: sqlite3.Connection) -> str:
     """The markup `<!--KEPT_ROWS-->` is replaced with."""
     from html import escape
 
     kept = build_kept(conn)
     if not any(kept.values()):
-        return ('<p class="empty" data-testid="kept-empty">Nothing kept yet. '
-                'Press <b>1</b> on a card in Today to keep one.</p>')
+        return (
+            '<p class="empty" data-testid="kept-empty">'
+            'Nothing kept yet. On <a class="lnk" href="/">Today</a>, press '
+            '<b>1</b> (Worth contacting) or <b>2</b> (Unsure) &mdash; the '
+            'company lands here immediately and stays through the next daily run.'
+            '</p>'
+        )
 
     blocks: list[str] = []
     for verdict in KEPT_VERDICTS:
@@ -375,7 +414,8 @@ def render_kept_rows(conn: sqlite3.Connection) -> str:
         blocks.append(
             f'<section class="kept-group" data-testid="kept-group" '
             f'data-verdict="{escape(verdict)}">'
-            f'<h2>{escape(verdict.capitalize())} <span class="count">{len(items)}</span></h2>'
+            f'<h2>{escape(verdict.capitalize())} '
+            f'<span class="count" data-testid="kept-group-count">{len(items)}</span></h2>'
             f'<ul>{"".join(rows)}</ul></section>')
     return "\n".join(blocks)
 
@@ -517,14 +557,19 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "shortlist": counts.get("shortlist", 0),
             "watchlist": counts.get("watchlist", 0),
             "rejected": counts.get("reject", 0),
+            "kept": kept_count(conn),
         },
         "run": dict(run) if run else None,
     }
 
 
-def set_verdict(conn: sqlite3.Connection, company_id: str, verdict: str) -> None:
+def set_verdict(conn: sqlite3.Connection, company_id: str, verdict: str) -> int:
     """The single write. Same table and field name the Sheet uses, so the two
-    surfaces cannot disagree and `tune.py` picks it up unchanged."""
+    surfaces cannot disagree and `tune.py` picks it up unchanged.
+
+    Returns the new Kept count so Today can refresh its badge without a second
+    round-trip.
+    """
     conn.execute(
         """INSERT INTO user_field(company_id, field, value, updated_at)
            VALUES (?, 'verdict', ?, ?)
@@ -533,6 +578,7 @@ def set_verdict(conn: sqlite3.Connection, company_id: str, verdict: str) -> None
         (company_id, verdict, datetime.now().isoformat(timespec="seconds")),
     )
     conn.commit()
+    return kept_count(conn)
 
 
 def make_handler(conn: sqlite3.Connection):
@@ -563,8 +609,12 @@ def make_handler(conn: sqlite3.Connection):
                 self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path in ("/kept", "/kept.html"):
                 page = (HERE / "kept.html").read_text(encoding="utf-8")
+                page = page.replace("<!--KEPT_INTRO-->", render_kept_intro(conn))
                 page = page.replace("<!--KEPT_ROWS-->", render_kept_rows(conn))
                 self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            elif self.path in ("/help", "/help.html", "/ops"):
+                self._send(200, (HERE / "help.html").read_bytes(),
+                           "text/html; charset=utf-8")
             elif self.path == "/tokens.css":
                 self._send(200, (HERE / "tokens.css").read_bytes(),
                            "text/css; charset=utf-8")
@@ -585,8 +635,9 @@ def make_handler(conn: sqlite3.Connection):
                     "worth contacting", "not for me", "unsure"):
                 self._send(400, b'{"error":"bad verdict"}', "application/json")
                 return
-            set_verdict(conn, company_id, verdict)
-            self._send(200, b'{"ok":true}', "application/json")
+            n = set_verdict(conn, company_id, verdict)
+            payload = json.dumps({"ok": True, "kept_count": n}).encode()
+            self._send(200, payload, "application/json")
 
         def log_message(self, *args) -> None:      # quiet
             pass
