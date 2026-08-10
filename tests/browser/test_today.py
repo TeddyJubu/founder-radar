@@ -471,6 +471,39 @@ def test_k3_kept_page_reaches_today_and_back(page, server, api):
     page.wait_for_selector(tid("card"))
 
 
+
+def test_k4_kept_badge_counts_on_today(page, server, api):
+    """The header badge is how Kept stays visible without opening the list."""
+    page.goto(server + "/", wait_until="networkidle")
+    page.wait_for_selector(tid("card"))
+    before = int((page.locator(tid("kept-badge")).get_attribute("data-count") or "0"))
+
+    # Pick a company that is not already kept, so the count must rise by one.
+    company_id = api["companies"][-1]["company_id"]
+    status, body = _post(server, {"company_id": company_id, "verdict": "worth contacting"})
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["kept_count"] == before + 1
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector(tid("card"))
+    badge = page.locator(tid("kept-badge"))
+    assert badge.get_attribute("data-count") == str(before + 1)
+    assert badge.inner_text().strip() == str(before + 1)
+
+
+def test_k5_help_page_is_reachable_from_kept(page, server, api):
+    assert _post(server, {"company_id": api["companies"][0]["company_id"],
+                          "verdict": "worth contacting"})[0] == 200
+    page.goto(server + "/kept", wait_until="networkidle")
+    page.wait_for_selector(tid("kept"))
+    page.locator(tid("nav-help")).click()
+    page.wait_for_selector(tid("help"))
+    text = page.locator(tid("help")).inner_text()
+    assert "Kept" in text
+    assert "user_field" in text
+
+
 def test_x4b_hostile_source_text_cannot_run_script(today):
     """Every string on this card is scraped off somebody else's site.
 

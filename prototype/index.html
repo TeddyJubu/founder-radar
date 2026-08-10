@@ -43,7 +43,18 @@ h1 {
 .help:hover { background: color-mix(in srgb, var(--blue) 16%, var(--fill)); color: var(--blue); }
 .help:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 /* `.help` is a 24px circle for the single "?" glyph; a word needs to grow. */
-.kept-link { width: auto; border-radius: 999px; padding: 0 11px; }
+.kept-link {
+  width: auto; border-radius: 999px; padding: 0 11px;
+  gap: 6px; display: inline-flex; align-items: center;
+}
+.kept-badge {
+  min-width: 1.1em; padding: 0 5px; height: 16px;
+  border-radius: 999px;
+  background: var(--blue); color: #fff;
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.kept-badge:empty, .kept-badge[data-count="0"] { display: none; }
 
 /* Progress: dots, not "2 of 6". A count invites counting; dots are glanceable. */
 .dots { display: flex; gap: 6px; align-items: center; }
@@ -233,6 +244,10 @@ button.no  { color: var(--red); }
 }
 .done-state h2 { font-size: var(--title2); line-height: var(--title2-lh); }
 .done-state p { color: var(--label-2); font-size: var(--subhead); }
+.done-state a {
+  color: var(--blue); text-decoration: none; font-weight: 500;
+}
+.done-state a:hover { text-decoration: underline; }
 
 .toast {
   position: fixed; left: 50%; bottom: var(--s8);
@@ -289,7 +304,7 @@ button.no  { color: var(--red); }
   <header data-testid="today-header">
     <h1 data-testid="today-title">Today</h1>
     <span class="date" id="date" data-testid="today-date"></span>
-    <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept</a>
+    <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept<span class="kept-badge" id="kept-badge" data-testid="kept-badge" data-count="0"></span></a>
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
     <div class="dots" id="dots" data-testid="progress" aria-hidden="true"></div>
   </header>
@@ -384,9 +399,20 @@ function articleLinks(c) {
   return out;
 }
 
+function renderKeptBadge(n) {
+  const el = $("#kept-badge");
+  if (!el) return;
+  const count = Math.max(0, Number(n) || 0);
+  el.dataset.count = String(count);
+  el.textContent = count > 0 ? String(count) : "";
+  el.hidden = count === 0;
+}
+
 function render() {
   const main = $("#main"), footer = $("#footer");
   if (!data) return;
+
+  renderKeptBadge(data.totals?.kept);
 
   const pending = data.companies;
   if (!pending.length) {
@@ -395,9 +421,14 @@ function render() {
     footer.hidden = true; renderDots(); return;
   }
   if (i >= pending.length) {
+    const kept = Number(data.totals?.kept) || 0;
+    const keptLine = kept
+      ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. The sheet is optional sync, not the primary list.</p>`
+      : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
     main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
       <h2>That's the morning</h2>
-      <p>${pending.length} companies reviewed. Verdicts saved for the next tuning sweep.</p></div>`;
+      <p>${pending.length} companies reviewed. Verdicts saved for the next tuning sweep.</p>
+      ${keptLine}</div>`;
     footer.hidden = true; renderDots(); return;
   }
 
@@ -502,12 +533,23 @@ async function decide(verdict) {
   const c = data.companies[i];
   if (!c) return;
   history.push({ index: i, company_id: c.company_id });
-  await fetch("/api/verdict", {
+  const res = await fetch("/api/verdict", {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ company_id: c.company_id, verdict }),
   });
+  let kept = data.totals?.kept;
+  try {
+    const body = await res.json();
+    if (typeof body.kept_count === "number") kept = body.kept_count;
+  } catch { /* older servers still return {ok:true} only */ }
   c.verdict = verdict;
-  toast(`${c.name} — ${verdict}`);
+  if (data.totals) data.totals.kept = kept;
+  renderKeptBadge(kept);
+  if (verdict === "worth contacting" || verdict === "unsure") {
+    toast(`${c.name} — saved to Kept`);
+  } else {
+    toast(`${c.name} — ${verdict}`);
+  }
   i += 1; render();
 }
 
