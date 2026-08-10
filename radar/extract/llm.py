@@ -32,6 +32,15 @@ from radar.extract.schema import llm_json_schema
 log = logging.getLogger(__name__)
 
 # Bump either constant to invalidate every cache entry cleanly.
+#
+# ponytail: deliberately NOT bumped for the 11 Aug `one_line_description`
+# rewrite (rule 7 above, and the field description in schema.py). Bumping is
+# the correct-by-the-book move — the ask changed, so the key should change —
+# but it costs a re-read of every article still in the cache *and* invalidates
+# all 24 files under `tests/fixtures/llm_cache`, which only `REFRESH_LLM=1
+# pytest` with a live key can re-record. The population that matters is
+# tomorrow's articles, and they were never cached, so they get the new ask for
+# free. Bump this the next time the fixtures are being re-recorded anyway.
 PROMPT_VERSION = "2026-08-08.1"
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"  # dated snapshot, never an alias
 
@@ -109,6 +118,10 @@ close-enough value.
 6. extraction_confidence is your honest confidence in the whole record: 0.85+ \
 for a clear single-company funding story with named founders, 0.3-0.5 for a \
 thin regional note with few facts.
+7. one_line_description describes the COMPANY, not the article. Say what it \
+makes or does, the way the company would say it. Never restate the news event, \
+and never reuse the headline. If the article only reports that money changed \
+hands and never says what the company does, leave it null.
 
 Return the JSON record and nothing else."""
 

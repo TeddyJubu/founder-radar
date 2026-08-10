@@ -784,8 +784,20 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
 
     name = (structured.get("company_name")
             or (getattr(extraction, "company_name", None) if extraction else None)
-            or getattr(item, "title", None) or "")
+            or "")
     if not name:
+        # ponytail: an article headline is not a company. This used to fall
+        # back to `item.title`, which created a company called "Manchester
+        # fintech raises £2m Seed to expand across Europe" for every prose item
+        # the reader could not name — and that row then scored, shortlisted and
+        # landed in the sheet, so the client was reading articles and opening
+        # each one to find the company. Only two things may name a company: a
+        # structured source that states it, or the extractor reading it out of
+        # the prose. Everything else is a source, not a subject. The article is
+        # still recorded — as `company_source.source_url` on whatever company
+        # it does resolve to.
+        log.debug("no company named in %s (%s) — article kept as a source only",
+                  getattr(item, "source_url", "?"), getattr(item, "source_key", "?"))
         return None
 
     record = Record(
@@ -937,6 +949,12 @@ def _fields_from_extraction(extraction: Any, cfg: Any) -> dict[str, Any]:
         fields["canonical_name"] = extraction.company_name
     if extraction.company_website:
         fields["website_url"] = extraction.company_website
+    if extraction.one_line_description:
+        # `company.one_liner` has existed in schema.sql since the first commit
+        # and nothing ever wrote it, so every surface that wanted to say what a
+        # company *does* had nothing but the article headline to fall back on.
+        # The model is already asked for this field and we already pay for it.
+        fields["one_liner"] = extraction.one_line_description
     if extraction.sector:
         fields["sector"] = extraction.sector
     if extraction.stage:

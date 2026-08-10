@@ -106,6 +106,54 @@ def test_sheet_roundtrip(db, sheet):
     assert sheet.cell(COMPANIES, "AD2").startswith("https://")
 
 
+def test_today_says_what_each_company_does_before_it_cites_an_article(db, sheet):
+    """The Today tab is the one Aryan opens, and on 11 Aug he said of it: "I'm
+    currently seeing articles rather than the actual companies themselves, so I
+    still have to open and scan through them."
+
+    Every block therefore carries a `What they do` row directly under the name,
+    fed by `company.one_liner` — a column that has existed since the first
+    commit and that nothing wrote until the extractor's `one_line_description`
+    was plumbed into it. `Evidence` keeps the article, one row further down,
+    which is the "just used as the source" half of the same sentence.
+    """
+    from radar.store.db import now_iso
+    from tests.factories import C, store_company
+
+    stamp = now_iso()
+    company = C(canonical_name="Loamweave Ltd", norm_key="loamweave",
+                domain="loamweave.example", website_url="https://loamweave.example/",
+                hq_city="Newcastle", age_months=4,
+                one_liner="Turns brewery waste into packaging foam.")
+    store_company(db, company)
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, explanation, config_hash,
+              scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (company.id, "northstar", None, 88.0, 0.9, 90.0, 89.0, "shortlist",
+         "Matches on geography and sector.", "cfg1", "1", stamp))
+    db.execute(
+        """INSERT INTO signal (company_id, kind, occurred_on, headline,
+             source_key, source_url, first_seen)
+           VALUES (?,?,?,?,?,?,?)""",
+        (company.id, "funding_round", "2026-08-01",
+         "Newcastle's Loamweave raises £900k pre-seed, UKTN reports",
+         "uktn", "https://uktn.test/loamweave", stamp))
+
+    render(db, sheet)
+    labels = sheet.column(TODAY, "A")
+    values = sheet.column(TODAY, "B")
+    block = dict(zip(labels, values))
+
+    assert block["What they do"] == "Turns brewery waste into packaging foam."
+    assert labels.index("What they do") == labels.index("Company") + 1
+    # The article is still there — as the source, below the company.
+    assert "UKTN reports" in block["Evidence"]
+    assert labels.index("Evidence") > labels.index("What they do")
+
+
 # -------------------------------------------------------------- steady state
 
 

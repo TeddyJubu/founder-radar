@@ -97,7 +97,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Vehicle + cheque | `route-vehicle` | | |
 | Explanation | `explanation` | | |
 | Evidence wrapper | `evidence` | | absent when there are no links |
-| Evidence link | `evidence-link` | `data-kind` | zero or more |
+| Evidence link | `evidence-link` | `data-kind`, `data-primary` | zero or more; the first carries `data-primary="true"` and renders as a filled blue button — the way back to the source. Links come from `signals` first (they carry a headline to label with), then from `sources` (`company_source`, written for every mention) for any URL not already listed. A registry-only company has neither and shows no link at all. |
 | Footnote row | `card-footnote` | | |
 | Coverage note | `coverage-note` | `data-coverage` | present only when `thin` |
 | Caveat | `caveat` | `data-flag` | raw flag name, e.g. `age_unknown` |
