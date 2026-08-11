@@ -30,14 +30,51 @@
 
   --r-control: 10px; --r-card: 16px; --r-sheet: 20px;
 
-  /* System colours */
-  --blue: #007AFF; --green: #34C759; --orange: #FF9500; --red: #FF3B30;
-  --purple: #AF52DE;
+  /* System colours — light mode uses Apple's *accessible* variants.
+   *
+   * The vivid ones (#007AFF / #34C759 / #FF9500 / #FF3B30) are gorgeous and,
+   * on white, unreadable: green measured 2.22:1 and orange 2.20:1, which
+   * fails not only the 4.5:1 floor for text but the 3:1 floor for icons. All
+   * four are used as text somewhere — the ledger's status marks, `.flag`,
+   * `button.no`, and the SVG labels on the onboarding diagrams.
+   *
+   * Apple publishes darker variants for exactly this, so meeting AA is not a
+   * departure from the system; it is the system's own answer. Green and
+   * orange are nudged past Apple's #248A3D / #C93400: the first to clear
+   * 4.5:1 on `--bg-2` and not just on white, the second to keep a hue gap
+   * from red (30° vs 354°) — the ledger draws "partial" in orange and
+   * "counts against" in red one row apart, and #C93400 reads as red.
+   *
+   * Dark mode keeps the vivid palette untouched: every accent already clears
+   * AA on #1C1C1E, so there is nothing to buy by dulling it.
+   */
+  --blue: #0040DD; --green: #1E7D37; --orange: #A65400; --red: #D70015;
+  --purple: #8944AB;
 
-  /* Semantic — light */
+  /* Blue has two jobs with opposite requirements, and one value cannot do
+   * both in dark mode. As *text* on a dark card it wants to be bright
+   * (#0A84FF reads at 4.66:1). As a *fill* under white text it wants to be
+   * deep — white on that same #0A84FF is only 3.65:1, which is what the Kept
+   * badge and the primary evidence pill were doing. So filled surfaces get
+   * their own token. In light mode the two coincide. */
+  --blue-fill: #0040DD;
+
+  /* Semantic — light
+   *
+   * Three tiers that all clear AA and still read as three tiers. The trick is
+   * spreading the ramp rather than nudging each value to the 4.5:1 line: at
+   * the floor, secondary and tertiary become the same grey and the hierarchy
+   * dies. So secondary is pushed well past it and tertiary sits just above.
+   *
+   *   --label    18.4:1   --label-2  7.6:1   --label-3  4.9:1   (on white)
+   *
+   * Alpha rather than hex, as before, so each tier still darkens against a
+   * tinted surface instead of floating on it. The ratios above are quoted for
+   * white; the alphas were solved against `--bg-2`, the harder background.
+   */
   --label: rgba(0,0,0,0.92);
-  --label-2: rgba(60,60,67,0.60);
-  --label-3: rgba(60,60,67,0.30);
+  --label-2: rgba(60,60,67,0.88);
+  --label-3: rgba(60,60,67,0.73);
   --bg: #FFFFFF;
   --bg-2: #F2F2F7;
   --bg-3: #FFFFFF;
@@ -52,8 +89,12 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --label: rgba(255,255,255,0.94);
-    --label-2: rgba(235,235,245,0.60);
-    --label-3: rgba(235,235,245,0.28);
+    /* Same spread as light: 15.1 / 7.0 / 4.6 against #1C1C1E. Dark mode was
+       already carrying `--label-2` at 5.9:1, so only the tertiary tier was
+       actually failing (2.3:1) — but both move together to keep the two
+       schemes reading as one design rather than two. */
+    --label-2: rgba(235,235,245,0.66);
+    --label-3: rgba(235,235,245,0.51);
     --bg: #000000;
     --bg-2: #1C1C1E;
     --bg-3: #1C1C1E;
@@ -62,6 +103,9 @@
     --material: rgba(30,30,32,0.72);
     --blue: #0A84FF; --green: #30D158; --orange: #FF9F0A; --red: #FF453A;
     --purple: #BF5AF2;
+    /* Deep enough for white text (4.79:1) while still standing off the card
+       by 3.55:1, so the pill keeps its shape. */
+    --blue-fill: #0B6EE6;
   }
 }
 
