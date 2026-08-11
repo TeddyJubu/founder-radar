@@ -62,7 +62,8 @@ def telegram_outbox(monkeypatch):
     return sent
 
 
-def _db_with_last_run(path: Path, *, hours_ago: float, status: str = "ok") -> Db:
+def _db_with_last_run(path: Path, *, hours_ago: float, status: str = "ok",
+                      items_fetched: int = 0) -> Db:
     db = Db(path)
     db.migrate()
     stamp = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime(
@@ -71,8 +72,8 @@ def _db_with_last_run(path: Path, *, hours_ago: float, status: str = "ok") -> Db
         """INSERT INTO run(started_at, finished_at, mode, status, items_fetched,
                            items_extracted, companies_new, companies_merged,
                            gated_out, shortlisted, llm_calls, llm_cost_usd)
-           VALUES (?,?,'daily',?,0,0,0,0,0,0,0,0)""",
-        (stamp, stamp, status),
+           VALUES (?,?,'daily',?,?,0,0,0,0,0,0,0)""",
+        (stamp, stamp, status, items_fetched),
     )
     db.close()
     return db
@@ -109,14 +110,40 @@ def test_heartbeat_is_quiet_when_the_run_is_recent(tmp_path, telegram_outbox):
     assert result.exit_code == 0
 
 
-def test_heartbeat_treats_a_partial_run_as_no_run(tmp_path, telegram_outbox):
-    """`partial` means sources failed. Counting it as proof of life would mask
-    a pipeline that fails every source every day."""
-    path = tmp_path / "radar.db"
-    _db_with_last_run(path, hours_ago=2, status="partial")
+def test_heartbeat_accepts_a_partial_run_that_did_work(tmp_path, telegram_outbox):
+    """`partial` is this pipeline's normal Tuesday, not an outage.
 
-    _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
-    assert len(telegram_outbox) == 1
+    Any one of 23 sources failing marks the whole run `partial`, and at least
+    one always does — Companies House has no key, northern_accelerator serves
+    403. On the live box `ok` had never once been written in four runs, so the
+    heartbeat alerted every morning while the pipeline was collecting 1,338
+    companies a day. An alarm that fires daily is an alarm nobody reads, which
+    is the exact failure FR-9.3 exists to prevent.
+
+    Proof of life is therefore: it finished, and it fetched something.
+    """
+    path = tmp_path / "radar.db"
+    _db_with_last_run(path, hours_ago=2, status="partial", items_fetched=1338)
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+    assert telegram_outbox == [], telegram_outbox
+    assert result.exit_code == 0
+
+
+def test_heartbeat_still_alerts_when_a_partial_run_fetched_nothing(
+        tmp_path, telegram_outbox):
+    """The concern the old rule was protecting, kept.
+
+    A run where every source failed still writes a `partial` row, and counting
+    that as proof of life would mask a pipeline that is dead on its feet. The
+    difference is measurable: it fetched nothing.
+    """
+    path = tmp_path / "radar.db"
+    _db_with_last_run(path, hours_ago=2, status="partial", items_fetched=0)
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+    assert len(telegram_outbox) == 1, telegram_outbox
+    assert result.exit_code == 1
 
 
 def test_status_without_the_flag_sends_nothing(tmp_path, telegram_outbox):
