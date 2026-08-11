@@ -143,7 +143,8 @@ def _edge_parts(
 
     parts = [
         ("age", _LABELS["age"], age_sub, float(weights["age"]),
-         "age unknown" if age is None else f"{age:.0f} months old"),
+         "age unknown" if age is None
+         else f"{age:.0f} month{'' if f'{age:.0f}' == '1' else 's'} old"),
         ("press_coverage", _LABELS["press_coverage"], press_sub, float(weights["press_coverage"]),
          ("press count unknown" if press is None else f"{int(press)} tracked article(s)")),
         ("disclosed_funding", _LABELS["disclosed_funding"], funding_sub,
