@@ -82,7 +82,7 @@ figcaption {
 }
 .callout .num {
   flex: none; width: 26px; height: 26px; border-radius: 50%;
-  background: var(--blue); color: #fff;
+  background: var(--blue-fill); color: #fff;
   font-size: var(--footnote); font-weight: 600;
   display: grid; place-items: center;
 }
@@ -104,6 +104,13 @@ figcaption {
 .key.yes { background: var(--green); border-color: transparent; color: #fff; }
 .key.yes kbd { background: rgba(255,255,255,0.22); }
 
+/* Matches the verdict button on Today — dark mode keeps the bright fill and
+   inverts the text rather than dulling a colour used as a mark elsewhere. */
+@media (prefers-color-scheme: dark) {
+  .key.yes { color: #06210E; }
+  .key.yes kbd { background: rgba(6,33,14,0.20); }
+}
+
 .funds { display: grid; gap: var(--s3); margin-top: var(--s5); }
 .fund-row {
   display: flex; gap: var(--s4); align-items: baseline;
@@ -124,7 +131,7 @@ figcaption {
 .cta {
   display: block; margin-top: var(--s7); text-align: center;
   padding: var(--s4); border-radius: var(--r-control);
-  background: var(--blue); color: #fff; text-decoration: none;
+  background: var(--blue-fill); color: #fff; text-decoration: none;
   font-size: var(--headline); font-weight: 600;
   transition: transform .18s var(--spring);
 }

@@ -318,7 +318,8 @@ def _vehicle_label(vehicles: dict, key) -> str:
 # --------------------------------------------------------------------- reads
 
 _ENTRY_SQL = """
-    SELECT s.company_id      AS company_id,
+    SELECT s.id              AS score_id,
+           s.company_id      AS company_id,
            s.fund_key        AS fund_key,
            s.vehicle_key     AS vehicle_key,
            s.fund_fit_pct    AS fund_fit_pct,
@@ -417,7 +418,142 @@ def _describes(entry: dict) -> str:
     return _truncate(entry.get("one_liner") or "", 96)
 
 
-def _why_line(db, entry: dict) -> str:
+# ------------------------------------------------------------------- ledger
+
+# The thresholds are `POSITIVE_AT` / `NEGATIVE_AT` from radar/score/explain.py,
+# restated here for the same reason the web card restates them: the digest and
+# the sentence must not describe one criterion two different ways.
+_POSITIVE_AT = 0.6
+_NEGATIVE_AT = 0.34
+
+# Four marks, matching the four states the card draws. Colour is what makes the
+# card scannable at a glance, and a coloured dot is the only way to carry that
+# into a plain-text message — an emoji is a poor icon on the web, where a real
+# icon system exists, and the best available mark here, where one does not.
+_MARK = {"met": "🟢", "partial": "🟠", "missed": "🔴", "unknown": "⚪"}
+
+# The same plain words the card uses, so the two surfaces name a rule
+# identically. Kept in step with `CRITERION` in prototype/index.html by hand;
+# a shared source would mean shipping this table to the browser as JSON, which
+# is a lot of machinery for nine strings.
+_CRITERION_NAME = {
+    "sector": "Sector", "geography": "Location", "stage": "Stage",
+    "founder_signal": "Founders", "traction_signal": "Traction",
+    "press_coverage": "Press", "age": "Age",
+    "disclosed_funding": "Money raised", "discovery_route": "Found via",
+}
+
+# How many decided rules a single entry may spend. The card shows all nine
+# because it shows one company per screen; the digest shows ten companies in
+# one message, and ten nine-row ledgers is a scroll, not a scan.
+_LEDGER_ROWS = 3
+
+# The card's first group — "does this fit the fund?". The digest shows these
+# and not the freshness four, for a reason that only shows up in the data:
+# freshness weights run 20–30 and fit weights 2–4, so any ranking that mixes
+# the two scales hands every row to freshness and the fund question never
+# appears. Freshness is already carried by the priority number beside the name.
+_FIT_KEYS = ("sector", "geography", "stage", "founder_signal", "traction_signal")
+
+
+def _components(db, score_id) -> list[dict]:
+    if score_id is None:
+        return []
+    return [dict(r) for r in db.query(
+        "SELECT key, label, sub_score, evidence, weight "
+        "FROM score_component WHERE score_id = ?", (score_id,))]
+
+
+def _status(component: dict) -> str:
+    """`None` is never a failure — 06-scoring's percentage-of-known rule."""
+    sub = component.get("sub_score")
+    if sub is None:
+        return "unknown"
+    if sub >= _POSITIVE_AT:
+        return "met"
+    if sub <= _NEGATIVE_AT:
+        return "missed"
+    return "partial"
+
+
+def _value(component: dict, status: str) -> str:
+    raw = str(component.get("evidence") or "").strip()
+    if status == "unknown" or not raw or raw.lower() in {"unknown", "age unknown",
+                                                         "funding unknown"}:
+        return "not known"
+    if raw == "0 tracked article(s)":
+        return "none yet"
+    return _truncate(raw.replace("tracked article(s)", "tracked articles"), 34)
+
+
+def _ledger(db, entry: dict) -> list[str]:
+    """The scored rules, marked, in place of the bare facts line.
+
+    That line read `Newcastle · 1 month old · Life Sciences` — three criteria
+    printed as though they were neutral facts, when the engine had already
+    judged every one of them. The values are unchanged; each now says whether
+    it counted for or against.
+
+    Rows are the fund-fit rules, heaviest first, exactly as the card orders its
+    first group. An earlier cut ranked failures above passes on the theory that
+    the useful thing at 6:30am is a reason not to bother — but a company only
+    reaches the digest by matching, and showing three failures while hiding the
+    match it qualified on describes a different company than the one scored.
+
+    `age` is appended whatever its weight. It belongs to the freshness group,
+    not this one, but "new enough to be worth an email" is the entire premise
+    of the product and it was on the line this ledger replaces.
+    """
+    components = _components(db, entry.get("score_id"))
+    if not components:
+        return []
+
+    by_key = {c["key"]: c for c in components}
+    fit = [by_key[k] for k in _FIT_KEYS if k in by_key]
+    if not fit:
+        return []
+
+    graded = [(c, _status(c)) for c in fit]
+    weight = lambda pair: -float(pair[0].get("weight") or 0)          # noqa: E731
+    decided = sorted((p for p in graded if p[1] != "unknown"), key=weight)
+
+    # Taking the heaviest three would be right if weight tracked importance to
+    # the reader, and it does not: `founder_signal` and `traction_signal` carry
+    # the lowest weights, so a plain top-three drops exactly those two — and if
+    # one of them is the rule the company *failed*, the entry reads cleaner
+    # than the company is. So one of each verdict is seated first, and weight
+    # only decides what fills the remaining slot.
+    chosen: list[tuple[dict, str]] = []
+    for verdict in ("missed", "met"):
+        first = next((p for p in decided if p[1] == verdict), None)
+        if first is not None:
+            chosen.append(first)
+    for pair in decided:
+        if len(chosen) >= _LEDGER_ROWS:
+            break
+        if pair[0]["key"] not in {c["key"] for c, _ in chosen}:
+            chosen.append(pair)
+    chosen.sort(key=weight)
+
+    def row(component, status):
+        name = _CRITERION_NAME.get(component["key"]) or component.get("label") or component["key"]
+        return f"   {_MARK[status]} {name}: {_value(component, status)}"
+
+    lines = [row(c, s) for c, s in chosen[:_LEDGER_ROWS]]
+
+    age = by_key.get("age")
+    if age is not None:
+        age_status = _status(age)
+        if age_status != "unknown":
+            lines.append(row(age, age_status))
+
+    unknown = [_CRITERION_NAME.get(c["key"]) or c["key"] for c, s in graded if s == "unknown"]
+    if unknown:
+        lines.append(f"   {_MARK['unknown']} Not known: {', '.join(unknown).lower()}")
+    return lines
+
+
+def _why_line(db, entry: dict, *, allow_explanation: bool = True) -> str:
     """The one evidence line under each company.
 
     ponytail: 07-interfaces §2 shows a signal-shaped line ("Durham spinout,
@@ -435,10 +571,16 @@ def _why_line(db, entry: dict) -> str:
     `_describes` now on the line above, the reader already knows what the
     company is by the time they reach this one, so the headline reads as
     provenance rather than as the description — which was the whole complaint.
+
+    `allow_explanation` is off when a ledger rendered above: the explanation is
+    prose assembled from the same components the ledger just listed, so keeping
+    it there says everything twice.
     """
     signals = _signals(db, entry["company_id"])
     if signals:
         return _truncate(", ".join(s["headline"] for s in signals if s["headline"]), 96)
+    if not allow_explanation:
+        return ""
     return _truncate(entry.get("explanation") or "", 96)
 
 
@@ -485,7 +627,7 @@ def render_digest(db, period: str = "today", on_date: str | None = None) -> str:
     if median_age is not None:
         label = "Median age this week" if weekly else "Median age today"
         shown = int(median_age) if float(median_age).is_integer() else round(median_age, 1)
-        lines.append(f"{label}: {shown} months")
+        lines.append(f"{label}: {shown} month{'' if shown == 1 else 's'}")
 
     lines.append("")
     lines.append(RULE)
@@ -539,14 +681,26 @@ def _entry_block(db, index: int, entry: dict, ref: date, funds, vehicles) -> lis
     if describes:
         block.append(f"   {describes}")
 
-    facts = [
-        _pretty(entry["hq_city"] or entry["hq_region"]),
-        _age_phrase(_months_old(entry["incorporated_on"], ref)),
-        _pretty(entry["sector"]),
-    ]
-    block.append("   " + " · ".join(f for f in facts if f))
+    # The ledger carries the same values the facts line did, each with the
+    # verdict the engine already reached. A score written before
+    # `score_component` was populated has nothing to mark, so the plain line
+    # stays as the fallback rather than the entry losing its facts entirely.
+    ledger = _ledger(db, entry)
+    if ledger:
+        block.extend(ledger)
+    else:
+        facts = [
+            _pretty(entry["hq_city"] or entry["hq_region"]),
+            _age_phrase(_months_old(entry["incorporated_on"], ref)),
+            _pretty(entry["sector"]),
+        ]
+        block.append("   " + " · ".join(f for f in facts if f))
 
-    why = _why_line(db, entry)
+    # With a ledger above, the explanation fallback is the same reasoning told
+    # twice — and told worse, since it is the paragraph the ledger replaced.
+    # A signal headline is not a retelling: it is where the company came from,
+    # which is the one thing the ledger does not say.
+    why = _why_line(db, entry, allow_explanation=not ledger)
     if why:
         block.append(f"   {why}")
 
