@@ -196,21 +196,113 @@ h2 {
 .why-clause[data-kind="warn"] {
   color: var(--orange);
 }
-.why-more {
-  align-self: flex-start;
-  margin: 2px 0 0;
-  padding: 0;
-  flex: none;
-  border: 0;
-  background: transparent;
-  color: var(--blue);
-  font-size: var(--footnote); line-height: var(--footnote-lh);
-  font-weight: 510;
-  cursor: pointer;
-  white-space: nowrap;
+/* ───────────────────────────────────────────────────────── the ledger */
+
+/* Why the scoring is a list and not the sentence it used to be.
+   `score.explanation` is prose assembled from `components`, and the card was
+   parsing that prose back into clauses to colour them — deriving structure
+   from a string that had just been built out of structure. Aryan read
+   "Against: sector (B2B SaaS). Unknown: traction signal." and had to work out
+   which criteria existed at all, let alone which had failed. The components
+   are in the payload already, so the row IS the criterion: one line per rule,
+   status in the left column, the actual value on the right.
+
+   Ten of these a morning is the design constraint. The icon column gives the
+   eye a single rail to run down; nothing else is allowed to compete with it. */
+.ledger { margin: var(--s5) 0 0; display: flex; flex-direction: column; gap: var(--s4); }
+
+.led-group { display: flex; flex-direction: column; gap: var(--s1); }
+
+.led-head {
+  display: flex; align-items: baseline; gap: var(--s2);
+  margin: 0 0 var(--s1);
 }
-.why-more:hover { background: transparent; text-decoration: underline; }
-.why-more:active { transform: none; }
+.led-head h3 {
+  margin: 0;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 590; letter-spacing: 0.01em;
+  color: var(--label);
+}
+/* The group heading carries its own score, so the two numbers at the top of
+   the card stop being unexplained. "Match 63" above the fit rules says what
+   the 63 was counted from. */
+.led-head .led-score {
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 590; font-variant-numeric: tabular-nums;
+  color: var(--label-2);
+}
+.led-head .led-score b { color: var(--label); font-weight: 590; }
+
+.led-rows { list-style: none; margin: 0; padding: 0; }
+
+.led-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 2px var(--s3);
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 0.5px solid var(--separator);
+}
+.led-row:first-child { border-top: 0; }
+
+.led-ic {
+  grid-row: 1;
+  display: block; width: 16px; height: 16px;
+  transform: translateY(2px);          /* optical baseline, not box baseline */
+}
+.led-row[data-status="met"]     .led-ic { color: var(--green); }
+.led-row[data-status="partial"] .led-ic { color: var(--orange); }
+.led-row[data-status="missed"]  .led-ic { color: var(--red); }
+.led-row[data-status="unknown"] .led-ic { color: var(--label-2); }
+
+.led-name {
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label); font-weight: 400;
+}
+.led-val {
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label-2); text-align: right;
+}
+/* `--label-3` is 0.30 alpha — about 1.7:1 on white. It is right for a
+   progress dot and wrong for anything anyone has to read, so the unknown
+   row keeps `--label-2` and lets the dashed mark carry the de-emphasis. */
+.led-row[data-status="missed"] .led-val { color: var(--red); }
+
+/* The sentence only appears where it earns its place: a met criterion needs
+   no gloss ("Sector — Climate Tech" is self-evident), while an unknown or a
+   miss is exactly where Aryan asked what the rule even means. */
+.led-gloss {
+  grid-column: 2 / -1; margin: 0;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  color: var(--label-2);
+  max-width: 52ch;
+}
+
+/* The original sentence, kept verbatim and one tap away. Nothing here
+   paraphrases it; the ledger is the same data, not a retelling. */
+.why-full { margin: var(--s4) 0 0; }
+.why-full > summary {
+  display: inline-flex; align-items: center; gap: 6px;
+  list-style: none; cursor: pointer; width: fit-content;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 510; color: var(--blue);
+  border-radius: var(--r-control);
+}
+.why-full > summary::-webkit-details-marker { display: none; }
+.why-full > summary::after {
+  content: ""; width: 7px; height: 7px; flex: none;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform .25s var(--spring);
+}
+.why-full[open] > summary::after { transform: translateY(1px) rotate(-135deg); }
+.why-full > summary:hover { text-decoration: underline; }
+.why-full > summary:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.why-full .why { margin-top: var(--s2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .why-full > summary::after { transition: none; }
+}
 
 .evidence { margin: var(--s5) 0 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
 .ev {
@@ -434,7 +526,134 @@ function explanationKind(clause) {
 // A long shortlist morning should not force-read every clause. Keep the
 // full sentence in the DOM (and in `data-text`) so D4 stays honest; only
 // hide the tail until expanded.
-const WHY_PREVIEW = 4;
+// ─────────────────────────────────────────────────────────── the ledger
+
+// Plain words for the scoring keys, and — where it is not obvious — a line
+// saying what the rule is actually testing. `score.components` carries a
+// `label`, but "Discovery route" and "Founder signal" are the engine's names
+// for things, not a reader's, and the gloss is the part Aryan asked for: the
+// rules were "too brief to understand".
+//
+// A gloss is only rendered when the criterion is NOT met, because that is
+// where the question gets asked. "Sector — Climate Tech" explains itself.
+const CRITERION = {
+  sector:            {name: "Sector",          gloss: "What the company actually does."},
+  geography:         {name: "Location",        gloss: "Where it is based. Most of these funds have a hard region rule, so an unknown here is worth a minute on the website."},
+  stage:             {name: "Stage",           gloss: "How far along it is — idea, pre-seed, seed, growth."},
+  founder_signal:    {name: "Founders",        gloss: "Whether they have built something before, or came out of a university or research lab."},
+  traction_signal:   {name: "Traction",        gloss: "Any public sign of customers, revenue or usage."},
+  press_coverage:    {name: "Press coverage",  gloss: "Articles in the sources we track. Less coverage is better here — it means fewer investors have seen it."},
+  age:               {name: "Age",             gloss: "How long since it was incorporated. Without a Companies House match this stays unknown."},
+  disclosed_funding: {name: "Money raised",    gloss: "Funding announced publicly. Nothing found either way, so this sits mid rather than assuming they are unfunded."},
+  discovery_route:   {name: "How we found it", gloss: "A registry filing reaches you earlier than a news story does."},
+};
+
+// The four components that answer "has this fund already seen it?" — the
+// rest answer "does it fit?". Splitting them lets each group sit under the
+// score it produced, which is the only place Match and Fresh get defined
+// where someone is actually looking.
+const EDGE_KEYS = new Set(["press_coverage", "age", "disclosed_funding", "discovery_route"]);
+
+// One drawn family: same 6.4r circle, same 1.75 stroke, differing only in the
+// mark inside. Four states, because "we checked and it failed" and "we never
+// found out" are different facts and the card must not blur them.
+const LED_ICON = {
+  met:     `<circle cx="8" cy="8" r="6.4"/><path d="M5.4 8.2l1.8 1.8 3.4-3.9"/>`,
+  partial: `<circle cx="8" cy="8" r="6.4"/><path d="M8 1.6a6.4 6.4 0 0 1 0 12.8z" fill="currentColor" stroke="none"/>`,
+  missed:  `<circle cx="8" cy="8" r="6.4"/><path d="M5.5 8h5"/>`,
+  unknown: `<circle cx="8" cy="8" r="6.4" stroke-dasharray="2.1 2.5"/>`,
+};
+
+function ledIcon(status) {
+  return `<svg class="led-ic" viewBox="0 0 16 16" width="16" height="16" fill="none"
+               stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">${LED_ICON[status]}</svg>`;
+}
+
+// These two numbers are `POSITIVE_AT` and `NEGATIVE_AT` from
+// radar/score/explain.py, and they are duplicated deliberately: the sentence
+// in the <details> below calls a component a match at 0.6 and holds it
+// "Against:" at 0.34, so any other threshold here would let the ledger and
+// the sentence describe the same criterion two different ways on one card.
+const LED_POSITIVE_AT = 0.6;
+const LED_NEGATIVE_AT = 0.34;
+
+// `sub_score` is null when nothing was found, which is not the same as zero.
+// 06-scoring's whole percentage-of-known rule rests on that distinction, so
+// the UI keeps it: an unknown never renders as a failure.
+function ledStatus(component) {
+  const s = component.sub_score;
+  if (s === null || s === undefined) return "unknown";
+  if (s >= LED_POSITIVE_AT) return "met";
+  if (s <= LED_NEGATIVE_AT) return "missed";
+  return "partial";
+}
+
+// Evidence strings are written for a log line, not a card. These rewrites
+// change wording only where the engine's phrasing is machine-shaped; every
+// value ("£350,000 disclosed", "Climate Tech") passes through untouched.
+function ledValue(component, status) {
+  const raw = String(component.evidence || "").trim();
+  if (status === "unknown" || !raw || /^unknown$/i.test(raw)) return "not known";
+  // "age unknown" / "funding unknown" arrive with a real sub_score — the
+  // engine scores an undisclosed round at mid rather than nil — so they are
+  // not `status === "unknown"`, but they still must not read as a value.
+  if (/^age unknown$/i.test(raw)) return "not known";
+  // Not "none disclosed": we did not check and find nothing, we never found
+  // out. Saying "none" would be a claim the pipeline cannot support.
+  if (/^funding unknown$/i.test(raw)) return "not known";
+  if (/^0 tracked article\(s\)$/i.test(raw)) return "none yet";
+  return raw.replace(/\btracked article\(s\)/i, "tracked articles");
+}
+
+function ledRows(components) {
+  return components.map(comp => {
+    const status = ledStatus(comp);
+    const meta = CRITERION[comp.key] || {};
+    const name = meta.name || comp.label || comp.key;
+    const gloss = status !== "met" && meta.gloss
+      ? `<p class="led-gloss">${esc(meta.gloss)}</p>` : "";
+    return `<li class="led-row" data-testid="criterion"
+                data-key="${esc(comp.key)}" data-status="${status}">
+              ${ledIcon(status)}
+              <span class="led-name">${esc(name)}</span>
+              <span class="led-val">${esc(ledValue(comp, status))}</span>
+              ${gloss}
+            </li>`;
+  }).join("");
+}
+
+// Decided rules first, unknowns last: what we established outranks what we
+// failed to. Within each, the heavier weight leads.
+function ledSort(a, b) {
+  const rank = s => (s === "unknown" ? 1 : 0);
+  const d = rank(ledStatus(a)) - rank(ledStatus(b));
+  return d || (Number(b.weight) || 0) - (Number(a.weight) || 0);
+}
+
+function renderCriteria(c) {
+  const all = Array.isArray(c.components) ? c.components.filter(Boolean) : [];
+  if (!all.length) return "";
+
+  const groups = [
+    {key: "fit",  title: "Fits the fund", score: c.fit,
+     items: all.filter(x => !EDGE_KEYS.has(x.key)).sort(ledSort)},
+    {key: "edge", title: "New to them",   score: c.edge,
+     items: all.filter(x =>  EDGE_KEYS.has(x.key)).sort(ledSort)},
+  ].filter(g => g.items.length);
+
+  return `<div class="ledger" data-testid="criteria">
+    ${groups.map(g => `
+      <section class="led-group" data-testid="criteria-group" data-group="${g.key}">
+        <div class="led-head">
+          <h3>${esc(g.title)}</h3>
+          <span class="led-score">${g.key === "fit" ? "Match" : "Fresh"}
+            <b>${Math.round(Number(g.score) || 0)}</b></span>
+        </div>
+        <ul class="led-rows">${ledRows(g.items)}</ul>
+      </section>`).join("")}
+  </div>`;
+}
 
 function renderExplanation(text) {
   const raw = String(text || "").trim();
@@ -442,18 +661,14 @@ function renderExplanation(text) {
   if (!clauses.length) {
     return `<div class="why" data-testid="explanation" data-text=""></div>`;
   }
-  const collapsed = clauses.length > WHY_PREVIEW;
-  const items = clauses.map((clause, idx) => {
-    const hidden = collapsed && idx >= WHY_PREVIEW ? " hidden" : "";
-    return `<p class="why-clause"${hidden} data-testid="explanation-clause"
-                data-kind="${explanationKind(clause)}">${esc(clause)}</p>`;
-  }).join("");
-  const more = collapsed
-    ? `<button type="button" class="why-more" data-testid="explanation-more"
-               data-expanded="false" aria-expanded="false">Show all</button>`
-    : "";
+  // No preview/"Show all" any more: the clauses live inside a <details> that
+  // is shut by default, so collapsing them a second time hid text behind two
+  // separate disclosures. The ledger above is the thing meant to be read.
+  const items = clauses.map(clause =>
+    `<p class="why-clause" data-testid="explanation-clause"
+        data-kind="${explanationKind(clause)}">${esc(clause)}</p>`).join("");
   return `<div class="why" data-testid="explanation" data-text="${esc(raw)}"
-               data-collapsed="${collapsed}">${items}${more}</div>`;
+               data-collapsed="false">${items}</div>`;
 }
 
 // Everything on this card is scraped off somebody else's website — a company
@@ -622,7 +837,12 @@ function render() {
         ? `<p class="blurb" data-testid="one-liner">${esc(c.one_liner)}</p>`
         : ""}
 
-      ${renderExplanation(c.explanation || "")}
+      ${renderCriteria(c)}
+
+      <details class="why-full" data-testid="explanation-details">
+        <summary data-testid="explanation-toggle">How this was scored, in full</summary>
+        ${renderExplanation(c.explanation || "")}
+      </details>
 
       ${evidence ? `<div class="evidence" data-testid="evidence">${evidence}</div>` : ""}
 
@@ -688,18 +908,6 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  const more = e.target.closest("[data-testid='explanation-more']");
-  if (more) {
-    const why = more.closest("[data-testid='explanation']");
-    const willExpand = more.dataset.expanded !== "true";
-    why.querySelectorAll("[data-testid='explanation-clause']").forEach((el, idx) => {
-      el.hidden = !willExpand && idx >= WHY_PREVIEW;
-    });
-    more.dataset.expanded = willExpand ? "true" : "false";
-    more.setAttribute("aria-expanded", willExpand ? "true" : "false");
-    more.textContent = willExpand ? "Show less" : "Show all";
-    return;
-  }
   const b = e.target.closest("button[data-v]");
   if (b) decide(b.dataset.v);
 });
