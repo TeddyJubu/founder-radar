@@ -108,7 +108,8 @@ say "environment file mode: $(stat -c '%a %U:%G' "$ENV_FILE")"
 say "systemd units"
 for unit in founder-radar.service founder-radar.timer \
             founder-radar-heartbeat.service founder-radar-heartbeat.timer \
-            founder-radar-backup.service founder-radar-backup.timer; do
+            founder-radar-backup.service founder-radar-backup.timer \
+            founder-radar-web.service; do
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
 chmod 755 "$HERE/backup.sh"
@@ -119,6 +120,45 @@ systemctl daemon-reload
 systemctl enable --now founder-radar.timer
 systemctl enable --now founder-radar-heartbeat.timer
 systemctl enable --now founder-radar-backup.timer
+
+# ------------------------------------------------------------- 4b. the review
+#
+# The web surface is opt-in and refuses to start public without a password.
+# `founder-radar-web.service` binds 127.0.0.1, so until Caddy is configured the
+# review queue is reachable only from the box itself — which is the safe
+# default, not a broken state.
+
+say "review surface"
+systemctl enable --now founder-radar-web.service
+
+# shellcheck disable=SC1090
+. "$ENV_FILE" 2>/dev/null || true
+if [ -n "${RADAR_WEB_DOMAIN:-}" ] && [ -n "${RADAR_WEB_PASS_HASH:-}" ]; then
+  if ! command -v caddy >/dev/null 2>&1; then
+    say "installing caddy"
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
+    curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
+      | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] \
+https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
+      > /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -qq && apt-get install -y -qq caddy
+  fi
+  install -m 644 "$HERE/Caddyfile" /etc/caddy/Caddyfile
+  mkdir -p /etc/systemd/system/caddy.service.d
+  printf '[Service]\nEnvironmentFile=%s\n' "$ENV_FILE" \
+    > /etc/systemd/system/caddy.service.d/override.conf
+  systemctl daemon-reload
+  systemctl enable --now caddy
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy
+  say "review surface live at https://$RADAR_WEB_DOMAIN (password required)"
+else
+  say "RADAR_WEB_DOMAIN / RADAR_WEB_PASS_HASH not set in $ENV_FILE"
+  say "  the review surface is running on 127.0.0.1:8787 and is NOT published."
+  say "  to publish it, generate a hash and re-run:"
+  say "    caddy hash-password --plaintext 'choose-a-password'"
+  say "  then add RADAR_WEB_DOMAIN, RADAR_WEB_USER and RADAR_WEB_PASS_HASH."
+fi
 
 # ------------------------------------------------------------------ 5. hermes
 #
