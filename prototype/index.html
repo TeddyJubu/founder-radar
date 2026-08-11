@@ -50,7 +50,7 @@ h1 {
 .kept-badge {
   min-width: 1.1em; padding: 0 5px; height: 16px;
   border-radius: 999px;
-  background: var(--blue); color: #fff;
+  background: var(--blue-fill); color: #fff;
   font-size: 11px; line-height: 16px; font-weight: 600;
   font-variant-numeric: tabular-nums; text-align: center;
 }
@@ -322,11 +322,11 @@ h2 {
    it is filled while the rest stay quiet pills. Deliberately NOT competing
    with the verdict bar: this is blue and inline, those are the decision. */
 .ev.primary {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: #fff;
   font-weight: 590;
 }
-.ev.primary:hover { background: color-mix(in srgb, #fff 12%, var(--blue)); }
+.ev.primary:hover { background: color-mix(in srgb, #fff 12%, var(--blue-fill)); }
 .ev.primary .chev { color: color-mix(in srgb, #fff 65%, transparent); }
 
 .foot {
@@ -375,6 +375,17 @@ button .kbd {
 button.yes { background: var(--green); border-color: transparent; color: #fff; }
 button.yes .kbd { color: rgba(255,255,255,0.7); }
 button.no  { color: var(--red); }
+
+/* The primary action was the least legible thing on the screen: white on the
+   vivid system green measured 2.02:1 in dark mode and 2.22:1 in light. Light
+   is fixed by the accessible green in tokens.css (5.19:1). Dark keeps its
+   bright fill — dulling it would cost the green everywhere else it is used as
+   a mark on a dark card — so the text inverts instead, which is what Apple
+   does on bright fills anyway. Near-black on #30D158 is 10.4:1. */
+@media (prefers-color-scheme: dark) {
+  button.yes { color: #06210E; }
+  button.yes .kbd { color: rgba(6,33,14,0.66); }
+}
 
 .hint {
   margin-top: var(--s3); text-align: center;
