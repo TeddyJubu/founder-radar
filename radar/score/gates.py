@@ -91,7 +91,7 @@ def apply_freshness_gates(
         flags.append(UNKNOWN_FLAGS["max_company_age_months"])
     elif age > settings.max_company_age_months:
         return GateResult(False, "max_company_age_months", tuple(flags),
-                          f"{age:.0f} months old")
+                          f"{age:.0f} month{'' if f'{age:.0f}' == '1' else 's'} old")
 
     # --- funding: "many have already raised" -----------------------------
     funding = _get(company, "total_funding_gbp")
