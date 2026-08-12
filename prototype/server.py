@@ -26,7 +26,7 @@ import argparse
 import json
 import re
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -375,6 +375,219 @@ def render_kept_rows(conn: sqlite3.Connection) -> str:
             f'<h2>{escape(verdict.capitalize())} <span class="count">{len(items)}</span></h2>'
             f'<ul>{"".join(rows)}</ul></section>')
     return "\n".join(blocks)
+
+
+# ------------------------------------------------------------- the dashboard
+#
+# Two questions, one page: "what happened, and when" (the calendar) and "what
+# have I kept, and where did it come from" (the table).
+#
+# Every date the schema holds is on the calendar — the day a company was first
+# seen, the day it was incorporated, the day a signal is dated to, and the day
+# a verdict was made. Coverage is uneven and the calendar says so rather than
+# hiding it: `first_seen` exists for every company, but `incorporated_on` and
+# `signal.occurred_on` are only as good as what the register and the sources
+# gave us, and a day with no marks means nothing happened, not that we failed.
+
+EVENT_LABEL = {
+    "found": "found",
+    "incorporated": "incorporated",
+    "signal": "signal",
+    "decided": "decided",
+}
+
+
+def _month_range(year: int, month: int) -> tuple[str, str]:
+    """[start, end) as ISO dates — half-open so `< end` needs no leap-year care."""
+    start = date(year, month, 1)
+    end = date(year + (month == 12), (month % 12) + 1, 1)
+    return start.isoformat(), end.isoformat()
+
+
+def _parse_month(raw: str | None, today: date) -> tuple[int, int]:
+    """`?m=2026-08` → (2026, 8). Anything unparseable falls back to today."""
+    if raw:
+        try:
+            parsed = datetime.strptime(raw.strip(), "%Y-%m")
+            return parsed.year, parsed.month
+        except ValueError:
+            pass
+    return today.year, today.month
+
+
+def kept_company_ids(conn: sqlite3.Connection) -> set[str]:
+    return {r["company_id"] for r in conn.execute(
+        "SELECT company_id FROM user_field WHERE field = 'verdict' AND "
+        "LOWER(TRIM(value)) IN (?, ?)", KEPT_VERDICTS)}
+
+
+def build_calendar(conn: sqlite3.Connection, year: int, month: int) -> dict[str, dict]:
+    """`YYYY-MM-DD` → counts per event kind, plus whether a kept company is in it.
+
+    One query per event kind rather than a union: the four live in different
+    tables with different date columns, and a union would need each to fake the
+    other's shape. Four small indexed scans over one month is cheaper to read
+    and cheaper to run than that.
+    """
+    start, end = _month_range(year, month)
+    kept = kept_company_ids(conn)
+    days: dict[str, dict] = {}
+
+    def add(day: str | None, kind: str, company_id: str | None) -> None:
+        if not day:
+            return
+        cell = days.setdefault(day, {"found": 0, "incorporated": 0, "signal": 0,
+                                     "decided": 0, "kept": 0})
+        cell[kind] += 1
+        if company_id in kept:
+            cell["kept"] += 1
+
+    for r in conn.execute(
+        "SELECT id, substr(first_seen,1,10) d FROM company "
+        "WHERE merged_into IS NULL AND substr(first_seen,1,10) >= ? "
+        "AND substr(first_seen,1,10) < ?", (start, end)):
+        add(r["d"], "found", r["id"])
+
+    for r in conn.execute(
+        "SELECT id, incorporated_on d FROM company "
+        "WHERE merged_into IS NULL AND incorporated_on >= ? AND incorporated_on < ?",
+        (start, end)):
+        add(r["d"], "incorporated", r["id"])
+
+    for r in conn.execute(
+        "SELECT company_id, substr(occurred_on,1,10) d FROM signal "
+        "WHERE occurred_on >= ? AND occurred_on < ?", (start, end)):
+        add(r["d"], "signal", r["company_id"])
+
+    for r in conn.execute(
+        "SELECT company_id, substr(updated_at,1,10) d FROM user_field "
+        "WHERE field = 'verdict' AND substr(updated_at,1,10) >= ? "
+        "AND substr(updated_at,1,10) < ?", (start, end)):
+        add(r["d"], "decided", r["company_id"])
+
+    return days
+
+
+def render_calendar(conn: sqlite3.Connection, year: int, month: int,
+                    today: date) -> str:
+    """A month grid. Weeks start Monday, because the client's week does."""
+    import calendar as cal
+    from html import escape
+
+    days = build_calendar(conn, year, month)
+    weeks = cal.Calendar(firstweekday=0).monthdatescalendar(year, month)
+    prev_m = date(year, month, 1) - timedelta(days=1)
+    next_m = date(year + (month == 12), (month % 12) + 1, 1)
+
+    head = "".join(f"<div class='cal-dow'>{d}</div>"
+                   for d in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+    cells: list[str] = []
+    for week in weeks:
+        for day in week:
+            iso = day.isoformat()
+            cell = days.get(iso)
+            classes = ["cal-day"]
+            if day.month != month:
+                classes.append("out")
+            if day == today:
+                classes.append("today")
+            if cell and cell["kept"]:
+                classes.append("has-kept")
+            marks = ""
+            if cell:
+                marks = "".join(
+                    f"<span class='m m-{kind}' title='{cell[kind]} {escape(label)}'>"
+                    f"{cell[kind]}<i>{escape(label)}</i></span>"
+                    for kind, label in EVENT_LABEL.items() if cell[kind])
+            cells.append(
+                f"<div class='{' '.join(classes)}' data-testid='cal-day' data-date='{iso}'"
+                f"{' data-kept=\"true\"' if cell and cell['kept'] else ''}>"
+                f"<span class='cal-n'>{day.day}</span>{marks}</div>")
+
+    title = date(year, month, 1).strftime("%B %Y")
+    return (
+        f"<div class='cal-head'>"
+        f"<a class='cal-nav' data-testid='cal-prev' "
+        f"href='/dashboard?m={prev_m.strftime('%Y-%m')}'>←</a>"
+        f"<h2 data-testid='cal-title'>{escape(title)}</h2>"
+        f"<a class='cal-nav' data-testid='cal-next' "
+        f"href='/dashboard?m={next_m.strftime('%Y-%m')}'>→</a></div>"
+        f"<div class='cal-grid' data-testid='calendar'>{head}{''.join(cells)}</div>")
+
+
+def build_kept_table(conn: sqlite3.Connection) -> list[dict]:
+    """Kept companies with every date and source we hold for each."""
+    rows = conn.execute(
+        """SELECT u.company_id, u.value verdict, u.updated_at,
+                  c.canonical_name, c.one_liner, c.incorporated_on,
+                  c.first_seen, c.domain, c.website_url
+             FROM user_field u JOIN company c ON c.id = u.company_id
+            WHERE u.field = 'verdict' AND c.merged_into IS NULL
+            ORDER BY u.updated_at DESC, c.canonical_name""").fetchall()
+
+    out: list[dict] = []
+    for r in rows:
+        if (r["verdict"] or "").strip().lower() not in KEPT_VERDICTS:
+            continue
+        sources = [dict(s) for s in conn.execute(
+            """SELECT source_key, source_url, substr(first_seen,1,10) seen
+                 FROM company_source WHERE company_id = ?
+                ORDER BY first_seen""", (r["company_id"],))]
+        signals = [dict(s) for s in conn.execute(
+            """SELECT kind, occurred_on, headline, source_url
+                 FROM signal WHERE company_id = ?
+                ORDER BY COALESCE(occurred_on, first_seen)""", (r["company_id"],))]
+        out.append({
+            "company_id": r["company_id"],
+            "name": r["canonical_name"],
+            "verdict": (r["verdict"] or "").strip().lower(),
+            "decided": str(r["updated_at"] or "")[:10],
+            "found": str(r["first_seen"] or "")[:10],
+            "incorporated": r["incorporated_on"] or "",
+            "website": r["website_url"] or (f"https://{r['domain']}" if r["domain"] else ""),
+            "sources": sources,
+            "signals": signals,
+        })
+    return out
+
+
+def render_kept_table(conn: sqlite3.Connection) -> str:
+    from html import escape
+
+    rows = build_kept_table(conn)
+    if not rows:
+        return ('<p class="empty" data-testid="table-empty">Nothing kept yet. '
+                'Press <b>1</b> on a card in Today to keep one.</p>')
+
+    body = []
+    for c in rows:
+        srcs = "".join(
+            f'<a class="lnk" href="{escape(s["source_url"])}" target="_blank" '
+            f'rel="noopener">{escape(sourceName(s["source_key"]))} ↗</a>'
+            for s in c["sources"]
+            if str(s["source_url"] or "").startswith(("http://", "https://"))) or "—"
+        sigs = "<br>".join(
+            f'{escape((s["kind"] or "").replace("_", " "))}'
+            f'{" · " + escape(str(s["occurred_on"])[:10]) if s["occurred_on"] else ""}'
+            for s in c["signals"]) or "—"
+        body.append(
+            f'<tr data-testid="kept-table-row" data-company-id="{escape(c["company_id"])}" '
+            f'data-verdict="{escape(c["verdict"])}">'
+            f'<td class="nm">{escape(c["name"])}'
+            f'<span class="sub">{escape(c["one_liner"] or "")}</span></td>'
+            f'<td><span class="pill v-{escape(c["verdict"].replace(" ", "-"))}">'
+            f'{escape(c["verdict"])}</span></td>'
+            f'<td class="dt">{escape(c["decided"])}</td>'
+            f'<td class="dt">{escape(c["found"])}</td>'
+            f'<td class="dt">{escape(c["incorporated"]) or "—"}</td>'
+            f'<td class="sig">{sigs}</td>'
+            f'<td>{srcs}</td></tr>')
+
+    return (
+        '<table data-testid="kept-table"><thead><tr>'
+        '<th>Company</th><th>Verdict</th><th>Decided</th><th>Found</th>'
+        '<th>Incorporated</th><th>Signals</th><th>Source</th>'
+        f'</tr></thead><tbody>{"".join(body)}</tbody></table>')
 
 
 def _age_phrase(incorporated_on: str | None, today: date) -> tuple[str, str | None]:
