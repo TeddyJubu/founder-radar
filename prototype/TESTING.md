@@ -93,6 +93,8 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Score number | `score-value` | | rounded display text; two per card |
 | Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
 | Score hint | `score-hint` | | one-line explainer under the tiles |
+| Fund score grid | `fund-scores` | | all four fund-specific Match values |
+| Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank only when unscored |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |
@@ -130,7 +132,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | A1 | `GET /` | 200, `content-type: text/html` |
 | A2 | `GET /api/today` | 200, valid JSON |
 | A3 | Top-level keys | `date`, `companies`, `totals`, `run` all present |
-| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `vehicle`, `tier` |
+| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` has exactly `outward`, `dsw`, `northstar`, `anticus` |
 | A5 | Tier filter | no company has `tier == "reject"` |
 | A6 | Ordering | `priority` is non-increasing across the array |
 | A7 | Tie-break | where `priority` is equal, `coverage` is non-increasing |
@@ -156,6 +158,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B9 | One current dot | exactly one `progress-dot[data-state="now"]` |
 | B10 | Three buttons | the three `verdict-*` testids each present exactly once |
 | B11 | Bar visible | `verdict-bar` not `hidden` while cards remain |
+| B15 | Four fund matches | exactly four `fund-score` elements; each displayed `data-value` matches the corresponding API `fund_scores[*].fit` |
 
 ### B12 — No placeholder leakage *(high value)*
 

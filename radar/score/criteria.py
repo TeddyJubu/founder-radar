@@ -123,7 +123,7 @@ def attributes_for(config: Any) -> tuple[str, ...]:
     """Which attributes are scored.
 
     Read from config rather than hard-coded so that adding a criterion is a
-    sheet edit — and so `test_percentage_of_known_not_raw_sum` can prove that
+    sheet edit — and so the fit denominator regression test can prove that
     adding one does not inflate every existing score.
     """
     configured = _lists(config).get("scored_attributes")

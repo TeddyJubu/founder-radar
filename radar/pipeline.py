@@ -702,21 +702,21 @@ def _fit_numbers(company: dict, fund_key: str, cfg: Any,
 
     components: list[tuple] = []
     earned = 0.0
-    max_achievable = 0.0
+    max_all = 0.0
     raw_sum = 0.0
     covered = 0
     for attr in attributes:
         sub, weight, evidence, raw = attribute_raw(company, attr, fund_key, cfg)
         label = attribute_label(attr)
+        max_all += weight
         if sub is None:
             components.append((attr, label, None, weight, None, evidence))
             continue
         covered += 1
         earned += weight * sub
-        max_achievable += weight
         raw_sum += raw or 0
         components.append((attr, label, sub, weight, weight * sub, evidence))
-    pct = 100.0 * earned / max_achievable if max_achievable else 0.0
+    pct = 100.0 * earned / max_all if max_all else 0.0
     coverage = covered / len(attributes) if attributes else 0.0
     return {"pct": round(pct, 1), "coverage": round(coverage, 2),
             "raw_sum": round(raw_sum, 1), "components": components}

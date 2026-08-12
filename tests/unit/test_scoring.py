@@ -1,4 +1,4 @@
-"""09-test-plan §2.2 — the scoring engine: derivation, percentage-of-known,
+"""09-test-plan §2.2 — the scoring engine: evidence-aware percentage,
 the unknown-never-zero invariant, reproducibility and the worked example."""
 
 from __future__ import annotations
@@ -83,14 +83,17 @@ def test_worked_example_metzero(cfg):
 # ------------------------------------------------------------ the invariants
 
 
-def test_percentage_of_known_not_raw_sum(cfg):
-    """Adding a criterion must not inflate every existing score."""
-    company = C(sector="climate_tech")
+def test_unknown_criteria_stay_in_the_fit_denominator(cfg):
+    """Unknown criteria lower confidence, rather than disappearing from fit."""
+    company = C(sector="climate_tech", stage=None, geography=None,
+                founder_signal=None, traction_signal=None)
     before = fund_fit(company, cfg.fund("northstar"), cfg)
     cfg2 = cfg.model_copy(deep=True)
     cfg2.lists["scored_attributes"] = list(SCORED_ATTRIBUTES) + ["bonus_attr"]
     after = fund_fit(company, cfg.fund("northstar"), cfg2)
-    assert abs(before.pct - after.pct) < 1.0
+    assert before.pct == pytest.approx(25.0)
+    assert after.pct == pytest.approx(23.5, abs=0.1)
+    assert after.pct < before.pct
 
 
 def test_unknown_never_becomes_zero(cfg):
@@ -101,37 +104,26 @@ def test_unknown_never_becomes_zero(cfg):
     assert comp.evidence == "unknown"
 
 
-def test_one_known_attribute_cannot_shortlist(cfg):
-    """Without a coverage floor, the shortlist fills with companies we
-    know nothing about. This is the trap percentage-of-known creates.
+def test_sparse_evidence_cannot_look_like_a_perfect_match(cfg):
+    """The headline fit includes unknown criteria in its denominator.
+
+    This prevents a company with only two confirmed criteria from displaying
+    100 Match, while coverage still says exactly how much evidence exists.
     NOTE geography is present — a NULL region would trip min_uk_presence
     and make this a reject, testing the wrong thing."""
     c = C(sector="climate_tech", geography="north_east",
           stage=None, founder_signal=None, traction_signal=None)
     s = score_one(c, fund="northstar", cfg=cfg)
-    assert s.fund_fit_pct == 100.0
+    assert s.fund_fit_pct == 50.0
     assert s.coverage < 0.5
     assert s.tier == "watchlist"           # NOT shortlist
 
 
 def test_coverage_counts_known_attributes_not_weighted_share(cfg):
-    """The spec contradicts itself here; this names which reading won.
+    """Coverage answers how much evidence exists, independently of weighting.
 
-    06-scoring §6 writes `coverage = max_ach / max_all` — a weighted share.
-    The worked table in §2.6 gives 0.40 / 0.60 / 0.80 / 1.00 for two, three,
-    four and five known attributes — a plain count. Those are different
-    formulas and both are in the document.
-
-    The count is implemented, for two reasons. It satisfies the §2.6 table,
-    and it is the more honest number: coverage answers "how much did we find
-    out?", not "how much of the weight did we find out?".
-
-    `test_one_known_attribute_cannot_shortlist` already fails under the
-    weighted reading — two known attributes carrying half the weight give
-    exactly 0.50, which does not clear a `< 0.50` assertion. But it fails
-    there as a *shortlisting* test, so the next person could reasonably
-    "fix" the assertion instead of reverting the formula. This test exists so
-    the failure names the actual decision.
+    Fit now uses all criteria as its denominator, while the coverage count
+    remains a plain count of confirmed attributes.
     """
     c = C(sector="climate_tech", geography="north_east",
           stage=None, founder_signal=None, traction_signal=None)
@@ -143,8 +135,8 @@ def test_coverage_counts_known_attributes_not_weighted_share(cfg):
 
     weighted = fit.max_achievable / fit.max_all
     assert weighted == 0.50, "the §6 formula on this company, for the record"
-    assert fit.coverage != weighted, (
-        "the two readings have converged — re-read 06-scoring §6 against §2.6")
+    assert fit.pct == 50.0, "two fully matched criteria are half of the full model"
+    assert fit.coverage != weighted, "coverage remains a count, not a weighted share"
 
 
 def test_derivation_lets_a_registry_company_shortlist(cfg):

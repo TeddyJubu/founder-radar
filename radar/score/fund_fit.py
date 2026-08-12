@@ -1,4 +1,4 @@
-"""Fund Fit — the weighted matrix, percentage-of-known, and coverage.
+"""Fund Fit — the weighted matrix, evidence-aware percentage, and coverage.
 
 06-scoring §6. Two tables are multiplied together:
 
@@ -9,11 +9,12 @@
 
 They are different functions over different tables and must not be confused.
 
-The headline is a **percentage of the maximum achievable over known
-attributes**, which is comparable across funds with different criteria counts
-and across companies with different amounts of known information. That creates
-one trap — a company with one known attribute scoring 1.0 gets 100% — and
-`coverage` plus a coverage floor is the fix.
+The headline is a **percentage of the configured maximum across all
+attributes**. Only confirmed attributes earn points; unknown attributes stay
+unknown in their component record but remain in the headline denominator. That
+means a sparse two-criterion match cannot look like a perfect match. The
+separate `coverage` value reports how many attributes were confirmed, and the
+coverage floor still controls shortlist eligibility.
 """
 
 from __future__ import annotations
@@ -58,19 +59,16 @@ def fund_fit(company: Any, fund: Any, config: Any, vehicle: Any = None) -> FitSc
 
     known = [c for c in components if c.sub_score is not None]
     earned = sum(c.weight * c.sub_score for c in known)
-    max_achievable = sum(c.weight for c in known)  # denominator: KNOWN only
+    # Keep both maxima: `max_achievable` describes the evidence available for
+    # dominance diagnostics, while `max_all` is the stable headline baseline.
     max_all = sum(c.weight for c in components)
+    max_achievable = sum(c.weight for c in known)
 
-    pct = 100.0 * earned / max_achievable if max_achievable else 0.0
+    pct = 100.0 * earned / max_all if max_all else 0.0
 
-    # ponytail: 06-scoring §6 writes `coverage = max_ach / max_all`, but the
-    # worked table in §2.6 gives 0.40 / 0.60 / 0.80 / 1.00 for two, three, four
-    # and five known attributes, which is a *count*, not a weighted share — and
-    # `test_one_known_attribute_cannot_shortlist` needs coverage < 0.5 for a
-    # company whose two known attributes happen to carry half the weight. The
-    # count reading is the one that satisfies both, so it is what is
-    # implemented. It is also the more honest number: coverage answers "how
-    # much did we find out?", not "how much of the weight did we find out?".
+    # Coverage is intentionally a plain attribute count, independent of the
+    # weighted headline: it answers "how much did we find out?" rather than
+    # "how much of the weight did we find out?".
     covered = sum(1 for attr in attributes if _get(company, attr) is not None)
     coverage = covered / len(attributes) if attributes else 0.0
 

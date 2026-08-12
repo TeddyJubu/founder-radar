@@ -61,10 +61,15 @@ def test_a3_top_level_keys(api):
 
 def test_a4_company_keys(api):
     required = {"company_id", "name", "fit", "edge", "coverage", "priority",
-                "explanation", "flags", "signals", "also_fits", "vehicle", "tier"}
+                "explanation", "flags", "signals", "also_fits", "fund_scores",
+                "vehicle", "tier"}
     assert api["companies"], "no companies to review"
     for c in api["companies"]:
         assert required <= set(c), f"{c.get('name')} missing {required - set(c)}"
+        assert len(c["fund_scores"]) == 4
+        assert {score["fund_key"] for score in c["fund_scores"]} == {
+            "outward", "dsw", "northstar", "anticus"
+        }
 
 
 def test_a5_rejects_never_reach_today(api):
@@ -161,6 +166,24 @@ def test_b14_every_card_has_a_direct_primary_source_link(today, api):
                          'data-primary-source="true"]')
     assert link.count() == 1
     assert link.get_attribute("href") == api["companies"][0]["source_url"]
+
+
+def test_b15_four_fund_match_scores_are_visible(today, api):
+    scores = today.locator(tid("fund-score"))
+    assert scores.count() == 4
+
+    displayed = {
+        scores.nth(i).get_attribute("data-fund"): float(
+            scores.nth(i).get_attribute("data-value")
+        )
+        for i in range(scores.count())
+    }
+    expected = {
+        score["fund_key"]: score["fit"]
+        for score in api["companies"][0]["fund_scores"]
+        if score["fit"] is not None
+    }
+    assert displayed == expected
 
 
 def test_b8_b9_progress_dots(today, api):
@@ -312,10 +335,10 @@ def test_d4c_ledger_shows_every_scored_rule_and_never_calls_unknown_a_failure(to
     the two drift apart and the ledger starts calling a criterion a match
     while the sentence below it says "Against:".
 
-    The `unknown` case is the one that matters most. 06-scoring's
-    percentage-of-known rule exists so a fact nobody could establish is never
-    counted against a company; a UI that draws `sub_score = None` with the
-    same mark as `sub_score = 0` puts that back, visually, on every card.
+    The `unknown` case is the one that matters most. The full-model fit keeps
+    an unconfirmed fact in the denominator but never treats it as a failure;
+    a UI that draws `sub_score = None` with the same mark as `sub_score = 0`
+    puts that back, visually, on every card.
     """
     components = api["companies"][0]["components"]
     rows = today.locator(tid("criterion"))

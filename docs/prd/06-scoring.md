@@ -329,7 +329,7 @@ Integers **0–10**. A blank cell means **1**, not 0. These are the seeded defau
 
 ### 5.2 One change from the client's version
 
-His workbook summed the five attribute scores into a raw total. That number is not comparable across funds — their columns have different totals — and it silently invalidates every threshold the moment a new row is added. Version 2 reports a **percentage of the maximum achievable over known attributes, plus coverage.** The raw sum is still shown in a column, because he is used to it.
+His workbook summed the five attribute scores into a raw total. That number is not comparable across funds — their columns have different totals — and it silently invalidates every threshold the moment a new row is added. Version 2 reports a **percentage of the configured maximum across all criteria, plus coverage.** Confirmed criteria earn points; unknown criteria remain unknown and earn no points, but stay in the denominator so sparse evidence cannot look perfect. The raw sum is still shown in a column, because he is used to it.
 
 ---
 
@@ -353,22 +353,22 @@ def fund_fit(company, fund, vehicle, cfg) -> FitScore:
 
     known   = [c for c in comps if c.sub_score is not None]
     earned  = sum(c.weight * c.sub_score for c in known)
-    max_ach = sum(c.weight for c in known)                 # denominator: KNOWN only
     max_all = sum(c.weight for c in comps)
+    max_ach = sum(c.weight for c in known)                 # evidence available
 
-    pct      = 100.0 * earned / max_ach if max_ach else 0.0
-    coverage = max_ach / max_all if max_all else 0.0
+    pct      = 100.0 * earned / max_all if max_all else 0.0
+    coverage = len(known) / len(comps) if comps else 0.0
     return FitScore(vehicle_key=vehicle.key, pct=round(pct, 1),
                     coverage=round(coverage, 2), components=comps)
 ```
 
-### Why percentage-of-known, and the trap it creates
+### Why the full-model percentage, and the sparse-evidence guard
 
-**Why it's right:** comparable across funds with different criteria counts, comparable across companies with different amounts of known information, and adding an attribute row doesn't inflate every score and break the thresholds.
+**Why it's right:** comparable across funds with different criteria weights, stable when a new criterion is configured, and honest about the fact that an unconfirmed criterion has not earned a match point. A company with two fully matched criteria out of five therefore shows roughly 50%, not 100%.
 
-**The trap:** a company with one known attribute scoring 1.0 gets 100%. Without a guard, the shortlist fills with companies almost nothing is known about.
+**Coverage remains separate:** it is a plain count of confirmed criteria (`known / total`), so the reader can distinguish the quality of the match from how much evidence exists. A two-of-five company has 50% fit and 40% coverage in the seeded model.
 
-**The fix:** `coverage` is a first-class output, both numbers appear side by side in the sheet, and **shortlist eligibility requires a coverage floor.** Combined with the derivation rules in §2 and the qualification gate in §3, a registry-sourced company that reaches scoring will typically have coverage of 0.6–1.0 — comfortably above the floor.
+**The shortlist guard:** `coverage` is a first-class output and **shortlist eligibility requires a coverage floor.** Combined with the derivation rules in §2 and the qualification gate in §3, a registry-sourced company that reaches scoring will typically have coverage of 0.6–1.0 — comfortably above the floor.
 
 ### Unknown values
 
@@ -376,9 +376,9 @@ Three policies, set per attribute in the `Scoring Weights` tab, column `Unknown 
 
 | Policy | Numerator | Denominator | Use for |
 |---|---|---|---|
-| **`neutral`** *(default)* | excluded | excluded | Most things. Absence of evidence is not evidence of absence. |
-| `pessimistic` | 0 | included | Attributes reliably observable when true. Not finding it *is* weak negative evidence. |
-| `assume` | assumed value | included | Source-implied facts — a UKRI grant record implies `geography` is UK. |
+| **`neutral`** *(default)* | excluded | full model | Most things. Absence of evidence is not evidence of absence. |
+| `pessimistic` | 0 | full model | Attributes reliably observable when true. Not finding it *is* weak negative evidence. |
+| `assume` | assumed value | full model | Source-implied facts — a UKRI grant record implies `geography` is UK. |
 
 **Never coerce `None` to `0` anywhere in the stack.** There is a unit test for this; do not "fix" it.
 

@@ -449,7 +449,48 @@ def _age_phrase(incorporated_on: str | None, today: date) -> tuple[str, str | No
     return f"incorporated {months // 12} years ago", exact
 
 
+def _fund_score_payload(
+    conn: sqlite3.Connection,
+    company_id: str,
+    config: Any,
+    vehicles: dict[str, dict],
+) -> list[dict]:
+    """Return the latest score for every configured fund, in config order.
+
+    Today still chooses one primary route per company, but the reader needs
+    the other three fund fits to spot overlap. Missing rows stay explicit as
+    ``None`` rather than being mistaken for a zero match.
+    """
+    latest: dict[str, sqlite3.Row] = {}
+    for row in conn.execute(
+        """SELECT id, fund_key, vehicle_key, fund_fit_pct, coverage, tier,
+                         reject_reason, scored_at
+                  FROM score
+                 WHERE company_id = ?
+                 ORDER BY scored_at DESC, id DESC""",
+        (company_id,),
+    ):
+        latest.setdefault(row["fund_key"], row)
+
+    scores: list[dict] = []
+    for fund in config.funds:
+        row = latest.get(fund.key)
+        vehicle = vehicles.get(row["vehicle_key"] or "", {}) if row else {}
+        scores.append({
+            "fund_key": fund.key,
+            "fund_name": fund.name,
+            "fit": row["fund_fit_pct"] if row else None,
+            "coverage": row["coverage"] if row else None,
+            "tier": row["tier"] if row else "unscored",
+            "reject_reason": row["reject_reason"] if row else None,
+            "vehicle_key": row["vehicle_key"] if row else None,
+            "vehicle_name": vehicle.get("name") if row else None,
+        })
+    return scores
+
+
 def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
+    config = _config()
     vehicles = _vehicles()
     today = date.today()
 
@@ -532,6 +573,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                 WHERE company_id = ? AND fund_key != ? AND tier != 'reject'
                 ORDER BY fund_fit_pct DESC""",
             (r["company_id"], r["fund_key"]))]
+        fund_scores = _fund_score_payload(conn, r["company_id"], config, vehicles)
 
         out.append({
             "company_id": r["company_id"],
@@ -565,6 +607,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "sources": sources,
             "components": components,
             "also_fits": also,
+            "fund_scores": fund_scores,
             "verdict": verdicts.get(r["company_id"]),
         })
 

@@ -68,7 +68,9 @@ def explain(
     """06-scoring §9, with two additions the tests require: the tiering reason
     (§8 says it is appended to the explanation) and the gate reject reason."""
     known = [c for c in fit.components if c.sub_score is not None]
-    total_weight = sum(c.weight for c in known) or 1.0
+    # Match the headline denominator: unknown criteria earn no points, but
+    # their configured weight still represents part of the model's maximum.
+    total_weight = sum(c.weight for c in fit.components) or 1.0
 
     def pts(component: ComponentScore) -> float:
         return 100 * component.weight * component.sub_score / total_weight

@@ -50,6 +50,7 @@ Then one block per company — not a wall of columns:
 | **Company** | **Kelvin Bio** · [kelvinbio.com](#) · Newcastle · incorporated **2 months ago** (14 Jun 2026) |
 | **Send to** | **Northstar Ventures** — North East Spinout Inspire Fund (£200k–£750k) |
 | **Fit / Edge** | **88** / **90** → priority **89** |
+| **Match by fund** | **Outward 20%** · **DSW 50%** · **Northstar 88%** · **Anticus 35%** — each score carries its own evidence coverage |
 | **Why** | Found via Northern Accelerator spinout announcement (28 Jul); Companies House SH01 filed (22 Jul). Matches on geography (North East, +25pts); sector (Life Sciences, +25pts); founder signal (research/spinout, +19pts) — 69 of 88 total. Low visibility — no coverage found in our tracked sources. |
 | **Evidence** | [Northern Accelerator announcement](#) · [Companies House 15234891](#) · [SH01 filed 22 Jul](#) |
 | **Also fits** | DSW Ventures 71 (watchlist) |
@@ -66,6 +67,12 @@ Every Today recommendation also has a direct `http` or `https` provenance URL
 from `company_source`. Companies without a valid source link stay out of this
 surface until a human can verify where they were found. The API exposes that
 URL as `source_url`, and the card renders it as the primary source link.
+
+The API also exposes `fund_scores`, one entry for each configured fund in
+display order. Each entry includes the fund-specific `fit`, `coverage`, `tier`,
+and vehicle context; a missing score is `null` rather than an invented zero.
+The card renders all four entries so an overlapping recommendation can be
+pitched to the right fund without losing the single primary route.
 
 Every URL is clickable **and** kept in a hidden column so read-back and CSV export both work. *(Client request, 24 July: "would it be possible to include the actual URL as well?")*
 
