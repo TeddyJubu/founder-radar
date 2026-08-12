@@ -418,3 +418,50 @@ def test_rescore_bulk_equals_daily(db, config):
     assert bulk_identity.keys() == daily_identity.keys()
     for key in daily_identity:
         assert bulk_identity[key] == daily_identity[key], key
+
+
+@pytest.mark.parametrize("policy", ["pessimistic", "assume"])
+def test_rescore_bulk_matches_daily_with_unknown_policies(db, config, policy):
+    """Both persistence paths use the same coverage semantics for unknowns."""
+    from radar.pipeline import rescore_all, score_company
+    from tests.factories import C, store_company
+
+    config.weights.unknown_policy["founder_signal"] = policy
+    if policy == "assume":
+        config.lists["assume_values"] = {"founder_signal": "technical_founder"}
+    company = C(canonical_name="Pessimistic Co", norm_key="pessimisticco",
+                founder_signal=None)
+    cid = store_company(db, company)
+
+    def snapshot():
+        scores = [
+            tuple(row[key] for key in
+                  ("fund_key", "fund_fit_pct", "coverage", "priority",
+                   "tier", "explanation"))
+            for row in db.query(
+                "SELECT fund_key, fund_fit_pct, coverage, priority, tier, explanation "
+                "FROM score WHERE company_id = ? ORDER BY fund_key", (cid,))
+        ]
+        components = [
+            tuple(row[key] for key in
+                  ("fund_key", "key", "sub_score", "weight", "contribution",
+                   "evidence"))
+            for row in db.query(
+                """SELECT s.fund_key, sc.key, sc.sub_score, sc.weight,
+                          sc.contribution, sc.evidence
+                     FROM score_component sc
+                     JOIN score s ON s.id = sc.score_id
+                    WHERE s.company_id = ?
+                    ORDER BY s.fund_key, sc.key""", (cid,))
+        ]
+        return scores, components
+
+    score_company(db, cid, config, today=date(2026, 8, 8))
+    daily = snapshot()
+    db.execute("DELETE FROM score_component")
+    db.execute("DELETE FROM score")
+
+    rescore_all(db, config, today=date(2026, 8, 8))
+    bulk = snapshot()
+
+    assert bulk == daily

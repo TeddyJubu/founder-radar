@@ -609,7 +609,6 @@ def _bulk_score_rows(company: dict, cfg: Any, attributes: tuple[str, ...], *,
     """
     from types import SimpleNamespace
 
-    from radar.score.criteria import attribute_label, attribute_raw
     from radar.score.derive import derive_updates
     from radar.score.discovery_edge import _edge_parts
     from radar.score.explain import explain
@@ -694,32 +693,20 @@ def _bulk_score_rows(company: dict, cfg: Any, attributes: tuple[str, ...], *,
 
 def _fit_numbers(company: dict, fund_key: str, cfg: Any,
                  attributes: tuple[str, ...]) -> dict:
-    """Fund fit on plain dicts — the same arithmetic as `fund_fit`
-    (06-scoring §6), reading each attribute through the shared `attribute_raw`
-    core so the daily path and the bulk rescore compute identical numbers.
-    """
-    from radar.score.criteria import attribute_label, attribute_raw
+    """Adapt the shared Fund Fit calculation to the bulk row shape."""
+    from radar.score.fund_fit import calculate_fund_fit
 
-    components: list[tuple] = []
-    earned = 0.0
-    max_all = 0.0
-    raw_sum = 0.0
-    covered = 0
-    for attr in attributes:
-        sub, weight, evidence, raw = attribute_raw(company, attr, fund_key, cfg)
-        label = attribute_label(attr)
-        max_all += weight
-        if sub is None:
-            components.append((attr, label, None, weight, None, evidence))
-            continue
-        covered += 1
-        earned += weight * sub
-        raw_sum += raw or 0
-        components.append((attr, label, sub, weight, weight * sub, evidence))
-    pct = 100.0 * earned / max_all if max_all else 0.0
-    coverage = covered / len(attributes) if attributes else 0.0
-    return {"pct": round(pct, 1), "coverage": round(coverage, 2),
-            "raw_sum": round(raw_sum, 1), "components": components}
+    calculation = calculate_fund_fit(company, fund_key, cfg, attributes)
+    return {
+        "pct": calculation.pct,
+        "coverage": calculation.coverage,
+        "raw_sum": calculation.raw_sum,
+        "components": [
+            (component.key, component.label, component.sub_score,
+             component.weight, component.contribution, component.evidence)
+            for component in calculation.components
+        ],
+    }
 
 
 def _contribution(sub_score: float | None, weight: float) -> float | None:
