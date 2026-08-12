@@ -217,10 +217,14 @@ sqlite3 -json /tmp/test-run.db "
   SELECT c.canonical_name, s.fund_fit_pct, s.discovery_edge, s.coverage,
          s.priority, s.explanation, s.tier
     FROM score s JOIN company c ON c.id = s.company_id
-    JOIN (SELECT company_id, MAX(priority) b FROM score
-           WHERE tier IN ('shortlist','watchlist') GROUP BY company_id) t
+    JOIN (SELECT s2.company_id, MAX(s2.priority) b
+            FROM score s2 JOIN company c2 ON c2.id = s2.company_id
+           WHERE s2.tier IN ('shortlist','watchlist')
+             AND c2.incorporated_on IS NOT NULL
+           GROUP BY s2.company_id) t
       ON t.company_id = s.company_id AND t.b = s.priority
    WHERE s.tier IN ('shortlist','watchlist')
+     AND c.incorporated_on IS NOT NULL
    ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name LIMIT 5;"
 ```
 

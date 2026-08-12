@@ -7,6 +7,8 @@ badge feed.
 
 from __future__ import annotations
 
+from datetime import date
+
 from prototype.server import (
     build_kept,
     build_today,
@@ -39,6 +41,26 @@ def test_today_totals_include_kept(db):
     set_verdict(db.conn, ids[0], "worth contacting")
     payload = build_today(db.conn)
     assert payload["totals"]["kept"] == 1
+
+
+def test_today_does_not_surface_age_unverified_companies(db, config):
+    """Today is a surfaced-opportunity queue, not an age-verification queue."""
+    from radar.pipeline import score_company
+    from tests.factories import C, store_company
+
+    company = C(age_months=None, canonical_name="Age Unverified Ltd",
+                norm_key="ageunverified")
+    cid = store_company(db, company)
+    score_company(db, cid, config, today=date(2026, 8, 8))
+
+    payload = build_today(db.conn)
+
+    assert db.scalar(
+        "SELECT COUNT(*) FROM score WHERE company_id = ? AND 'age_unknown' IN "
+        "(SELECT value FROM json_each(COALESCE(flags, '[]'))) ",
+        (cid,),
+    ) > 0
+    assert cid not in {row["company_id"] for row in payload["companies"]}
 
 
 def test_empty_kept_renders_guidance(db):

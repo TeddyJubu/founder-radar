@@ -173,6 +173,46 @@ def test_extraction_method_reaches_the_company_row(db, config):
     assert row["one_liner"] == "Warehouse robots."
 
 
+def test_structured_founded_year_reaches_the_age_gate(db, config):
+    """Directory adapters must not lose a founding year before scoring.
+
+    Structured sources such as Entrepreneur First already parse this fact. If
+    it is left outside the company schema at resolve time, a company from 2016
+    becomes `age_unknown` and can reach the review surface as a watchlist row.
+    """
+    from datetime import date as _date
+
+    from radar.pipeline import resolve_item, score_company
+    from radar.sources.base import RawItem
+
+    item = RawItem(
+        source_key="entrepreneur_first",
+        source_url="https://joinef.com/portfolio/old-venture",
+        external_id="old-venture",
+        published_at=_date(2026, 8, 1),
+        title="Old Venture",
+        structured={
+            "company_name": "Old Venture Ltd",
+            "founded_year": 2016,
+            "hq_country_iso2": "GB",
+            "stage": "pre_seed",
+        },
+        kind_hint="accelerator_cohort",
+    )
+
+    cid = resolve_item(db, item, config)
+    row = db.one(
+        "SELECT incorporated_on, age_source FROM company WHERE id = ?", (cid,))
+    assert row["incorporated_on"] == "2016-07-01"
+    assert row["age_source"] == "source_stated"
+
+    score_company(db, cid, config, today=_date(2026, 8, 8))
+    assert {
+        row["reject_reason"]
+        for row in db.query("SELECT reject_reason FROM score WHERE company_id = ?", (cid,))
+    } == {"max_company_age_months"}
+
+
 def test_an_article_headline_never_becomes_a_company(db, config):
     """A prose item the reader could not name is a source, not a subject.
 

@@ -57,6 +57,11 @@ Then one block per company — not a wall of columns:
 
 Colour rules: green header band, amber where coverage < 0.5, grey for anything on watchlist. Score cells carry a **note on hover** with the full component breakdown.
 
+Today only surfaces companies with a verified age (`company.incorporated_on IS
+NOT NULL`). A watchlist row with `age_unknown` remains available for research
+and enrichment, but cannot look like a fresh opportunity until its age is
+confirmed.
+
 Every URL is clickable **and** kept in a hidden column so read-back and CSV export both work. *(Client request, 24 July: "would it be possible to include the actual URL as well?")*
 
 ---

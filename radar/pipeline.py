@@ -814,7 +814,7 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
         if extraction.is_about_single_company is False:
             return None
 
-    fields.update(_fields_from_structured(structured))
+    fields.update(_fields_from_structured(structured, existing=fields))
     fields["discovery_route"] = _route_of(item, cfg)
 
     resolution = upsert_record(
@@ -924,12 +924,30 @@ def _route_of(item: Any, cfg: Any) -> str | None:
     return _ROUTE_BY_KIND.get(getattr(item, "kind_hint", None), "news")
 
 
-def _fields_from_structured(structured: Mapping[str, Any]) -> dict[str, Any]:
+def _fields_from_structured(
+    structured: Mapping[str, Any], *, existing: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Map facts from a source that already parsed its own page.
+
+    Some directory adapters expose a founding year rather than a full date.
+    The database deliberately has no ``founded_year`` column: the canonical
+    age field is ``incorporated_on``. Keep the same mid-year convention used by
+    prose extraction, otherwise an old structured record becomes age-unknown
+    and can leak into the review queue.
+
+    A real ``date_of_creation`` always wins. ``existing`` protects a more
+    specific date already supplied by extraction when an item happens to carry
+    both structured and prose evidence.
+    """
     fields: dict[str, Any] = {}
     if structured.get("company_number"):
         fields["companies_house_no"] = structured["company_number"]
     if structured.get("date_of_creation"):
         fields["incorporated_on"] = structured["date_of_creation"]
+    elif structured.get("founded_year") and not (existing or {}).get("incorporated_on"):
+        fields["incorporated_on"] = f"{int(structured['founded_year']):04d}-07-01"
+        fields["age_source"] = "source_stated"
+        fields["date_confidence"] = "stated"
     if structured.get("sic_codes"):
         fields["sic_codes"] = json.dumps(structured["sic_codes"])
     if structured.get("postal_code"):

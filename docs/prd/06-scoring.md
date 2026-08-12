@@ -40,6 +40,12 @@ UNKNOWN_FLAGS = {
 
 Rejecting on unknown would throw away good early candidates. Shortlisting on unknown would let old companies back in through the gap. **Watchlist with a stated reason is the honest answer**, and it matches how per-vehicle hard rules behave (§4.3).
 
+The scoring pool and the surfaced review queue are intentionally different:
+`age_unknown` rows may remain watchlist research prompts, but Today requires a
+non-null `incorporated_on` before presenting one as an opportunity. This keeps
+the unknown-value policy without allowing an undated portfolio record to look
+fresh by default.
+
 Age is determined in this order:
 
 ```python

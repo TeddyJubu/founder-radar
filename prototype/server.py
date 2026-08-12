@@ -457,15 +457,17 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
              FROM score s
              JOIN company c ON c.id = s.company_id
              JOIN (SELECT company_id, MAX(priority) best
-                     FROM score WHERE tier IN (?, ?) GROUP BY company_id) t
+                     FROM score s2 JOIN company c2 ON c2.id = s2.company_id
+                    WHERE s2.tier IN (?, ?) AND c2.incorporated_on IS NOT NULL
+                    GROUP BY s2.company_id) t
                ON t.company_id = s.company_id AND t.best = s.priority
             WHERE s.tier IN (?, ?) AND c.merged_into IS NULL
+              AND c.incorporated_on IS NOT NULL
             GROUP BY s.company_id
             -- Ties break on coverage: among companies the scoring cannot
             -- separate, review the one we actually know something about
-            -- first. Without a Companies House key every registry company
-            -- has unknown age, so hundreds land on an identical priority and
-            -- the tie-break is doing all the ordering work.
+            -- first. Age is a prerequisite for this surface; an unknown-age
+            -- row stays in the research pool until enrichment verifies it.
             ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name
             LIMIT ?""",
         (*REVIEWABLE, *REVIEWABLE, limit),

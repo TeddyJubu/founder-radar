@@ -320,7 +320,10 @@ def pick_ch_match(candidates, company) -> dict | None:
     return None       # ambiguous or none → leave incorporated_on NULL, set age_unknown
 ```
 
-Ambiguous is not a guess. `age_unknown` routes the company to watchlist with "age unconfirmed — check Companies House", which is honest and takes Aryan ten seconds to resolve.
+Ambiguous is not a guess. `age_unknown` keeps the company in the research pool
+with "age unconfirmed — check Companies House", but it does not reach the Today
+review queue. Today is the surfaced-opportunity queue, so every card must have
+age evidence; the row can appear after enrichment verifies `incorporated_on`.
 
 **Privacy filter at ingest**, in the adapter, before the database: drop `date_of_birth`, `address`, `country_of_residence` and `nationality` from every officer and PSC record. Do not merely avoid displaying them.
 
