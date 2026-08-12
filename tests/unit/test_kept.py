@@ -63,6 +63,28 @@ def test_today_does_not_surface_age_unverified_companies(db, config):
     assert cid not in {row["company_id"] for row in payload["companies"]}
 
 
+def test_today_exposes_a_direct_source_url_for_each_recommendation(db):
+    ids = seed_companies(db, count=3, shortlist=3)
+
+    payload = build_today(db.conn)
+
+    assert {row["company_id"] for row in payload["companies"]} == set(ids)
+    assert all(row["source_url"].startswith(("http://", "https://"))
+               for row in payload["companies"])
+
+
+def test_today_does_not_surface_a_company_without_provenance(db, config):
+    from radar.pipeline import score_company
+    from tests.factories import C, store_company
+
+    company = C(canonical_name="Unlinked Startup", norm_key="unlinkedstartup",
+                age_months=6)
+    cid = store_company(db, company)
+    score_company(db, cid, config)
+
+    assert cid not in {row["company_id"] for row in build_today(db.conn)["companies"]}
+
+
 def test_empty_kept_renders_guidance(db):
     seed_companies(db, count=2, shortlist=2)
     html = render_kept_rows(db.conn)

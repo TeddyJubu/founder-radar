@@ -101,7 +101,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Explanation more | `explanation-more` | `data-expanded`, `aria-expanded` | present only when there are more than four clauses |
 | Company one-liner | `one-liner` | | absent when `one_liner` is null — never invented |
 | Evidence wrapper | `evidence` | | absent when there are no links |
-| Evidence link | `evidence-link` | `data-kind`, `data-primary` | zero or more; the first carries `data-primary="true"` and renders as a filled blue button — the way back to the source. Links come from `signals` first (they carry a headline to label with), then from `sources` (`company_source`, written for every mention) for any URL not already listed. A registry-only company has neither and shows no link at all. |
+| Evidence link | `evidence-link` | `data-kind`, `data-primary`, `data-primary-source` | every surfaced card has one valid primary source link with `data-primary-source="true"`; additional signal/source links may follow. A company without a valid `company_source` URL is not surfaced on Today. |
 | Footnote row | `card-footnote` | | |
 | Coverage note | `coverage-note` | `data-coverage` | present only when `thin` |
 | Caveat | `caveat` | `data-flag` | raw flag name, e.g. `age_unknown` |

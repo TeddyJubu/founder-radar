@@ -719,6 +719,14 @@ function safeUrl(value) {
 function articleLinks(c) {
   const seen = new Set();
   const out = [];
+  if (c.source_url && !seen.has(c.source_url)) {
+    seen.add(c.source_url);
+    out.push({
+      url: c.source_url,
+      label: `Found at ${sourceName(c.source_key)}`,
+      kind: "source",
+    });
+  }
   for (const s of c.signals || []) {
     if (!s.source_url || seen.has(s.source_url)) continue;
     seen.add(s.source_url);
@@ -787,6 +795,7 @@ function render() {
   const evidence = articleLinks(c).filter(a => safeUrl(a.url)).map((a, i) =>
     `<a class="ev${i === 0 ? " primary" : ""}" data-testid="evidence-link"
         data-kind="${esc(a.kind)}"${i === 0 ? ' data-primary="true"' : ""}
+        ${a.kind === "source" && i === 0 ? 'data-primary-source="true"' : ""}
         href="${safeUrl(a.url)}" target="_blank" rel="noopener">
        ${esc(a.label)} <span class="chev">↗</span></a>`
   ).join("");

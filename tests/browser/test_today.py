@@ -156,6 +156,13 @@ def test_b6_b7_route_and_reasoning_present(today):
     assert len(today.locator(tid("explanation")).get_attribute("data-text")) > 20
 
 
+def test_b14_every_card_has_a_direct_primary_source_link(today, api):
+    link = today.locator(f'{tid("evidence-link")}['
+                         'data-primary-source="true"]')
+    assert link.count() == 1
+    assert link.get_attribute("href") == api["companies"][0]["source_url"]
+
+
 def test_b8_b9_progress_dots(today, api):
     dots = today.locator(tid("progress-dot"))
     assert dots.count() == min(len(api["companies"]), 12)

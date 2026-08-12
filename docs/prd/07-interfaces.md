@@ -62,6 +62,11 @@ NOT NULL`). A watchlist row with `age_unknown` remains available for research
 and enrichment, but cannot look like a fresh opportunity until its age is
 confirmed.
 
+Every Today recommendation also has a direct `http` or `https` provenance URL
+from `company_source`. Companies without a valid source link stay out of this
+surface until a human can verify where they were found. The API exposes that
+URL as `source_url`, and the card renders it as the primary source link.
+
 Every URL is clickable **and** kept in a hidden column so read-back and CSV export both work. *(Client request, 24 July: "would it be possible to include the actual URL as well?")*
 
 ---

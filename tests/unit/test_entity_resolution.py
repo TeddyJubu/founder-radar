@@ -68,6 +68,9 @@ PAIRS = [
     ("Acme Robotic", "Acme Robotics", MERGE, {}, {}),
     # fuzzy 87 — the review band
     ("Acme Robotics", "Acme Robotic Arms", REVIEW, {}, {}),
+    # Similar corporate-role names are ambiguous parent/investor relationships,
+    # not safe fuzzy merges.
+    ("Acme Holdings", "Acme Holding", REVIEW, {}, {}),
 ]
 
 

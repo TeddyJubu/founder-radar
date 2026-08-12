@@ -29,12 +29,21 @@ import sqlite3
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 
 # Tiers a human is asked to look at. `reject` never reaches Today: the gates
 # already decided, and re-litigating them is what the Companies tab is for.
 REVIEWABLE = ("shortlist", "watchlist")
+
+
+def _is_http_url(value: str | None) -> bool:
+    """Only real web URLs count as provenance links on Today."""
+    if not value:
+        return False
+    parsed = urlsplit(str(value).strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def _conn(db_path: str) -> sqlite3.Connection:
@@ -463,6 +472,12 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                ON t.company_id = s.company_id AND t.best = s.priority
             WHERE s.tier IN (?, ?) AND c.merged_into IS NULL
               AND c.incorporated_on IS NOT NULL
+              AND EXISTS (
+                    SELECT 1 FROM company_source cs
+                     WHERE cs.company_id = c.id
+                       AND (cs.source_url LIKE 'http://%' OR
+                            cs.source_url LIKE 'https://%')
+              )
             GROUP BY s.company_id
             -- Ties break on coverage: among companies the scoring cannot
             -- separate, review the one we actually know something about
@@ -499,7 +514,13 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             """SELECT source_key, source_url, first_seen
                  FROM company_source WHERE company_id = ?
                 ORDER BY first_seen DESC""",
-            (r["company_id"],))]
+            (r["company_id"],)) if _is_http_url(s["source_url"])]
+        source = sources[0] if sources else None
+        if source is None:
+            # The SQL guard is intentionally cheap; this second check handles
+            # malformed values such as `https://` without leaking a card that
+            # cannot be verified by a human.
+            continue
 
         components = [dict(c) for c in conn.execute(
             """SELECT key, label, sub_score, weight, contribution, evidence
@@ -524,6 +545,8 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "one_liner": r["one_liner"],
             "route": r["discovery_route"],
             "ch_number": r["companies_house_no"],
+            "source_url": source["source_url"],
+            "source_key": source["source_key"],
             "age_phrase": phrase,
             "age_exact": exact,
             "fund": r["fund_key"],
