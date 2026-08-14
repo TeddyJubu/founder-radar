@@ -12,8 +12,9 @@ this is thin:
   number, the number has two sources of truth and the scoring stops being
   defensible.
 * **One write path.** Verdicts go to `user_field`, the same table the Google
-  Sheet writes and `radar/score/tune.py` reads — so marking a company here
-  improves the threshold sweep, and nothing else in the database is touched.
+  Sheet writes and `radar/score/tune.py` reads — while a separate daily marker
+  controls the review queue. Marking a company here improves the threshold
+  sweep, and nothing else in the database is touched.
 
 Stdlib only: no FastAPI, no npm, no build step.
 
@@ -47,6 +48,17 @@ def _is_http_url(value: str | None) -> bool:
 
 
 def _conn(db_path: str) -> sqlite3.Connection:
+    # The prototype is often pointed at an existing demo DB rather than
+    # started through the CLI. Apply the normal schema/migrations first so a
+    # newly added daily-review table exists before the first page load.
+    if db_path != ":memory:":
+        from radar.store.db import Db
+
+        bootstrap = Db(db_path)
+        try:
+            bootstrap.migrate()
+        finally:
+            bootstrap.close()
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # The daily run writes the same file (WAL). Busy-wait instead of failing
@@ -365,6 +377,41 @@ def kept_count(conn: sqlite3.Connection) -> int:
     return int(row["n"] if row else 0)
 
 
+def _today_review_date() -> str:
+    """The calendar key for the local Today review session."""
+    return date.today().isoformat()
+
+
+def _eligible_today_company_ids(conn: sqlite3.Connection) -> set[str]:
+    """Companies that can actually appear on Today, before daily decisions.
+
+    Keep this count aligned with the queue's hard gates and provenance guard so
+    the completed state can distinguish "nothing surfaced" from "everything
+    surfaced has been reviewed".
+    """
+    rows = conn.execute(
+        """SELECT DISTINCT c.id, cs.source_url
+             FROM company c
+             JOIN score s ON s.company_id = c.id
+             JOIN company_source cs ON cs.company_id = c.id
+            WHERE s.tier IN (?, ?)
+              AND c.merged_into IS NULL
+              AND c.incorporated_on IS NOT NULL
+              AND (cs.source_url LIKE 'http://%' OR
+                   cs.source_url LIKE 'https://%')""",
+        REVIEWABLE,
+    )
+    return {row["id"] for row in rows if _is_http_url(row["source_url"])}
+
+
+def reset_daily_review(conn: sqlite3.Connection, review_date: str | None = None) -> int:
+    """Allow an explicit second pass without deleting lasting verdicts."""
+    day = review_date or _today_review_date()
+    cur = conn.execute("DELETE FROM daily_review WHERE review_date = ?", (day,))
+    conn.commit()
+    return cur.rowcount
+
+
 def render_kept_intro(conn: sqlite3.Connection) -> str:
     """Where the list lives, and that the sheet is an optional mirror."""
     from html import escape
@@ -493,6 +540,14 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
     config = _config()
     vehicles = _vehicles()
     today = date.today()
+    review_date = today.isoformat()
+    eligible_ids = _eligible_today_company_ids(conn)
+    reviewed_ids = {
+        row["company_id"] for row in conn.execute(
+            "SELECT company_id FROM daily_review WHERE review_date = ?",
+            (review_date,),
+        ) if row["company_id"] in eligible_ids
+    }
 
     # One row per company: the fund it fits best. The others become "also
     # fits", because the decision Aryan is making is "who do I send this to",
@@ -513,6 +568,11 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                ON t.company_id = s.company_id AND t.best = s.priority
             WHERE s.tier IN (?, ?) AND c.merged_into IS NULL
               AND c.incorporated_on IS NOT NULL
+              AND NOT EXISTS (
+                    SELECT 1 FROM daily_review dr
+                     WHERE dr.company_id = c.id
+                       AND dr.review_date = ?
+              )
               AND EXISTS (
                     SELECT 1 FROM company_source cs
                      WHERE cs.company_id = c.id
@@ -526,7 +586,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             -- row stays in the research pool until enrichment verifies it.
             ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name
             LIMIT ?""",
-        (*REVIEWABLE, *REVIEWABLE, limit),
+        (*REVIEWABLE, *REVIEWABLE, review_date, limit),
     ).fetchall()
 
     verdicts = {
@@ -622,6 +682,9 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
         "companies": out,
         "totals": {
             "reviewable": len(out),
+            "total_reviewable": len(eligible_ids),
+            "reviewed_today": len(reviewed_ids),
+            "remaining": max(0, len(eligible_ids) - len(reviewed_ids)),
             "shortlist": counts.get("shortlist", 0),
             "watchlist": counts.get("watchlist", 0),
             "rejected": counts.get("reject", 0),
@@ -632,18 +695,30 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
 
 
 def set_verdict(conn: sqlite3.Connection, company_id: str, verdict: str) -> int:
-    """The single write. Same table and field name the Sheet uses, so the two
-    surfaces cannot disagree and `tune.py` picks it up unchanged.
+    """Record one lasting verdict and one dated Today-review decision.
+
+    The lasting verdict uses the same table and field name the Sheet uses, so
+    the two surfaces cannot disagree and `tune.py` picks it up unchanged. The
+    dated marker is deliberately separate so Review Again never erases it.
 
     Returns the new Kept count so Today can refresh its badge without a second
     round-trip.
     """
+    now = datetime.now().isoformat(timespec="seconds")
     conn.execute(
         """INSERT INTO user_field(company_id, field, value, updated_at)
            VALUES (?, 'verdict', ?, ?)
            ON CONFLICT(company_id, field)
            DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
-        (company_id, verdict, datetime.now().isoformat(timespec="seconds")),
+        (company_id, verdict, now),
+    )
+    conn.execute(
+        """INSERT INTO daily_review(company_id, review_date, verdict, reviewed_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(company_id, review_date)
+           DO UPDATE SET verdict = excluded.verdict,
+                         reviewed_at = excluded.reviewed_at""",
+        (company_id, _today_review_date(), verdict, now),
     )
     conn.commit()
     return kept_count(conn)
@@ -693,6 +768,11 @@ def make_handler(conn: sqlite3.Connection):
                 self._send(404, b"not found", "text/plain")
 
         def do_POST(self) -> None:         # noqa: N802
+            if self.path == "/api/review-again":
+                n = reset_daily_review(conn)
+                payload = json.dumps({"ok": True, "reset_count": n}).encode()
+                self._send(200, payload, "application/json")
+                return
             if not self.path.startswith("/api/verdict"):
                 self._send(404, b"not found", "text/plain")
                 return

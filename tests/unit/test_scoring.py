@@ -64,7 +64,7 @@ METZERO_FIXTURE = Company(
 
 def test_worked_example_metzero(cfg):
     """Every number in 06-scoring.md §11, asserted."""
-    s = score_all(METZERO_FIXTURE, cfg)
+    s = score_all(METZERO_FIXTURE, cfg, today=date(2026, 8, 12))
     assert s["northstar"].vehicle_key    == "spinout_inspire"
     assert s["northstar"].fund_fit_pct   == pytest.approx(92.2, abs=0.1)
     assert s["northstar"].coverage       == 1.00
