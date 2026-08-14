@@ -29,12 +29,21 @@ import sqlite3
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 
 # Tiers a human is asked to look at. `reject` never reaches Today: the gates
 # already decided, and re-litigating them is what the Companies tab is for.
 REVIEWABLE = ("shortlist", "watchlist")
+
+
+def _is_http_url(value: str | None) -> bool:
+    """Only real web URLs count as provenance links on Today."""
+    if not value:
+        return False
+    parsed = urlsplit(str(value).strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def _conn(db_path: str) -> sqlite3.Connection:
@@ -440,7 +449,48 @@ def _age_phrase(incorporated_on: str | None, today: date) -> tuple[str, str | No
     return f"incorporated {months // 12} years ago", exact
 
 
+def _fund_score_payload(
+    conn: sqlite3.Connection,
+    company_id: str,
+    config: Any,
+    vehicles: dict[str, dict],
+) -> list[dict]:
+    """Return the latest score for every configured fund, in config order.
+
+    Today still chooses one primary route per company, but the reader needs
+    the other three fund fits to spot overlap. Missing rows stay explicit as
+    ``None`` rather than being mistaken for a zero match.
+    """
+    latest: dict[str, sqlite3.Row] = {}
+    for row in conn.execute(
+        """SELECT id, fund_key, vehicle_key, fund_fit_pct, coverage, tier,
+                         reject_reason, scored_at
+                  FROM score
+                 WHERE company_id = ?
+                 ORDER BY scored_at DESC, id DESC""",
+        (company_id,),
+    ):
+        latest.setdefault(row["fund_key"], row)
+
+    scores: list[dict] = []
+    for fund in config.funds:
+        row = latest.get(fund.key)
+        vehicle = vehicles.get(row["vehicle_key"] or "", {}) if row else {}
+        scores.append({
+            "fund_key": fund.key,
+            "fund_name": fund.name,
+            "fit": row["fund_fit_pct"] if row else None,
+            "coverage": row["coverage"] if row else None,
+            "tier": row["tier"] if row else "unscored",
+            "reject_reason": row["reject_reason"] if row else None,
+            "vehicle_key": row["vehicle_key"] if row else None,
+            "vehicle_name": vehicle.get("name") if row else None,
+        })
+    return scores
+
+
 def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
+    config = _config()
     vehicles = _vehicles()
     today = date.today()
 
@@ -457,15 +507,23 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
              FROM score s
              JOIN company c ON c.id = s.company_id
              JOIN (SELECT company_id, MAX(priority) best
-                     FROM score WHERE tier IN (?, ?) GROUP BY company_id) t
+                     FROM score s2 JOIN company c2 ON c2.id = s2.company_id
+                    WHERE s2.tier IN (?, ?) AND c2.incorporated_on IS NOT NULL
+                    GROUP BY s2.company_id) t
                ON t.company_id = s.company_id AND t.best = s.priority
             WHERE s.tier IN (?, ?) AND c.merged_into IS NULL
+              AND c.incorporated_on IS NOT NULL
+              AND EXISTS (
+                    SELECT 1 FROM company_source cs
+                     WHERE cs.company_id = c.id
+                       AND (cs.source_url LIKE 'http://%' OR
+                            cs.source_url LIKE 'https://%')
+              )
             GROUP BY s.company_id
             -- Ties break on coverage: among companies the scoring cannot
             -- separate, review the one we actually know something about
-            -- first. Without a Companies House key every registry company
-            -- has unknown age, so hundreds land on an identical priority and
-            -- the tie-break is doing all the ordering work.
+            -- first. Age is a prerequisite for this surface; an unknown-age
+            -- row stays in the research pool until enrichment verifies it.
             ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name
             LIMIT ?""",
         (*REVIEWABLE, *REVIEWABLE, limit),
@@ -497,7 +555,13 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             """SELECT source_key, source_url, first_seen
                  FROM company_source WHERE company_id = ?
                 ORDER BY first_seen DESC""",
-            (r["company_id"],))]
+            (r["company_id"],)) if _is_http_url(s["source_url"])]
+        source = sources[0] if sources else None
+        if source is None:
+            # The SQL guard is intentionally cheap; this second check handles
+            # malformed values such as `https://` without leaking a card that
+            # cannot be verified by a human.
+            continue
 
         components = [dict(c) for c in conn.execute(
             """SELECT key, label, sub_score, weight, contribution, evidence
@@ -509,6 +573,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                 WHERE company_id = ? AND fund_key != ? AND tier != 'reject'
                 ORDER BY fund_fit_pct DESC""",
             (r["company_id"], r["fund_key"]))]
+        fund_scores = _fund_score_payload(conn, r["company_id"], config, vehicles)
 
         out.append({
             "company_id": r["company_id"],
@@ -522,6 +587,8 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "one_liner": r["one_liner"],
             "route": r["discovery_route"],
             "ch_number": r["companies_house_no"],
+            "source_url": source["source_url"],
+            "source_key": source["source_key"],
             "age_phrase": phrase,
             "age_exact": exact,
             "fund": r["fund_key"],
@@ -540,6 +607,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "sources": sources,
             "components": components,
             "also_fits": also,
+            "fund_scores": fund_scores,
             "verdict": verdicts.get(r["company_id"]),
         })
 

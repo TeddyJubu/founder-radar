@@ -58,6 +58,17 @@ NAME_IN_TITLE = re.compile(
     r"^(?P<name>[A-Z][\w&'’.\-]*(?:\s+[A-Z0-9][\w&'’.\-]*){0,3})\s+(?:" + _FUNDING_VERB + r")\b"
 )
 
+_TARGET_RELATION = (
+    r"(?:investment\s+in|invests?\s+in|backs?|funds?|finances?|"
+    r"acquires?|acquired|buys?|bought|takes\s+over)"
+)
+TARGET_IN_TITLE = re.compile(
+    r"(?i:" + _TARGET_RELATION + r")\s+"
+    r"(?:(?:[A-Za-z][\w&'’\.\-]*\s+){0,2}"
+    r"(?:startup|company|venture|scaleup|spinout|business|firm)\s+)?"
+    r"(?P<name>[A-Z][\w&'’\.\-]*(?:\s+[A-Z0-9][\w&'’\.\-]*){0,3})",
+)
+
 LEGAL_ENTITY = re.compile(
     r"\b(?P<name>[A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+){0,2})\s+(?:Ltd|Limited)\b"
 )
@@ -123,12 +134,20 @@ def find_amount(title: str, text: str) -> tuple[float, str, str | None] | None:
 
 
 def find_company_name(title: str, text: str, html: str, jsonld: dict | None = None) -> str | None:
-    """og:title / JSON-LD `about` / the first `X Ltd|Limited` match."""
+    """Prefer the operating startup in a relation headline.
+
+    An investor/acquirer often leads a headline ("X invests in Y"), while the
+    product only wants Y. Relation-aware title parsing therefore comes before
+    the generic subject-at-the-start and legal-entity fallbacks.
+    """
     meta = pf.parse_meta(html) if html else {}
     candidates: list[str] = []
 
     og_title = meta.get("og:title") or title
     stripped = _PRELUDE.sub("", (og_title or "").strip())
+    target = TARGET_IN_TITLE.search(stripped)
+    if target:
+        candidates.append(target.group("name"))
     match = NAME_IN_TITLE.match(stripped)
     if match:
         candidates.append(match.group("name"))

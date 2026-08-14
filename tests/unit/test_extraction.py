@@ -105,6 +105,46 @@ def test_roundup_gate_is_decided_not_dropped(offline_llm):
         assert got.rejection_reason == "roundup"
 
 
+def test_investor_or_parent_role_is_not_a_startup_record():
+    """The subject must be the operating startup, not the backer or parent."""
+    from radar.extract.schema import Extraction
+
+    got = Extraction.model_validate({
+        "is_about_single_company": True,
+        "company_name": "Northstar Ventures",
+        "company_role": "investor",
+        "extraction_confidence": 0.9,
+    })
+
+    assert got.is_about_single_company is False
+    assert got.rejection_reason == "not_a_startup"
+    assert got.is_usable is False
+
+
+def test_heuristic_prefers_the_startup_after_an_investor_verb():
+    """A headline's target wins over the investor named before the verb."""
+    from radar.extract.heuristic import heuristic_extract
+
+    title = "Northstar Ventures invests in Northstar Bio"
+    text = (
+        "Northstar Ventures has invested in Northstar Bio, a Newcastle-based "
+        "healthcare startup, in a pre-seed round. Northstar Bio develops a "
+        "new diagnostic platform for NHS laboratories. "
+        "The company will use the funding to hire engineers and run pilots. "
+    ) * 2
+    got = heuristic_extract(title=title, text=text)
+
+    assert got.company_name == "Northstar Bio"
+
+
+def test_prompt_requires_the_operating_startup_subject():
+    from radar.extract.llm import SYSTEM_PROMPT
+
+    assert "operating startup" in SYSTEM_PROMPT
+    assert "parent company" in SYSTEM_PROMPT
+    assert "investor" in SYSTEM_PROMPT
+
+
 # ------------------------------------------------------------- hallucinations
 
 

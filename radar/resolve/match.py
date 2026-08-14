@@ -160,6 +160,20 @@ def _person_named_shared_token(a: str, b: str) -> bool:
     return bool(rare_tokens(a) & rare_tokens(b))
 
 
+CORPORATE_ROLE_MARKERS = frozenset({
+    "capital", "fund", "funds", "group", "groups", "holding", "holdings",
+    "investment", "investments", "management", "parent", "partners",
+    "venture", "ventures",
+})
+
+
+def _corporate_role_conflict(a: str, b: str) -> bool:
+    """Keep near-identical parent/investor names out of auto-merge."""
+    roles_a = set(norm_name(a).split()) & CORPORATE_ROLE_MARKERS
+    roles_b = set(norm_name(b).split()) & CORPORATE_ROLE_MARKERS
+    return bool(roles_a or roles_b) and roles_a != roles_b
+
+
 def _country_conflict(a: Record, b: Record) -> bool:
     """True only when both countries are known and they differ.
 
@@ -214,6 +228,9 @@ def compare(a: Record, b: Record) -> MatchResult:
     ev = {**base, "score": round(score, 2)}
 
     if score >= FUZZY_AUTO_MERGE:
+        if _corporate_role_conflict(a_name, b_name):
+            return MatchResult(REVIEW, "fuzzy_corporate_role_conflict", 4, score, None,
+                               {**ev, "reason": "corporate role marker differs"})
         if not guard_ok(a_name, b_name):
             # ponytail: the spec makes the guard a precondition of the auto-merge
             # but does not say where a guard failure lands. Review, not distinct:

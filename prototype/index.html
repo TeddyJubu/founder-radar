@@ -144,6 +144,29 @@ h2 {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-3); text-align: right;
 }
+.fund-scores {
+  width: 100%; max-width: 360px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+}
+.fund-score {
+  min-width: 0; padding: 6px 4px 5px;
+  background: var(--fill); border: 0.5px solid var(--separator);
+  border-radius: var(--r-control); text-align: center; cursor: help;
+}
+.fund-score .n {
+  font-size: 16px; line-height: 19px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fund-score .k {
+  margin-top: 2px; font-size: 10px; line-height: 12px;
+  color: var(--label-2); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fund-score.high .n { color: var(--green); }
+.fund-score.mid .n { color: var(--label); }
+.fund-score.low .n { color: var(--orange); }
+.fund-score[data-tier="reject"] .n,
+.fund-score[data-tier="unscored"] .n { color: var(--label-3); }
 .score.high .n { color: var(--green); }
 .score.mid  .n { color: var(--label); }
 .score.low  .n { color: var(--orange); }
@@ -450,6 +473,7 @@ button.no  { color: var(--red); }
   .score .n { font-size: 26px; line-height: 30px; }
   .score-fit .n { font-size: 28px; line-height: 32px; }
   .score-hint { max-width: none; text-align: left; }
+  .fund-scores { max-width: none; }
   h2 { font-size: 26px; line-height: 32px; }
   .blurb { font-size: var(--subhead); line-height: 21px; margin-top: var(--s4); }
   .why-clause { font-size: var(--footnote); line-height: 18px; }
@@ -460,6 +484,7 @@ button.no  { color: var(--red); }
 @media (max-width: 460px) {
   .date { display: none; }             /* the header already says Today */
   button .kbd { display: none; }       /* no hardware keyboard to hint at */
+  .fund-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
 </head>
@@ -590,8 +615,8 @@ const LED_POSITIVE_AT = 0.6;
 const LED_NEGATIVE_AT = 0.34;
 
 // `sub_score` is null when nothing was found, which is not the same as zero.
-// 06-scoring's whole percentage-of-known rule rests on that distinction, so
-// the UI keeps it: an unknown never renders as a failure.
+// The full-model percentage depends on that distinction, so the UI keeps it:
+// an unknown never renders as a failure or a guessed zero.
 function ledStatus(component) {
   const s = component.sub_score;
   if (s === null || s === undefined) return "unknown";
@@ -666,6 +691,33 @@ function renderCriteria(c) {
   </div>`;
 }
 
+function renderFundScores(c) {
+  const scores = Array.isArray(c.fund_scores) ? c.fund_scores : [];
+  if (!scores.length) return "";
+  return `<div class="fund-scores" data-testid="fund-scores" aria-label="Match score by fund">
+    ${scores.map(s => {
+      const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
+      const hasFit = Number.isFinite(value);
+      const display = hasFit ? `${Math.round(value)}%` : "—";
+      const coverage = s.coverage === null || s.coverage === undefined
+        ? "" : ` · ${Math.round(Number(s.coverage) * 100)}% evidence`;
+      const status = s.tier === "reject"
+        ? ` · ${s.reject_reason || "not eligible"}` : "";
+      const title = `${s.fund_name || s.fund_key}: ${display} match${coverage}${status}`;
+      const tone = hasFit ? band(value, 70, 45) : "low";
+      return `<div class="fund-score ${tone}" data-testid="fund-score"
+                   data-fund="${esc(s.fund_key)}"
+                   data-value="${hasFit ? esc(s.fit) : ""}"
+                   data-coverage="${s.coverage == null ? "" : esc(s.coverage)}"
+                   data-tier="${esc(s.tier || "unscored")}"
+                   title="${esc(title)}">
+                 <div class="n">${display}</div>
+                 <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+               </div>`;
+    }).join("")}
+  </div>`;
+}
+
 function renderExplanation(text) {
   const raw = String(text || "").trim();
   const clauses = explanationClauses(raw);
@@ -719,6 +771,14 @@ function safeUrl(value) {
 function articleLinks(c) {
   const seen = new Set();
   const out = [];
+  if (c.source_url && !seen.has(c.source_url)) {
+    seen.add(c.source_url);
+    out.push({
+      url: c.source_url,
+      label: `Found at ${sourceName(c.source_key)}`,
+      kind: "source",
+    });
+  }
   for (const s of c.signals || []) {
     if (!s.source_url || seen.has(s.source_url)) continue;
     seen.add(s.source_url);
@@ -787,6 +847,7 @@ function render() {
   const evidence = articleLinks(c).filter(a => safeUrl(a.url)).map((a, i) =>
     `<a class="ev${i === 0 ? " primary" : ""}" data-testid="evidence-link"
         data-kind="${esc(a.kind)}"${i === 0 ? ' data-primary="true"' : ""}
+        ${a.kind === "source" && i === 0 ? 'data-primary-source="true"' : ""}
         href="${safeUrl(a.url)}" target="_blank" rel="noopener">
        ${esc(a.label)} <span class="chev">↗</span></a>`
   ).join("");
@@ -836,6 +897,7 @@ function render() {
               <div class="k" data-testid="score-label">Fresh</div></div>
           </div>
           <div class="score-hint" data-testid="score-hint">Match = fund fit · Fresh = new to them</div>
+          ${renderFundScores(c)}
         </div>
       </div>
 

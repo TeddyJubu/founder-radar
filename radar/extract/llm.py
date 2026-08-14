@@ -33,15 +33,9 @@ log = logging.getLogger(__name__)
 
 # Bump either constant to invalidate every cache entry cleanly.
 #
-# ponytail: deliberately NOT bumped for the 11 Aug `one_line_description`
-# rewrite (rule 7 above, and the field description in schema.py). Bumping is
-# the correct-by-the-book move — the ask changed, so the key should change —
-# but it costs a re-read of every article still in the cache *and* invalidates
-# all 24 files under `tests/fixtures/llm_cache`, which only `REFRESH_LLM=1
-# pytest` with a live key can re-record. The population that matters is
-# tomorrow's articles, and they were never cached, so they get the new ask for
-# free. Bump this the next time the fixtures are being re-recorded anyway.
-PROMPT_VERSION = "2026-08-08.1"
+# The subject-selection rule changed, so cached articles must be re-read under
+# the new prompt rather than silently retaining an investor or parent record.
+PROMPT_VERSION = "2026-08-12.1"
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"  # dated snapshot, never an alias
 
 MAX_PROMPT_WORDS = 1500  # startup articles put who/what/how-much up front
@@ -104,21 +98,29 @@ amount, a sector or a city that is not stated.
 for character from the article. If you cannot quote it, leave the field null \
 and do not invent a quote. A quote that is not in the article is the worst \
 possible failure.
-3. Set is_about_single_company to false for round-ups, listicles, market \
+3. Subject identity: company_name must be the operating startup that is the \
+relevant subject — the company receiving the investment, being spun out, or \
+whose product or milestone is being reported. Never use the parent company, \
+investor, fund, university or acquirer named around it. Set company_role to \
+startup for the operating company and to parent, investor, acquirer, \
+university or other when company_name is one of those surrounding entities. \
+If the article clearly names only a parent, investor or other non-startup, set \
+is_about_single_company to false with rejection_reason not_a_startup.
+4. Set is_about_single_company to false for round-ups, listicles, market \
 reports, opinion pieces, accelerator cohort announcements, and anything \
 covering three or more companies with no single subject. Give the matching \
 rejection_reason.
-4. Money: put equity funding in amount_raised_gbp only when the article states \
+5. Money: put equity funding in amount_raised_gbp only when the article states \
 it in pounds. If the amount is in another currency, put the number in \
 amount_original with the ISO code in amount_currency and leave \
 amount_raised_gbp null. Put grants and non-dilutive awards in \
 grant_amount_gbp, never in amount_raised_gbp.
-5. sector and stage must be one of the listed values, or null. Never guess a \
+6. sector and stage must be one of the listed values, or null. Never guess a \
 close-enough value.
-6. extraction_confidence is your honest confidence in the whole record: 0.85+ \
+7. extraction_confidence is your honest confidence in the whole record: 0.85+ \
 for a clear single-company funding story with named founders, 0.3-0.5 for a \
 thin regional note with few facts.
-7. one_line_description describes the COMPANY, not the article. Say what it \
+8. one_line_description describes the COMPANY, not the article. Say what it \
 makes or does, the way the company would say it. Never restate the news event, \
 and never reuse the headline. If the article only reports that money changed \
 hands and never says what the company does, leave it null.
