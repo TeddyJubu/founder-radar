@@ -619,8 +619,8 @@ const LED_POSITIVE_AT = 0.6;
 const LED_NEGATIVE_AT = 0.34;
 
 // `sub_score` is null when nothing was found, which is not the same as zero.
-// The full-model percentage depends on that distinction, so the UI keeps it:
-// an unknown never renders as a failure or a guessed zero.
+// The full-model percentage keeps unknown criteria in its denominator, so the
+// UI keeps the distinction: an unknown never renders as a guessed failure.
 function ledStatus(component) {
   const s = component.sub_score;
   if (s === null || s === undefined) return "unknown";

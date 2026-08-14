@@ -34,7 +34,11 @@ from radar.extract.grounding import (
     hallucination_rate,
     normalise_ws,
 )
-from radar.extract.heuristic import heuristic_extract
+from radar.extract.heuristic import (
+    find_hq_country,
+    find_one_line_description,
+    heuristic_extract,
+)
 from radar.extract.llm import (
     DEFAULT_MODEL,
     PROMPT_VERSION,
@@ -170,7 +174,7 @@ def extract_html(
     if cached is not None:
         record = _validate(cached.payload)
         if record is not None:
-            return _finish_llm(record, pre, url=url, cache_hit=True)
+            return _finish_llm(record, pre, title=title, url=url, cache_hit=True)
         log.warning("cached payload for %s no longer validates — recalling", key[:12])
 
     # ---- ④ the one paid call, with one retry -------------------------------
@@ -216,7 +220,7 @@ def extract_html(
         fallback = _finish_heuristic(pre, title=title, html=html, url=url)
         return fallback.model_copy(update={"quarantined": True})
 
-    return _finish_llm(record, pre, url=url, cache_hit=False)
+    return _finish_llm(record, pre, title=title, url=url, cache_hit=False)
 
 
 # ------------------------------------------------------------------ helpers
@@ -242,10 +246,30 @@ def _validation_error(payload: Any) -> str:
 
 
 def _finish_llm(
-    record: Extraction, pre: PrefilterResult, *, url: str, cache_hit: bool
+    record: Extraction,
+    pre: PrefilterResult,
+    *,
+    title: str,
+    url: str,
+    cache_hit: bool,
 ) -> Extraction:
     report = ground(record, pre.text, source_url=url)
     out = report.extraction
+    # Cached/model records can predate the country and description fallback.
+    # Fill only facts that are explicitly present in the source, then keep the
+    # card reviewable so a human can confirm the inferred metadata.
+    updates: dict[str, Any] = {}
+    if out.hq_country_iso2 is None:
+        country = find_hq_country(title, pre.text)
+        if country:
+            updates["hq_country_iso2"] = country
+    if out.one_line_description is None:
+        description = find_one_line_description(pre.text, out.company_name or "")
+        if description:
+            updates["one_line_description"] = description
+    if updates:
+        updates["needs_review"] = True
+        out = out.model_copy(update=updates)
     needs_review = (
         out.needs_review
         or out.extraction_confidence < LOW_CONFIDENCE
