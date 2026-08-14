@@ -116,6 +116,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Main region | `today-main` | | carries `aria-live="polite"` |
 | Header date | `today-date` | | hidden below 460px by design |
 | Done state | `done-state` | | |
+| Review Again | `review-again` | | clears only today's review markers; lasting verdicts remain |
 | Empty state | `empty-state` | | |
 
 **`data-value` carries the unrounded number.** Compare *that* against SQLite —
@@ -199,7 +200,7 @@ Reset by reloading the page between tests where noted.
 | C8 | Press `Cmd/Ctrl+Z` after a verdict | returns to the company just decided |
 | C9 | Toast auto-hides | `toast` loses `.show` within 2.5s |
 | C10 | Decide through every card | `verdict-bar` becomes `hidden`; `done-state` appears |
-| C11 | Done state | `done-state` text contains `reviewed`; a `✓` is present |
+| C11 | Done state | `done-state` says `You've reviewed today's companies.` and contains a `✓` |
 | C12 | Keyboard-only run | complete C10 without a single mouse event |
 
 ### C13 — Modifier safety
@@ -207,6 +208,19 @@ Reset by reloading the page between tests where noted.
 With focus on the page, press `Cmd+1` / `Cmd+2` / `Cmd+3`. **No verdict may be
 recorded** — those are browser tab-switch shortcuts. `user_field` row count must
 be unchanged.
+
+### C14 — Refresh does not requeue a decision
+
+1. Note the first card's `data-company-id`.
+2. Press `3` and reload the page.
+3. **Pass:** the same company is not the first card, and the decision remains in
+   `user_field`.
+
+### C15 — Review Again is explicit
+
+1. Decide through the current list until `done-state` appears.
+2. Click `button[data-testid="review-again"]`.
+3. **Pass:** the first card returns, and its lasting verdict is unchanged.
 
 ---
 
@@ -323,7 +337,7 @@ backgrounds. **Pass:** ≥ 4.5:1 for body text, ≥ 3:1 for text ≥ 24px.
 | E2 | `/api/verdict` returns 500 | stub the route to fail; the UI must not advance silently *(current behaviour is unverified — record what actually happens)* |
 | E3 | Slow API | throttle to 3s; no duplicate render, no flash of broken layout |
 | E4 | Double keypress | press `1` twice within 100ms; **exactly one** `user_field` row is written |
-| E5 | Reload mid-review | verdicts already given persist in the DB |
+| E5 | Reload mid-review | verdicts already given persist in the DB and decided companies stay out of Today |
 | E6 | Console clean | zero `error`-level console messages across a full run |
 | E7 | Network clean | no 4xx/5xx in the network log except those deliberately provoked in A9–A11 |
 

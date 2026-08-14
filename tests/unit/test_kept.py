@@ -13,6 +13,7 @@ from prototype.server import (
     build_kept,
     build_today,
     kept_count,
+    reset_daily_review,
     render_kept_intro,
     render_kept_rows,
     set_verdict,
@@ -41,6 +42,26 @@ def test_today_totals_include_kept(db):
     set_verdict(db.conn, ids[0], "worth contacting")
     payload = build_today(db.conn)
     assert payload["totals"]["kept"] == 1
+
+
+def test_today_excludes_a_company_after_a_decision_until_review_again(db):
+    ids = seed_companies(db, count=3, shortlist=3)
+
+    assert {row["company_id"] for row in build_today(db.conn)["companies"]} == set(ids)
+
+    set_verdict(db.conn, ids[0], "not for me")
+
+    payload = build_today(db.conn)
+    assert ids[0] not in {row["company_id"] for row in payload["companies"]}
+    assert payload["totals"]["reviewed_today"] == 1
+    assert payload["totals"]["remaining"] == 2
+    assert db.scalar(
+        "SELECT value FROM user_field WHERE company_id = ? AND field = 'verdict'",
+        (ids[0],),
+    ) == "not for me"
+
+    assert reset_daily_review(db.conn) == 1
+    assert {row["company_id"] for row in build_today(db.conn)["companies"]} == set(ids)
 
 
 def test_today_does_not_surface_age_unverified_companies(db, config):

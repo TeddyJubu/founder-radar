@@ -281,6 +281,45 @@ def test_c10_c11_reviewing_everything_reaches_the_done_state(today, api):
     assert today.locator(tid("verdict-bar")).is_hidden()
 
 
+def test_c14_refresh_does_not_requeue_a_decided_company(today):
+    company_id = today.locator(tid("card")).get_attribute("data-company-id")
+
+    today.keyboard.press("3")
+    today.wait_for_timeout(300)
+    today.reload(wait_until="networkidle")
+    today.wait_for_selector(tid("card"))
+
+    assert today.locator(tid("card")).get_attribute("data-company-id") != company_id
+
+
+def test_c15_review_again_restores_the_daily_queue(today, server):
+    with urllib.request.urlopen(server + "/api/today", timeout=5) as response:
+        current_api = json.loads(response.read())
+    first_company_id = current_api["companies"][0]["company_id"]
+
+    for _ in range(len(current_api["companies"])):
+        today.keyboard.press("3")
+        today.wait_for_timeout(120)
+
+    today.wait_for_selector(tid("done-state"))
+    today.locator(tid("review-again")).click()
+    today.wait_for_selector(tid("card"))
+
+    assert today.locator(tid("card")).get_attribute("data-company-id") == first_company_id
+
+
+def test_c16_back_navigation_does_not_reopen_a_decided_company(today):
+    first_company_id = today.locator(tid("card")).get_attribute("data-company-id")
+
+    today.keyboard.press("3")
+    today.wait_for_timeout(250)
+    second_company_id = today.locator(tid("card")).get_attribute("data-company-id")
+    today.keyboard.press("ArrowLeft")
+
+    assert second_company_id != first_company_id
+    assert today.locator(tid("card")).get_attribute("data-company-id") == second_company_id
+
+
 def test_c13_modifier_keys_never_record_a_verdict(today, server):
     """`Cmd+1` switches browser tabs. A handler that ignored modifiers would
     file a verdict every time the user changed tab."""

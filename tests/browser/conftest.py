@@ -19,6 +19,7 @@ all Playwright and this server need.
 from __future__ import annotations
 
 import json
+import sqlite3
 import socket
 import subprocess
 import sys
@@ -79,6 +80,18 @@ def demo_db(tmp_path_factory) -> Path:
     target = tmp_path_factory.mktemp("today") / "test-run.db"
     _build_demo_db(target)
     return target
+
+
+@pytest.fixture(autouse=True)
+def fresh_daily_review(demo_db: Path):
+    """Keep browser tests isolated without clearing lasting verdicts."""
+    from prototype.server import reset_daily_review
+
+    conn = sqlite3.connect(str(demo_db))
+    try:
+        reset_daily_review(conn)
+    finally:
+        conn.close()
 
 
 @pytest.fixture(scope="session")
