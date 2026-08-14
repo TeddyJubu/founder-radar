@@ -42,7 +42,7 @@ Prove the plumbing before writing any logic.
 1. `radar/score/derive.py` — **the attribute derivation rules from `06-scoring.md` §2. Build this first; without it registry companies score on nothing.**
 2. `radar/score/gates.py` — the freshness gates, plus the NULL-passes-and-flags policy
 3. `radar/score/criteria.py` — `Criterion`, `ComponentScore`, the evaluators
-4. `radar/score/fund_fit.py` — the weighted matrix, percentage-of-known, coverage
+4. `radar/score/fund_fit.py` — the weighted matrix, full-model percentage, coverage
 5. `radar/score/discovery_edge.py`
 6. `radar/score/tiering.py`
 7. `radar/score/explain.py` — the deterministic sentence
@@ -59,7 +59,7 @@ Prove the plumbing before writing any logic.
 - [ ] `test_worked_example_metzero` passes — every number from `06-scoring.md` §11
 - [ ] `test_vehicle_routing` passes — all eleven rows
 - [ ] `test_unknown_never_becomes_zero` passes
-- [ ] `test_one_known_attribute_cannot_shortlist` passes
+- [ ] `test_sparse_evidence_cannot_look_like_a_perfect_match` passes
 - [ ] `test_scoring_is_reproducible` passes
 - [ ] `test_explanation_arithmetic_reconciles` passes
 - [ ] `founder-radar show <fixture>` prints a full breakdown from a seeded database
