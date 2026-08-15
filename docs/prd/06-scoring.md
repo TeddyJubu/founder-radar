@@ -40,6 +40,12 @@ UNKNOWN_FLAGS = {
 
 Rejecting on unknown would throw away good early candidates. Shortlisting on unknown would let old companies back in through the gap. **Watchlist with a stated reason is the honest answer**, and it matches how per-vehicle hard rules behave (§4.3).
 
+The scoring pool and the surfaced review queue are intentionally different:
+`age_unknown` rows may remain watchlist research prompts, but Today requires a
+non-null `incorporated_on` before presenting one as an opportunity. This keeps
+the unknown-value policy without allowing an undated portfolio record to look
+fresh by default.
+
 Age is determined in this order:
 
 ```python
@@ -323,7 +329,7 @@ Integers **0–10**. A blank cell means **1**, not 0. These are the seeded defau
 
 ### 5.2 One change from the client's version
 
-His workbook summed the five attribute scores into a raw total. That number is not comparable across funds — their columns have different totals — and it silently invalidates every threshold the moment a new row is added. Version 2 reports a **percentage of the maximum achievable over known attributes, plus coverage.** The raw sum is still shown in a column, because he is used to it.
+His workbook summed the five attribute scores into a raw total. That number is not comparable across funds — their columns have different totals — and it silently invalidates every threshold the moment a new row is added. Version 2 reports a **percentage of the configured maximum across all attributes, plus evidence coverage.** Unknown attributes never become failures, but they remain in the headline denominator so a sparse record cannot look like a perfect fit. The raw sum is still shown in a column, because he is used to it.
 
 ---
 
@@ -347,20 +353,20 @@ def fund_fit(company, fund, vehicle, cfg) -> FitScore:
 
     known   = [c for c in comps if c.sub_score is not None]
     earned  = sum(c.weight * c.sub_score for c in known)
-    max_ach = sum(c.weight for c in known)                 # denominator: KNOWN only
+    max_ach = sum(c.weight for c in known)
     max_all = sum(c.weight for c in comps)
 
-    pct      = 100.0 * earned / max_ach if max_ach else 0.0
-    coverage = max_ach / max_all if max_all else 0.0
+    pct      = 100.0 * earned / max_all if max_all else 0.0
+    coverage = len(known) / len(comps) if comps else 0.0
     return FitScore(vehicle_key=vehicle.key, pct=round(pct, 1),
                     coverage=round(coverage, 2), components=comps)
 ```
 
-### Why percentage-of-known, and the trap it creates
+### Why the full-model percentage, and the trap it prevents
 
-**Why it's right:** comparable across funds with different criteria counts, comparable across companies with different amounts of known information, and adding an attribute row doesn't inflate every score and break the thresholds.
+**Why it's right:** comparable across funds with different criteria counts, and adding an attribute row does not inflate every sparse record into a perfect score. Coverage remains a separate count of confirmed attributes, so the reader can see how much of the record is evidenced.
 
-**The trap:** a company with one known attribute scoring 1.0 gets 100%. Without a guard, the shortlist fills with companies almost nothing is known about.
+**The trap it prevents:** a company with one known attribute scoring 1.0 would otherwise get 100%. Keeping unknown criteria in the denominator makes the headline honest even before the coverage gate is applied.
 
 **The fix:** `coverage` is a first-class output, both numbers appear side by side in the sheet, and **shortlist eligibility requires a coverage floor.** Combined with the derivation rules in §2 and the qualification gate in §3, a registry-sourced company that reaches scoring will typically have coverage of 0.6–1.0 — comfortably above the floor.
 
@@ -370,7 +376,7 @@ Three policies, set per attribute in the `Scoring Weights` tab, column `Unknown 
 
 | Policy | Numerator | Denominator | Use for |
 |---|---|---|---|
-| **`neutral`** *(default)* | excluded | excluded | Most things. Absence of evidence is not evidence of absence. |
+| **`neutral`** *(default)* | excluded | included in headline | Most things. Absence of evidence is not evidence of absence, but an unknown still lowers confidence in the overall fit. |
 | `pessimistic` | 0 | included | Attributes reliably observable when true. Not finding it *is* weak negative evidence. |
 | `assume` | assumed value | included | Source-implied facts — a UKRI grant record implies `geography` is UK. |
 

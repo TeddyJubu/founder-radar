@@ -62,7 +62,8 @@ def telegram_outbox(monkeypatch):
     return sent
 
 
-def _db_with_last_run(path: Path, *, hours_ago: float, status: str = "ok") -> Db:
+def _db_with_last_run(path: Path, *, hours_ago: float, status: str = "ok",
+                      items_fetched: int = 0) -> Db:
     db = Db(path)
     db.migrate()
     stamp = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime(
@@ -71,8 +72,8 @@ def _db_with_last_run(path: Path, *, hours_ago: float, status: str = "ok") -> Db
         """INSERT INTO run(started_at, finished_at, mode, status, items_fetched,
                            items_extracted, companies_new, companies_merged,
                            gated_out, shortlisted, llm_calls, llm_cost_usd)
-           VALUES (?,?,'daily',?,0,0,0,0,0,0,0,0)""",
-        (stamp, stamp, status),
+           VALUES (?,?,'daily',?,?,0,0,0,0,0,0,0)""",
+        (stamp, stamp, status, items_fetched),
     )
     db.close()
     return db
@@ -109,14 +110,40 @@ def test_heartbeat_is_quiet_when_the_run_is_recent(tmp_path, telegram_outbox):
     assert result.exit_code == 0
 
 
-def test_heartbeat_treats_a_partial_run_as_no_run(tmp_path, telegram_outbox):
-    """`partial` means sources failed. Counting it as proof of life would mask
-    a pipeline that fails every source every day."""
-    path = tmp_path / "radar.db"
-    _db_with_last_run(path, hours_ago=2, status="partial")
+def test_heartbeat_accepts_a_partial_run_that_did_work(tmp_path, telegram_outbox):
+    """`partial` is this pipeline's normal Tuesday, not an outage.
 
-    _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
-    assert len(telegram_outbox) == 1
+    Any one of 23 sources failing marks the whole run `partial`, and at least
+    one always does — Companies House has no key, northern_accelerator serves
+    403. On the live box `ok` had never once been written in four runs, so the
+    heartbeat alerted every morning while the pipeline was collecting 1,338
+    companies a day. An alarm that fires daily is an alarm nobody reads, which
+    is the exact failure FR-9.3 exists to prevent.
+
+    Proof of life is therefore: it finished, and it fetched something.
+    """
+    path = tmp_path / "radar.db"
+    _db_with_last_run(path, hours_ago=2, status="partial", items_fetched=1338)
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+    assert telegram_outbox == [], telegram_outbox
+    assert result.exit_code == 0
+
+
+def test_heartbeat_still_alerts_when_a_partial_run_fetched_nothing(
+        tmp_path, telegram_outbox):
+    """The concern the old rule was protecting, kept.
+
+    A run where every source failed still writes a `partial` row, and counting
+    that as proof of life would mask a pipeline that is dead on its feet. The
+    difference is measurable: it fetched nothing.
+    """
+    path = tmp_path / "radar.db"
+    _db_with_last_run(path, hours_ago=2, status="partial", items_fetched=0)
+
+    result = _cli(["--db", str(path), "status", "--alert-if-stale", "26h"])
+    assert len(telegram_outbox) == 1, telegram_outbox
+    assert result.exit_code == 1
 
 
 def test_status_without_the_flag_sends_nothing(tmp_path, telegram_outbox):
@@ -726,3 +753,42 @@ def test_a_missing_env_file_is_not_an_error(tmp_path):
     from radar.cli import load_env_file
 
     assert load_env_file(tmp_path / "nope.env") == 0
+
+
+def test_today_requires_verified_age_and_uk_presence(db):
+    """Today is an opportunity queue, not the unknown-data research pool."""
+    from prototype.server import build_today
+    from radar.store.db import now_iso
+
+    stamp = now_iso()
+
+    def add(company, *, priority):
+        cid = store_company(db, company)
+        db.execute(
+            "INSERT INTO company_source(company_id, source_key, external_id, "
+            "source_url, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
+            (cid, "uktn", f"source-{cid}", "https://uktn.co.uk/story", stamp, stamp),
+        )
+        db.execute(
+            """INSERT INTO score
+                 (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+                  discovery_edge, priority, tier, reject_reason, explanation,
+                  flags, config_hash, scorer_version, scored_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (cid, "outward", "fund_ii", 80, 0.8, 70, priority, "watchlist", None,
+             "Matches on stage.", None, "testhash", "1", stamp),
+        )
+        return cid
+
+    valid = add(C(canonical_name="Verified UK Co", age_months=6, country="GB"), priority=90)
+    add(C(canonical_name="Unknown Age Co", age_months=None, country="GB"), priority=100)
+    add(C(canonical_name="Old UK Co", age_months=60, country="GB"), priority=99)
+    add(C(canonical_name="Funded UK Co", age_months=6, country="GB", funding=4_000_000), priority=98)
+    add(C(canonical_name="Dubai Co", age_months=6, country="AE"), priority=95)
+    add(C(canonical_name="Unverified Location Co", age_months=6, country=None,
+          hq_region=None, hq_postcode=None, companies_house_no=None,
+          hq_city="Dubai"), priority=94)
+
+    payload = build_today(db.conn)
+    assert [c["company_id"] for c in payload["companies"]] == [valid]
+    assert len(payload["companies"][0]["fund_scores"]) == 4

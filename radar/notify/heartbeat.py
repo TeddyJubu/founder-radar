@@ -85,16 +85,29 @@ def _parse_stamp(value) -> datetime | None:
 
 
 def last_successful_run(db) -> datetime | None:
-    """When a run last *finished* successfully.
+    """When the pipeline last finished and actually did something.
 
-    `status = 'ok'` only. A `partial` run means sources failed, and the run row
-    exists, but treating it as proof of life would mask a pipeline that fails
-    every source every day. `running` is likewise not success — a hung run must
-    still trip the alert.
+    Proof of life is `ok`, **or** `partial` that fetched something.
+
+    `ok` alone used to be the rule, and it made the alert useless. Any one of
+    23 sources failing marks the whole run `partial`, and at least one always
+    does — Companies House needs a key it may not have, northern_accelerator
+    serves 403 to an honest crawler. On the live box `ok` had never been
+    written once, so the heartbeat alerted every single morning while the run
+    was collecting 1,338 companies a day. An alarm that cries wolf daily is an
+    alarm that gets muted, and then the real outage passes unnoticed — which is
+    precisely what FR-9.3 exists to catch.
+
+    The concern behind the old rule was real and is kept: a run where *every*
+    source failed also writes a `partial` row, and that must still alert. The
+    two are distinguishable without guessing — the dead one fetched nothing.
+
+    `running` remains not-success: a hung run must still trip the alert.
     """
     stamp = db.scalar(
         "SELECT MAX(COALESCE(finished_at, started_at)) FROM run "
-        "WHERE status = 'ok' AND finished_at IS NOT NULL"
+        "WHERE finished_at IS NOT NULL "
+        "  AND (status = 'ok' OR (status = 'partial' AND items_fetched > 0))"
     )
     return _parse_stamp(stamp)
 

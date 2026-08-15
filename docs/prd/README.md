@@ -155,7 +155,7 @@ Plain-English definitions of every term used in this pack.
 | **Gate** | A yes/no rule that rejects a company outright. Age, geography, fund mandate. |
 | **Fund Fit** | 0–100. How well the company matches a fund's criteria. |
 | **Discovery Edge** | 0–100. How likely it is the fund hasn't already seen this company. |
-| **Coverage** | What fraction of the scoring criteria we actually had data for. Stops a company scoring 100% on one known fact. |
+| **Coverage** | What fraction of the scoring criteria we actually had data for. Keeps the evidence level visible beside the full-model match score. |
 | **Vehicle** | A specific fund pot with its own rules. Northstar has five. |
 | **Tier** | Shortlist / Watchlist / Rejected. |
 | **SH01** | The Companies House form filed when a company issues new shares. On a young company, this is what a pre-seed round looks like on the public record. |

@@ -198,6 +198,20 @@ CREATE TABLE IF NOT EXISTS user_field (
   PRIMARY KEY (company_id, field)
 );
 
+-- A verdict trains the scoring system; a daily review marker controls the
+-- Today queue. They are separate so a company can be reviewed again on an
+-- explicit request without losing the user's lasting verdict.
+CREATE TABLE IF NOT EXISTS daily_review (
+  company_id   TEXT NOT NULL REFERENCES company(id),
+  review_date  TEXT NOT NULL,     -- local calendar date, YYYY-MM-DD
+  verdict      TEXT NOT NULL,
+  reviewed_at  TEXT NOT NULL,
+  PRIMARY KEY (company_id, review_date)
+);
+
+CREATE INDEX IF NOT EXISTS ix_daily_review_date
+    ON daily_review(review_date);
+
 CREATE TABLE IF NOT EXISTS merge_event (
   id             INTEGER PRIMARY KEY,
   winner_id      TEXT NOT NULL,

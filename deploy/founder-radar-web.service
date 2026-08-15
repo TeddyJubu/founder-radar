@@ -1,0 +1,55 @@
+# /etc/systemd/system/founder-radar-web.service
+#
+# The review surface — `prototype/server.py` — as a long-running service.
+#
+# Why this is a service and not a static export: the product is a *daily* run.
+# A snapshot published to static hosting is stale by 06:31 the next morning,
+# and it cannot take a verdict. This process reads the same SQLite file the
+# daily scan writes, so Today reflects this morning's run with no publish step,
+# and `POST /api/verdict` lands in `user_field` — the table `radar/score/tune.py`
+# reads. Verdicts are the only human input the system gets; a surface that
+# cannot record them is a viewer, not a tool.
+#
+# It binds 127.0.0.1 only. Caddy (deploy/Caddyfile) terminates TLS and enforces
+# the password; nothing here is reachable from outside the box directly.
+
+[Unit]
+Description=UK Founder Radar review surface
+Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radar
+Group=radar
+WorkingDirectory=/opt/founder-radar/app
+EnvironmentFile=/opt/founder-radar/.env
+Environment=TZ=Europe/London
+
+ExecStart=/opt/founder-radar/venv/bin/python \
+    /opt/founder-radar/app/prototype/server.py \
+    --db /opt/founder-radar/data/radar.db \
+    --port 8787
+
+Restart=on-failure
+RestartSec=5
+
+# Small: stdlib http.server over a SQLite read, one user. If this ever needs
+# more, the answer is a real WSGI server, not a bigger cap.
+MemoryMax=256M
+Nice=5
+
+# Hardening. `data/` is writable because a verdict is a write — that is the
+# whole point of the surface. Everything else is read-only.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs
+
+StandardOutput=append:/opt/founder-radar/logs/web.log
+StandardError=append:/opt/founder-radar/logs/web-error.log
+
+[Install]
+WantedBy=multi-user.target

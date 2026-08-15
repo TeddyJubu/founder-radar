@@ -6,7 +6,8 @@ metadata alone:
 
 * Company name from `og:title` / JSON-LD / the first `X Ltd|Limited` match
 * Amount from a currency regex
-* Everything else `None`
+* Explicit headquarters country and a verbatim business description when the
+  source says them plainly
 
 Records are marked `extraction_method = "heuristic"`, `confidence = 0.3`,
 `needs_review = True`, and land on the `Needs Review` tab. **The run completes
@@ -58,6 +59,17 @@ NAME_IN_TITLE = re.compile(
     r"^(?P<name>[A-Z][\w&'’.\-]*(?:\s+[A-Z0-9][\w&'’.\-]*){0,3})\s+(?:" + _FUNDING_VERB + r")\b"
 )
 
+_TARGET_RELATION = (
+    r"(?:investment\s+in|invests?\s+in|backs?|funds?|finances?|"
+    r"acquires?|acquired|buys?|bought|takes\s+over)"
+)
+TARGET_IN_TITLE = re.compile(
+    r"(?i:" + _TARGET_RELATION + r")\s+"
+    r"(?:(?:[A-Za-z][\w&'’\.\-]*\s+){0,2}"
+    r"(?:startup|company|venture|scaleup|spinout|business|firm)\s+)?"
+    r"(?P<name>[A-Z][\w&'’\.\-]*(?:\s+[A-Z0-9][\w&'’\.\-]*){0,3})",
+)
+
 LEGAL_ENTITY = re.compile(
     r"\b(?P<name>[A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+){0,2})\s+(?:Ltd|Limited)\b"
 )
@@ -70,6 +82,57 @@ FOUNDED_YEAR = re.compile(
 SPINOUT = re.compile(r"\bspin-?out|spin-?off|spun out\b", re.I)
 UNIVERSITY = re.compile(
     r"\b(University of [A-Z][\w'’\-]+(?:\s+[A-Z][\w'’\-]+)?|[A-Z][\w'’\-]+(?:\s+[A-Z][\w'’\-]+)?\s+University)\b"
+)
+
+# Location is deliberately conservative. A place is treated as headquarters
+# evidence only when the prose says "based"/"headquartered", or calls it a
+# startup/company in that place. This avoids turning a customer, market, or
+# investor location into the company's country.
+_HQ_COUNTRY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "AE",
+        re.compile(
+            r"\b(?:Dubai|Abu Dhabi|UAE|United Arab Emirates)[-\s]"
+            r"(?:based|headquartered)\b"
+            r"|\b(?:based|headquartered)\s+in\s+(?:Dubai|Abu Dhabi|"
+            r"(?:the\s+)?UAE|United Arab Emirates)\b"
+            r"|\b(?:Dubai|Abu Dhabi)\s+(?:startup|company|business)\b",
+            re.I,
+        ),
+    ),
+    (
+        "US",
+        re.compile(
+            r"\b(?:US|U\.S\.|USA|United States|America)[-\s]"
+            r"(?:based|headquartered)\b"
+            r"|\b(?:based|headquartered)\s+in\s+(?:the\s+)?"
+            r"(?:US|U\.S\.|USA|United States|America)\b"
+            r"|\b(?:New York|San Francisco|Boston|Austin|Los Angeles|"
+            r"Chicago|Seattle|Miami|Denver|Palo Alto|Silicon Valley)[-\s]"
+            r"(?:based|headquartered)\b",
+            re.I,
+        ),
+    ),
+    (
+        "GB",
+        re.compile(
+            r"\b(?:UK|U\.K\.|United Kingdom|England|Scotland|Wales|"
+            r"Northern Ireland)[-\s](?:based|headquartered)\b"
+            r"|\b(?:based|headquartered)\s+in\s+(?:the\s+)?"
+            r"(?:UK|U\.K\.|United Kingdom|England|Scotland|Wales|"
+            r"Northern Ireland)\b"
+            r"|\b(?:London|Manchester|Leeds|Bristol|Newcastle|Edinburgh|"
+            r"Glasgow|Cambridge|Oxford)[-\s](?:based|headquartered)\b",
+            re.I,
+        ),
+    ),
+)
+
+_DESCRIPTION_VERB = re.compile(
+    r"\b(?:builds?|develops?|creates?|provides?|offers?|makes?|helps?|"
+    r"designs?|produces?|operates?|speciali[sz]es?|manufactures?|"
+    r"delivers?|connects?|enables?)\b",
+    re.I,
 )
 
 _SENTENCE = re.compile(r"[^.!?\n]*[.!?]?")
@@ -123,12 +186,20 @@ def find_amount(title: str, text: str) -> tuple[float, str, str | None] | None:
 
 
 def find_company_name(title: str, text: str, html: str, jsonld: dict | None = None) -> str | None:
-    """og:title / JSON-LD `about` / the first `X Ltd|Limited` match."""
+    """Prefer the operating startup in a relation headline.
+
+    An investor/acquirer often leads a headline ("X invests in Y"), while the
+    product only wants Y. Relation-aware title parsing therefore comes before
+    the generic subject-at-the-start and legal-entity fallbacks.
+    """
     meta = pf.parse_meta(html) if html else {}
     candidates: list[str] = []
 
     og_title = meta.get("og:title") or title
     stripped = _PRELUDE.sub("", (og_title or "").strip())
+    target = TARGET_IN_TITLE.search(stripped)
+    if target:
+        candidates.append(target.group("name"))
     match = NAME_IN_TITLE.match(stripped)
     if match:
         candidates.append(match.group("name"))
@@ -147,6 +218,32 @@ def find_company_name(title: str, text: str, html: str, jsonld: dict | None = No
         cleaned = candidate.strip(" ,.-–—")
         if cleaned and len(cleaned) > 1:
             return cleaned
+    return None
+
+
+def find_hq_country(title: str, text: str) -> str | None:
+    """Return an ISO-3166-1 alpha-2 code only for explicit HQ wording."""
+    haystack = "\n".join(part for part in (title or "", text or "") if part)
+    matches = [
+        (match.start(), country)
+        for country, pattern in _HQ_COUNTRY_PATTERNS
+        if (match := pattern.search(haystack)) is not None
+    ]
+    return min(matches)[1] if matches else None
+
+
+def find_one_line_description(text: str, company_name: str) -> str | None:
+    """Return a short, verbatim product sentence rather than inventing one."""
+    if not text or not company_name:
+        return None
+    for match in _SENTENCE.finditer(text):
+        sentence = re.sub(r"\s+", " ", match.group(0)).strip()
+        if not sentence or len(sentence) > 200:
+            continue
+        if company_name.casefold() not in sentence.casefold():
+            continue
+        if _DESCRIPTION_VERB.search(sentence):
+            return sentence
     return None
 
 
@@ -182,6 +279,14 @@ def heuristic_extract(
     else:
         data["rejection_reason"] = "no_company_identified"
         return Extraction.model_validate(data)
+
+    hq_country = find_hq_country(title, text)
+    if hq_country:
+        data["hq_country_iso2"] = hq_country
+
+    description = find_one_line_description(text, name)
+    if description:
+        data["one_line_description"] = description
 
     found = find_amount(title, text)
     if found:

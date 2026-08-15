@@ -88,16 +88,22 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Domain link | `company-domain` | | absent when the company has no domain |
 | Age phrase | `company-age` | `data-exact` | empty when the date is unknown |
 | Scores wrapper | `scores` | | |
-| Fit tile | `score-fit` | `data-value` (**raw**), `data-band` | named, not positional |
-| Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | named, not positional |
+| Fit tile | `score-fit` | `data-value` (**raw**), `data-band` | labelled **Match** in UI; testid unchanged |
+| Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | labelled **Fresh** in UI; testid unchanged |
 | Score number | `score-value` | | rounded display text; two per card |
-| Score label | `score-label` | | `Fit` / `Edge` (uppercase is CSS only) |
+| Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
+| Score hint | `score-hint` | | one-line explainer under the tiles |
+| Fund score grid | `fund-scores` | | all four fund-specific Match values |
+| Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank when unscored or rejected |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |
-| Explanation | `explanation` | | |
+| Explanation | `explanation` | `data-text` (full verbatim sentence), `data-collapsed` | stacked clauses for scanning; `data-text` is the contract |
+| Explanation clause | `explanation-clause` | `data-kind` | one template part; kinds: `found` / `match` / `against` / `unknown` / `warn` / `note` |
+| Explanation more | `explanation-more` | `data-expanded`, `aria-expanded` | present only when there are more than four clauses |
+| Company one-liner | `one-liner` | | absent when `one_liner` is null — never invented |
 | Evidence wrapper | `evidence` | | absent when there are no links |
-| Evidence link | `evidence-link` | `data-kind`, `data-primary` | zero or more; the first carries `data-primary="true"` and renders as a filled blue button — the way back to the source. Links come from `signals` first (they carry a headline to label with), then from `sources` (`company_source`, written for every mention) for any URL not already listed. A registry-only company has neither and shows no link at all. |
+| Evidence link | `evidence-link` | `data-kind`, `data-primary`, `data-primary-source` | every surfaced card has one valid primary source link with `data-primary-source="true"`; additional signal/source links may follow. A company without a valid `company_source` URL is not surfaced on Today. |
 | Footnote row | `card-footnote` | | |
 | Coverage note | `coverage-note` | `data-coverage` | present only when `thin` |
 | Caveat | `caveat` | `data-flag` | raw flag name, e.g. `age_unknown` |
@@ -110,6 +116,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Main region | `today-main` | | carries `aria-live="polite"` |
 | Header date | `today-date` | | hidden below 460px by design |
 | Done state | `done-state` | | |
+| Review Again | `review-again` | | clears only today's review markers; lasting verdicts remain |
 | Empty state | `empty-state` | | |
 
 **`data-value` carries the unrounded number.** Compare *that* against SQLite —
@@ -126,7 +133,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | A1 | `GET /` | 200, `content-type: text/html` |
 | A2 | `GET /api/today` | 200, valid JSON |
 | A3 | Top-level keys | `date`, `companies`, `totals`, `run` all present |
-| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `vehicle`, `tier` |
+| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` has exactly `outward`, `dsw`, `northstar`, `anticus` |
 | A5 | Tier filter | no company has `tier == "reject"` |
 | A6 | Ordering | `priority` is non-increasing across the array |
 | A7 | Tie-break | where `priority` is equal, `coverage` is non-increasing |
@@ -144,7 +151,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B1 | First card renders | exactly one `card` in the DOM |
 | B2 | Name non-empty | `company-name` text length > 0 |
 | B3 | Both tiles exist | `score-fit` and `score-edge` each present exactly once |
-| B4 | Tiles labelled | `score-fit`'s `score-label` is `Fit`; `score-edge`'s is `Edge` |
+| B4 | Tiles labelled | `score-fit`'s `score-label` is `Match`; `score-edge`'s is `Fresh` |
 | B5 | Scores are integers | both `score-value` match `/^\d+$/` |
 | B6 | Fund present | `route-fund` text length > 0 |
 | B7 | Explanation present | `explanation` text length > 20 |
@@ -152,6 +159,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B9 | One current dot | exactly one `progress-dot[data-state="now"]` |
 | B10 | Three buttons | the three `verdict-*` testids each present exactly once |
 | B11 | Bar visible | `verdict-bar` not `hidden` while cards remain |
+| B15 | Four fund matches | exactly four `fund-score` elements; each displayed `data-value` matches the corresponding API `fund_scores[*].fit` |
 
 ### B12 — No placeholder leakage *(high value)*
 
@@ -185,14 +193,14 @@ Reset by reloading the page between tests where noted.
 | C1 | Press `ArrowRight` | `company-name` text changes; the `now` dot moves one right |
 | C2 | Press `ArrowLeft` | returns to the previous card |
 | C3 | `ArrowLeft` on card 1 | no change, no console error |
-| C4 | Press `1` | toast appears containing `worth contacting`; advances one card |
-| C5 | Press `2` | toast contains `unsure`; advances |
+| C4 | Press `1` | toast appears containing `saved to Kept` (and the company name); advances one card |
+| C5 | Press `2` | toast contains `saved to Kept` (and the company name); advances |
 | C6 | Press `3` | toast contains `not for me`; advances |
 | C7 | Click each `button[data-v]` | same behaviour as C4–C6 |
 | C8 | Press `Cmd/Ctrl+Z` after a verdict | returns to the company just decided |
 | C9 | Toast auto-hides | `toast` loses `.show` within 2.5s |
 | C10 | Decide through every card | `verdict-bar` becomes `hidden`; `done-state` appears |
-| C11 | Done state | `done-state` text contains `reviewed`; a `✓` is present |
+| C11 | Done state | `done-state` says `You've reviewed today's companies.` and contains a `✓` |
 | C12 | Keyboard-only run | complete C10 without a single mouse event |
 
 ### C13 — Modifier safety
@@ -200,6 +208,19 @@ Reset by reloading the page between tests where noted.
 With focus on the page, press `Cmd+1` / `Cmd+2` / `Cmd+3`. **No verdict may be
 recorded** — those are browser tab-switch shortcuts. `user_field` row count must
 be unchanged.
+
+### C14 — Refresh does not requeue a decision
+
+1. Note the first card's `data-company-id`.
+2. Press `3` and reload the page.
+3. **Pass:** the same company is not the first card, and the decision remains in
+   `user_field`.
+
+### C15 — Review Again is explicit
+
+1. Decide through the current list until `done-state` appears.
+2. Click `button[data-testid="review-again"]`.
+3. **Pass:** the first card returns, and its lasting verdict is unchanged.
 
 ---
 
@@ -213,10 +234,14 @@ sqlite3 -json /tmp/test-run.db "
   SELECT c.canonical_name, s.fund_fit_pct, s.discovery_edge, s.coverage,
          s.priority, s.explanation, s.tier
     FROM score s JOIN company c ON c.id = s.company_id
-    JOIN (SELECT company_id, MAX(priority) b FROM score
-           WHERE tier IN ('shortlist','watchlist') GROUP BY company_id) t
+    JOIN (SELECT s2.company_id, MAX(s2.priority) b
+            FROM score s2 JOIN company c2 ON c2.id = s2.company_id
+           WHERE s2.tier IN ('shortlist','watchlist')
+             AND c2.incorporated_on IS NOT NULL
+           GROUP BY s2.company_id) t
       ON t.company_id = s.company_id AND t.b = s.priority
    WHERE s.tier IN ('shortlist','watchlist')
+     AND c.incorporated_on IS NOT NULL
    ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name LIMIT 5;"
 ```
 
@@ -225,7 +250,7 @@ sqlite3 -json /tmp/test-run.db "
 | D1 | Name | `company-name` == `canonical_name`, exactly |
 | D2 | Fit, raw | `score-fit` `data-value` == `fund_fit_pct` **exactly** (no rounding) |
 | D3 | Edge, raw | `score-edge` `data-value` == `discovery_edge` **exactly** |
-| D4 | Explanation verbatim | `explanation` text == DB `explanation`, character for character |
+| D4 | Explanation verbatim | `explanation` `data-text` == DB `explanation`, character for character; joining every `explanation-clause` with a space reconstructs the same string |
 | D5 | Display rounding | each `score-value` == `Math.round(data-value)` of its own tile |
 | D6 | Coverage passthrough | `card` `data-coverage` == DB `coverage` exactly |
 | D7 | Amber tint ⇔ coverage | `card[data-thin="true"]` **iff** `coverage < 0.5` |
@@ -312,7 +337,7 @@ backgrounds. **Pass:** ≥ 4.5:1 for body text, ≥ 3:1 for text ≥ 24px.
 | E2 | `/api/verdict` returns 500 | stub the route to fail; the UI must not advance silently *(current behaviour is unverified — record what actually happens)* |
 | E3 | Slow API | throttle to 3s; no duplicate render, no flash of broken layout |
 | E4 | Double keypress | press `1` twice within 100ms; **exactly one** `user_field` row is written |
-| E5 | Reload mid-review | verdicts already given persist in the DB |
+| E5 | Reload mid-review | verdicts already given persist in the DB and decided companies stay out of Today |
 | E6 | Console clean | zero `error`-level console messages across a full run |
 | E7 | Network clean | no 4xx/5xx in the network log except those deliberately provoked in A9–A11 |
 

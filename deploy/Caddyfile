@@ -1,0 +1,53 @@
+# /etc/caddy/Caddyfile
+#
+# TLS and the password, in front of `founder-radar-web.service`.
+#
+# Caddy rather than nginx + certbot for one reason that matters on a 1 vCPU
+# box: certificates are automatic and renew themselves. A scout who cannot
+# open the site because a cert expired is a worse failure than any of the
+# ones the pipeline guards against, and it is the failure most likely to
+# happen while nobody is looking.
+#
+# Two values come from the environment, both set in /opt/founder-radar/.env:
+#
+#   RADAR_WEB_DOMAIN     radar.example.com
+#   RADAR_WEB_USER       scout
+#   RADAR_WEB_PASS_HASH  bcrypt hash from `caddy hash-password`
+#
+# The hash is a hash: it is safe in the env file (mode 600) and is NOT the
+# password. Generate it on the box and never write the plaintext anywhere:
+#
+#   caddy hash-password --plaintext 'the-password-you-chose'
+#
+# Aryan gets the password over a channel that is not this repo, not a commit
+# message, and not a chat thread — 08-deployment's own rule about the Google
+# service-account key applies to every credential this project touches.
+
+{$RADAR_WEB_DOMAIN} {
+	encode gzip
+
+	# Basic auth over TLS. One user, one password — a login system for a
+	# single scout would be ceremony, and this is the control the spec's
+	# "no web server" note was protecting against having to design.
+	basic_auth {
+		{$RADAR_WEB_USER} {$RADAR_WEB_PASS_HASH}
+	}
+
+	# The app binds loopback only, so this proxy is the sole way in.
+	reverse_proxy 127.0.0.1:8787
+
+	# The review queue is per-morning and the verdict write must never be
+	# served from a cache.
+	header {
+		Cache-Control "no-store"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/founder-radar.log
+		format console
+	}
+}
