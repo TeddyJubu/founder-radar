@@ -203,6 +203,22 @@ def test_heuristic_fallback_when_llm_unavailable():
     assert got.is_about_single_company is True
 
 
+def test_heuristic_extracts_explicit_location_and_business_summary():
+    """The fallback path must identify where the company is and what it does."""
+    from radar.extract.heuristic import heuristic_extract
+
+    got = heuristic_extract(
+        title="Dubai-based Acme launches warehouse robotics platform",
+        text=("Acme is a Dubai-based company that builds warehouse robots for "
+               "small logistics teams."),
+    )
+
+    assert got.hq_country_iso2 == "AE"
+    assert got.one_line_description == (
+        "Acme is a Dubai-based company that builds warehouse robots for small logistics teams."
+    )
+
+
 def test_no_llm_flag_uses_heuristic_without_a_provider():
     """`use_llm=False` — the `--no-llm` half of the same switch — produces a
     complete heuristic record with zero AI cost."""

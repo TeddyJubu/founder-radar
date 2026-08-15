@@ -172,12 +172,11 @@ def test_b15_four_fund_match_scores_are_visible(today, api):
     scores = today.locator(tid("fund-score"))
     assert scores.count() == 4
 
-    displayed = {
-        scores.nth(i).get_attribute("data-fund"): float(
-            scores.nth(i).get_attribute("data-value")
-        )
-        for i in range(scores.count())
-    }
+    displayed = {}
+    for i in range(scores.count()):
+        raw = scores.nth(i).get_attribute("data-value")
+        if raw:
+            displayed[scores.nth(i).get_attribute("data-fund")] = float(raw)
     expected = {
         score["fund_key"]: score["fit"]
         for score in api["companies"][0]["fund_scores"]
@@ -374,10 +373,10 @@ def test_d4c_ledger_shows_every_scored_rule_and_never_calls_unknown_a_failure(to
     the two drift apart and the ledger starts calling a criterion a match
     while the sentence below it says "Against:".
 
-    The `unknown` case is the one that matters most. The full-model fit keeps
-    an unconfirmed fact in the denominator but never treats it as a failure;
-    a UI that draws `sub_score = None` with the same mark as `sub_score = 0`
-    puts that back, visually, on every card.
+    The `unknown` case is the one that matters most. The full-model percentage
+    keeps an unconfirmed fact in the denominator without treating it as a
+    failure; a UI that draws `sub_score = None` with the same mark as
+    `sub_score = 0` puts that back, visually, on every card.
     """
     components = api["companies"][0]["components"]
     rows = today.locator(tid("criterion"))

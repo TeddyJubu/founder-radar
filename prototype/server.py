@@ -526,7 +526,10 @@ def _fund_score_payload(
         scores.append({
             "fund_key": fund.key,
             "fund_name": fund.name,
-            "fit": row["fund_fit_pct"] if row else None,
+            # A rejected fund is not a 0% match: it failed an eligibility gate
+            # such as age, geography, or funding. Keep that distinction visible
+            # in the breakdown rather than presenting false precision.
+            "fit": row["fund_fit_pct"] if row and row["tier"] != "reject" else None,
             "coverage": row["coverage"] if row else None,
             "tier": row["tier"] if row else "unscored",
             "reject_reason": row["reject_reason"] if row else None,
@@ -537,6 +540,8 @@ def _fund_score_payload(
 
 
 def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
+    from radar.score.gates import apply_freshness_gates
+
     config = _config()
     vehicles = _vehicles()
     today = date.today()
@@ -558,7 +563,9 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                   s.explanation, s.flags,
                   c.canonical_name, c.domain, c.website_url, c.hq_city,
                   c.hq_region, c.incorporated_on, c.sector, c.stage,
-                  c.one_liner, c.discovery_route, c.companies_house_no
+                  c.one_liner, c.discovery_route, c.companies_house_no,
+                  c.hq_postcode, c.country_iso2, c.total_funding_gbp,
+                  c.on_vc_portfolio
              FROM score s
              JOIN company c ON c.id = s.company_id
              JOIN (SELECT company_id, MAX(priority) best
@@ -585,8 +592,8 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             -- first. Age is a prerequisite for this surface; an unknown-age
             -- row stays in the research pool until enrichment verifies it.
             ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name
-            LIMIT ?""",
-        (*REVIEWABLE, *REVIEWABLE, review_date, limit),
+            """,
+        (*REVIEWABLE, *REVIEWABLE, review_date),
     ).fetchall()
 
     verdicts = {
@@ -597,6 +604,17 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
 
     out = []
     for r in rows:
+        if len(out) >= limit:
+            break
+
+        # A score row can outlive a configuration change or a failed rescore.
+        # Re-apply the authoritative universal gates at this acceptance
+        # boundary so old, funded, foreign, or unknown-age companies cannot
+        # leak into the opportunity queue through a stale watchlist row.
+        freshness = apply_freshness_gates(r, config, today=today)
+        if not freshness.passed or freshness.flags:
+            continue
+
         vehicle = vehicles.get(r["vehicle_key"] or "", {})
         phrase, exact = _age_phrase(r["incorporated_on"], today)
 

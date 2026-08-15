@@ -1,4 +1,4 @@
-"""09-test-plan §2.2 — the scoring engine: evidence-aware percentage,
+"""09-test-plan §2.2 — the scoring engine: derivation, full-model percentage,
 the unknown-never-zero invariant, reproducibility and the worked example."""
 
 from __future__ import annotations
@@ -64,6 +64,8 @@ METZERO_FIXTURE = Company(
 
 def test_worked_example_metzero(cfg):
     """Every number in 06-scoring.md §11, asserted."""
+    # The worked example is dated, so freeze the age-sensitive Fresh score
+    # instead of letting it drift as the calendar advances.
     s = score_all(METZERO_FIXTURE, cfg, today=date(2026, 8, 12))
     assert s["northstar"].vehicle_key    == "spinout_inspire"
     assert s["northstar"].fund_fit_pct   == pytest.approx(92.2, abs=0.1)
@@ -84,7 +86,7 @@ def test_worked_example_metzero(cfg):
 
 
 def test_unknown_criteria_stay_in_the_fit_denominator(cfg):
-    """Unknown criteria lower confidence, rather than disappearing from fit."""
+    """Unknown criteria lower confidence rather than disappearing from fit."""
     company = C(sector="climate_tech", stage=None, geography=None,
                 founder_signal=None, traction_signal=None)
     before = fund_fit(company, cfg.fund("northstar"), cfg)
@@ -104,11 +106,8 @@ def test_unknown_never_becomes_zero(cfg):
     assert comp.evidence == "unknown"
 
 
-def test_sparse_evidence_cannot_look_like_a_perfect_match(cfg):
-    """The headline fit includes unknown criteria in its denominator.
-
-    This prevents a company with only two confirmed criteria from displaying
-    100 Match, while coverage still says exactly how much evidence exists.
+def test_one_known_attribute_cannot_shortlist(cfg):
+    """A sparse company must not look like a perfect fit.
     NOTE geography is present — a NULL region would trip min_uk_presence
     and make this a reject, testing the wrong thing."""
     c = C(sector="climate_tech", geography="north_east",
