@@ -4,6 +4,11 @@
 
 The command line is the real interface. Telegram calls it. The Sheet is rendered by it. Nothing is trapped inside the chat layer.
 
+The local web prototype (`/`, `/kept`, and `/dashboard`) is a read-only review
+surface around the same SQLite state, with verdicts as its only user-owned
+write. It does not replace the command line, Google Sheet, or Telegram as the
+production interfaces.
+
 ---
 
 ## 1. The Google Sheet
