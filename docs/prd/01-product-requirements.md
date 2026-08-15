@@ -55,7 +55,7 @@ The first row is the headline. Version 1 failed on it, twice. Everything else is
 | Product Hunt | API has commercial-use restrictions; normal scraping is blocked. |
 | Automated outreach or email sending | Aryan writes his own messages. The system finds and ranks; it does not contact. |
 | Insider Media, BusinessLive | Verified blocked by bot protection / robots.txt. Explicit exclusion so no time is wasted. |
-| A web dashboard | The Google Sheet **is** the dashboard. Adding a second UI doubles the surface for no gain. |
+| A full web dashboard replacing the Sheet | The Google Sheet **is** the production dashboard. The prototype's lightweight read-only Today / Kept / Dashboard pages are an operations surface, not a second editable system. |
 | Company financials, cap tables, valuations | Not available free at this stage of company life. |
 
 ---

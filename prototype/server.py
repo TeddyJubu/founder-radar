@@ -30,7 +30,7 @@ import sqlite3
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).resolve().parent
 
@@ -45,6 +45,11 @@ def _is_http_url(value: str | None) -> bool:
         return False
     parsed = urlsplit(str(value).strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _source_name(key: str | None) -> str:
+    """Turn a stored source key into the human-readable label used in links."""
+    return str(key or "source").replace("_", " ").title()
 
 
 def _conn(db_path: str) -> sqlite3.Connection:
@@ -639,6 +644,7 @@ def build_kept_table(conn: sqlite3.Connection) -> list[dict]:
         out.append({
             "company_id": r["company_id"],
             "name": r["canonical_name"],
+            "one_liner": r["one_liner"] or "",
             "verdict": (r["verdict"] or "").strip().lower(),
             "decided": str(r["updated_at"] or "")[:10],
             "found": str(r["first_seen"] or "")[:10],
@@ -662,7 +668,7 @@ def render_kept_table(conn: sqlite3.Connection) -> str:
     for c in rows:
         srcs = "".join(
             f'<a class="lnk" href="{escape(s["source_url"])}" target="_blank" '
-            f'rel="noopener">{escape(sourceName(s["source_key"]))} ↗</a>'
+            f'rel="noopener">{escape(_source_name(s["source_key"]))} ↗</a>'
             for s in c["sources"]
             if str(s["source_url"] or "").startswith(("http://", "https://"))) or "—"
         sigs = "<br>".join(
@@ -985,6 +991,18 @@ def make_handler(conn: sqlite3.Connection):
                 page = (HERE / "kept.html").read_text(encoding="utf-8")
                 page = page.replace("<!--KEPT_INTRO-->", render_kept_intro(conn))
                 page = page.replace("<!--KEPT_ROWS-->", render_kept_rows(conn))
+                self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            elif urlsplit(self.path).path in ("/dashboard", "/dashboard.html"):
+                parsed = urlsplit(self.path)
+                query = parse_qs(parsed.query)
+                year, month = _parse_month(
+                    query.get("m", [None])[0], date.today())
+                page = (HERE / "dashboard.html").read_text(encoding="utf-8")
+                page = page.replace(
+                    "<!--CALENDAR-->",
+                    render_calendar(conn, year, month, date.today()),
+                )
+                page = page.replace("<!--KEPT_TABLE-->", render_kept_table(conn))
                 self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path in ("/help", "/help.html", "/ops"):
                 self._send(200, (HERE / "help.html").read_bytes(),
