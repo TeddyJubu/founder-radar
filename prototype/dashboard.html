@@ -1,0 +1,146 @@
+<!doctype html>
+<!--
+  Calendar of everything dated, and the table of what has been kept.
+  Server-rendered: `render_calendar` and `render_kept_table` in server.py
+  replace the placeholders. No JavaScript, for the same reason as /kept and the
+  onboarding fund rules — month navigation is a link, which the browser already
+  does well.
+-->
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dashboard — UK Founder Radar</title>
+<link rel="stylesheet" href="/tokens.css">
+<style>
+body {
+  margin: 0; background: var(--bg); color: var(--label);
+  font: var(--body)/var(--body-lh) var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: var(--s6) var(--s5) var(--s7); }
+
+header {
+  display: flex; align-items: baseline; gap: var(--s4);
+  padding-bottom: var(--s5); border-bottom: 0.5px solid var(--separator);
+}
+h1 { font-size: var(--title1); margin: 0; letter-spacing: -0.02em; }
+.nav { margin-left: auto; display: flex; gap: var(--s4); }
+.nav a { color: var(--blue); text-decoration: none; font-size: var(--subhead); }
+.nav a:hover { text-decoration: underline; }
+
+section { margin-top: var(--s6); }
+.lede { color: var(--label-2); font-size: var(--subhead); margin: 0 0 var(--s4); }
+
+/* ---------------------------------------------------------------- calendar */
+.cal-head { display: flex; align-items: center; gap: var(--s4); margin-bottom: var(--s3); }
+.cal-head h2 { font-size: var(--headline); margin: 0; }
+.cal-nav {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--fill); color: var(--label-2); text-decoration: none;
+}
+.cal-nav:hover { background: color-mix(in srgb, var(--blue) 16%, var(--fill)); color: var(--blue); }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow {
+  font-size: var(--caption); color: var(--label-3); text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 0 0 4px 2px;
+}
+.cal-day {
+  min-height: 78px; padding: 6px; border-radius: 10px;
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.cal-day.out { opacity: 0.32; }
+.cal-day.today { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+/* A day containing something Aryan kept is the one worth finding again. */
+.cal-day.has-kept { background: color-mix(in srgb, var(--green) 12%, var(--bg-3)); }
+.cal-n { font-size: var(--caption); color: var(--label-3); font-variant-numeric: tabular-nums; }
+
+.m {
+  display: flex; align-items: baseline; gap: 4px;
+  font-size: var(--caption); line-height: 1.25; font-variant-numeric: tabular-nums;
+  border-radius: 5px; padding: 1px 4px;
+}
+.m i { font-style: normal; opacity: 0.75; overflow: hidden; text-overflow: ellipsis;
+       white-space: nowrap; }
+.m-found        { background: color-mix(in srgb, var(--blue) 20%, transparent); }
+.m-incorporated { background: color-mix(in srgb, var(--orange) 22%, transparent); }
+.m-signal       { background: color-mix(in srgb, var(--label) 12%, transparent); }
+.m-decided      { background: color-mix(in srgb, var(--green) 24%, transparent); }
+
+.legend { display: flex; flex-wrap: wrap; gap: var(--s4); margin-top: var(--s3);
+          font-size: var(--caption); color: var(--label-2); }
+.legend span::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 3px;
+  margin-right: 5px; vertical-align: -1px;
+}
+.lg-found::before        { background: color-mix(in srgb, var(--blue) 45%, transparent); }
+.lg-incorporated::before { background: color-mix(in srgb, var(--orange) 50%, transparent); }
+.lg-signal::before       { background: color-mix(in srgb, var(--label) 30%, transparent); }
+.lg-decided::before      { background: color-mix(in srgb, var(--green) 55%, transparent); }
+.lg-kept::before         { background: color-mix(in srgb, var(--green) 30%, var(--bg-3));
+                           border: 1px solid var(--separator); }
+
+/* ------------------------------------------------------------------- table */
+table { width: 100%; border-collapse: collapse; font-size: var(--subhead); }
+th {
+  text-align: left; font-size: var(--caption); text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--label-3); font-weight: 600;
+  padding: 0 var(--s3) var(--s2); border-bottom: 0.5px solid var(--separator);
+}
+td { padding: var(--s3); border-bottom: 0.5px solid var(--separator); vertical-align: top; }
+td.nm { font-weight: 600; }
+td.nm .sub { display: block; font-weight: 400; color: var(--label-2); font-size: var(--footnote); }
+td.dt, td.sig { font-variant-numeric: tabular-nums; color: var(--label-2); font-size: var(--footnote); }
+.pill { border-radius: 999px; padding: 2px 9px; font-size: var(--caption); white-space: nowrap; }
+.v-worth-contacting { background: color-mix(in srgb, var(--green) 22%, transparent); color: var(--green); }
+.v-unsure { background: var(--fill); color: var(--label-2); }
+.lnk { color: var(--blue); text-decoration: none; margin-right: var(--s3); }
+.lnk:hover { text-decoration: underline; }
+.empty { color: var(--label-2); }
+
+@media (max-width: 720px) {
+  .cal-day { min-height: 58px; }
+  .m i { display: none; }
+  table { font-size: var(--footnote); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" data-testid="dashboard">
+  <header>
+    <h1>Dashboard</h1>
+    <nav class="nav">
+      <a href="/" data-testid="nav-today">Today</a>
+      <a href="/kept" data-testid="nav-kept">Kept</a>
+    </nav>
+  </header>
+
+  <section data-testid="section-calendar">
+    <p class="lede">Every dated thing the system holds. A day with no marks is a
+       quiet day, not a missing one — and coverage is uneven, because
+       incorporation and signal dates are only as good as what the register and
+       the sources gave us.</p>
+    <!--CALENDAR-->
+    <div class="legend">
+      <span class="lg-found">first seen</span>
+      <span class="lg-incorporated">incorporated</span>
+      <span class="lg-signal">signal</span>
+      <span class="lg-decided">you decided</span>
+      <span class="lg-kept">day includes something you kept</span>
+    </div>
+  </section>
+
+  <section data-testid="section-kept-table">
+    <h2>Kept</h2>
+    <p class="lede">What you have chosen, where it came from, and every date
+       attached to it.</p>
+    <!--KEPT_TABLE-->
+  </section>
+</div>
+</body>
+</html>

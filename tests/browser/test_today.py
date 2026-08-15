@@ -686,6 +686,26 @@ def test_k5_help_page_is_reachable_from_kept(page, server, api):
     assert "user_field" in text
 
 
+def test_k6_dashboard_route_renders_calendar_and_kept_history(page, server, api):
+    """The dashboard route is real, navigable, and renders its server data."""
+    company_id = api["companies"][0]["company_id"]
+    assert _post(server, {"company_id": company_id,
+                          "verdict": "worth contacting"})[0] == 200
+
+    page.goto(server + "/", wait_until="networkidle")
+    page.locator(tid("nav-dashboard")).click()
+    page.wait_for_selector(tid("dashboard"))
+
+    assert page.locator(tid("section-calendar")).count() == 1
+    assert page.locator(tid("calendar")).count() == 1
+    assert page.locator(tid("kept-table")).count() == 1
+    assert page.locator(f'{tid("kept-table-row")}['
+                       f'data-company-id="{company_id}"]').count() == 1
+
+    page.locator(tid("nav-kept")).click()
+    page.wait_for_selector(tid("kept"))
+
+
 def test_x4b_hostile_source_text_cannot_run_script(today):
     """Every string on this card is scraped off somebody else's site.
 
