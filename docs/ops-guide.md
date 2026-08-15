@@ -16,7 +16,7 @@ Google Sheet (config + optional company mirror)
         ▼
   founder-radar run  →  SQLite (companies, scores, verdicts)
         │
-        ├──▶ Today / Kept web UI   (review + your picks)
+        ├──▶ Today / Kept / Dashboard web UI (review, picks + history)
         ├──▶ Google Sheet render   (Today / Companies / Sources / …)
         └──▶ Telegram digest       (morning ping + /commands → same CLI)
 ```
@@ -24,7 +24,7 @@ Google Sheet (config + optional company mirror)
 | Surface | Role | What it owns |
 |---|---|---|
 | **Google Sheet** | Editable brain + optional export | Fund Criteria, Scoring Weights, Settings, Sources; Companies Z–AC when synced |
-| **This web UI** (`prototype/`) | Primary place to review and keep companies | Writes only to `user_field` (verdicts) |
+| **This web UI** (`prototype/`) | Primary place to review, keep, and revisit companies | Writes only to `user_field` (verdicts) |
 | **Telegram** | Delivery + remote control | Digest text and CLI shortcuts; no separate store |
 
 The CLI (`founder-radar …`) is the real interface. Telegram calls it; the sheet
@@ -38,10 +38,13 @@ is rendered by it; the prototype reads the same database.
 |---|---|---|
 | **Engine shortlist** | `score.tier = 'shortlist'` — cleared fit / edge / coverage bars | System opinion; moves when thresholds change |
 | **Kept** | Your “worth contacting” / “unsure” picks | SQLite `user_field` where `field = 'verdict'`; page **`/kept`** |
+| **Dashboard** | Month-by-month history of dated events and kept companies | Read-only page **`/dashboard`** |
 
 - On **Today**, press **1** (Worth contacting) or **2** (Unsure) → saved immediately.
 - **3** (Not for me) is stored for tuning but **never** listed on Kept.
 - The **Kept** badge on Today is `COUNT` of those two verdicts.
+- **Dashboard** shows first-seen, incorporation, signal, and decision dates;
+  use its month arrows to move through the history without changing data.
 - Sheet column **Z (Verdict)** is an **optional mirror** after sync — not the
   primary list you have to open in Excel.
 
@@ -118,7 +121,7 @@ founder-radar sync-sheet
 
 1. Open **Today** in the web UI after the morning run (or after Telegram pings).
 2. Decide with 1 / 2 / 3. Kept updates live; open **Kept** to track everything
-   you have saved.
+   you have saved, or **Dashboard** to revisit the dated history.
 3. Optionally use the sheet for bulk notes, outreach tracking (Outreach tab),
    or deeper config edits — not required for the pick list.
 4. Use Telegram for the digest and remote `/run` / `/status` when away from the

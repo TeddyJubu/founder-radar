@@ -11,9 +11,12 @@ from datetime import date
 
 from prototype.server import (
     build_kept,
+    build_kept_table,
     build_today,
     kept_count,
+    render_calendar,
     reset_daily_review,
+    render_kept_table,
     render_kept_intro,
     render_kept_rows,
     set_verdict,
@@ -152,3 +155,29 @@ def test_set_verdict_returns_kept_count(db):
     assert set_verdict(db.conn, ids[0], "worth contacting") == 1
     assert set_verdict(db.conn, ids[0], "not for me") == 0
     assert set_verdict(db.conn, ids[1], "unsure") == 1
+
+
+def test_dashboard_kept_table_renders_dates_and_source_labels(db):
+    ids = seed_companies(db, count=1, shortlist=1)
+    set_verdict(db.conn, ids[0], "worth contacting")
+
+    rows = build_kept_table(db.conn)
+    html = render_kept_table(db.conn)
+
+    assert rows[0]["company_id"] == ids[0]
+    assert rows[0]["sources"][0]["source_key"] == "uktn"
+    assert 'data-testid="kept-table"' in html
+    assert "Company 0001 Ltd" in html
+    assert "Uktn" in html
+
+
+def test_dashboard_calendar_marks_a_kept_company(db):
+    ids = seed_companies(db, count=1, shortlist=1)
+    set_verdict(db.conn, ids[0], "worth contacting")
+    first_seen = date.fromisoformat(
+        db.scalar("SELECT substr(first_seen, 1, 10) FROM company WHERE id = ?", (ids[0],)))
+
+    html = render_calendar(db.conn, first_seen.year, first_seen.month, first_seen)
+
+    assert f"data-date='{first_seen.isoformat()}'" in html
+    assert 'data-kept="true"' in html
