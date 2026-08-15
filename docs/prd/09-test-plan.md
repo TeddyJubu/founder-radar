@@ -160,12 +160,12 @@ Plus the transitive-chain case: A~B = 93, B~C = 93, A~C = 78. **Assert A and C d
 ### 2.2 Scoring — `test_scoring_*`
 
 ```python
-def test_percentage_of_known_not_raw_sum():
-    """Adding a criterion must not inflate every existing score."""
+def test_unknown_criteria_stay_in_the_full_model_denominator():
+    """Unknown criteria lower confidence rather than disappearing."""
     before = fund_fit(company, fund, cfg)
     cfg2   = cfg.with_extra_criterion(weight=3)
     after  = fund_fit(company, fund, cfg2)
-    assert abs(before.pct - after.pct) < 1.0
+    assert after.pct < before.pct
 
 def test_unknown_never_becomes_zero():
     """The single most important invariant in the scoring code."""
@@ -175,14 +175,13 @@ def test_unknown_never_becomes_zero():
     assert comp.evidence == "unknown"
 
 def test_one_known_attribute_cannot_shortlist():
-    """Without a coverage floor, the shortlist fills with companies we
-    know nothing about. This is the trap percentage-of-known creates.
+    """A sparse company must not look like a perfect fit.
     NOTE geography is present — a NULL region would trip min_uk_presence
     and make this a reject, testing the wrong thing."""
     c = C(sector="climate_tech", geography="north_east",
           stage=None, founder_signal=None, traction_signal=None)
     s = score_one(c, fund="northstar")
-    assert s.fund_fit_pct == 100.0
+    assert s.fund_fit_pct == 50.0
     assert s.coverage < 0.5
     assert s.tier == "watchlist"           # NOT shortlist
 

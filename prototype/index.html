@@ -144,6 +144,29 @@ h2 {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-3); text-align: right;
 }
+.fund-scores {
+  width: 100%; max-width: 360px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+}
+.fund-score {
+  min-width: 0; padding: 6px 4px 5px;
+  background: var(--fill); border: 0.5px solid var(--separator);
+  border-radius: var(--r-control); text-align: center; cursor: help;
+}
+.fund-score .n {
+  font-size: 16px; line-height: 19px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fund-score .k {
+  margin-top: 2px; font-size: 10px; line-height: 12px;
+  color: var(--label-2); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fund-score.high .n { color: var(--green); }
+.fund-score.mid .n { color: var(--label); }
+.fund-score.low .n { color: var(--orange); }
+.fund-score[data-tier="reject"] .n,
+.fund-score[data-tier="unscored"] .n { color: var(--label-3); }
 .score.high .n { color: var(--green); }
 .score.mid  .n { color: var(--label); }
 .score.low  .n { color: var(--orange); }
@@ -407,6 +430,10 @@ button.no  { color: var(--red); }
   color: var(--blue); text-decoration: none; font-weight: 500;
 }
 .done-state a:hover { text-decoration: underline; }
+.done-state .review-again {
+  display: inline-block; width: auto; margin-top: var(--s3);
+  color: var(--blue); font-weight: 600;
+}
 
 .toast {
   position: fixed; left: 50%; bottom: var(--s8);
@@ -450,6 +477,7 @@ button.no  { color: var(--red); }
   .score .n { font-size: 26px; line-height: 30px; }
   .score-fit .n { font-size: 28px; line-height: 32px; }
   .score-hint { max-width: none; text-align: left; }
+  .fund-scores { max-width: none; }
   h2 { font-size: 26px; line-height: 32px; }
   .blurb { font-size: var(--subhead); line-height: 21px; margin-top: var(--s4); }
   .why-clause { font-size: var(--footnote); line-height: 18px; }
@@ -460,6 +488,7 @@ button.no  { color: var(--red); }
 @media (max-width: 460px) {
   .date { display: none; }             /* the header already says Today */
   button .kbd { display: none; }       /* no hardware keyboard to hint at */
+  .fund-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
 </head>
@@ -488,7 +517,7 @@ button.no  { color: var(--red); }
 
 <script>
 const $ = (s) => document.querySelector(s);
-let data = null, i = 0, history = [];
+let data = null, i = 0, history = [], sessionReviewed = new Set();
 
 const fmtMoney = (n) =>
   n == null ? null : "£" + (n >= 1e6 ? (n/1e6).toFixed(n % 1e6 ? 1 : 0) + "m"
@@ -590,8 +619,8 @@ const LED_POSITIVE_AT = 0.6;
 const LED_NEGATIVE_AT = 0.34;
 
 // `sub_score` is null when nothing was found, which is not the same as zero.
-// 06-scoring's whole percentage-of-known rule rests on that distinction, so
-// the UI keeps it: an unknown never renders as a failure.
+// The full-model percentage keeps unknown criteria in its denominator, so the
+// UI keeps the distinction: an unknown never renders as a guessed failure.
 function ledStatus(component) {
   const s = component.sub_score;
   if (s === null || s === undefined) return "unknown";
@@ -666,6 +695,33 @@ function renderCriteria(c) {
   </div>`;
 }
 
+function renderFundScores(c) {
+  const scores = Array.isArray(c.fund_scores) ? c.fund_scores : [];
+  if (!scores.length) return "";
+  return `<div class="fund-scores" data-testid="fund-scores" aria-label="Match score by fund">
+    ${scores.map(s => {
+      const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
+      const hasFit = Number.isFinite(value);
+      const display = hasFit ? `${Math.round(value)}%` : "—";
+      const coverage = s.coverage === null || s.coverage === undefined
+        ? "" : ` · ${Math.round(Number(s.coverage) * 100)}% evidence`;
+      const status = s.tier === "reject"
+        ? ` · ${s.reject_reason || "not eligible"}` : "";
+      const title = `${s.fund_name || s.fund_key}: ${display} match${coverage}${status}`;
+      const tone = hasFit ? band(value, 70, 45) : "low";
+      return `<div class="fund-score ${tone}" data-testid="fund-score"
+                   data-fund="${esc(s.fund_key)}"
+                   data-value="${hasFit ? esc(s.fit) : ""}"
+                   data-coverage="${s.coverage == null ? "" : esc(s.coverage)}"
+                   data-tier="${esc(s.tier || "unscored")}"
+                   title="${esc(title)}">
+                 <div class="n">${display}</div>
+                 <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+               </div>`;
+    }).join("")}
+  </div>`;
+}
+
 function renderExplanation(text) {
   const raw = String(text || "").trim();
   const clauses = explanationClauses(raw);
@@ -719,6 +775,14 @@ function safeUrl(value) {
 function articleLinks(c) {
   const seen = new Set();
   const out = [];
+  if (c.source_url && !seen.has(c.source_url)) {
+    seen.add(c.source_url);
+    out.push({
+      url: c.source_url,
+      label: `Found at ${sourceName(c.source_key)}`,
+      kind: "source",
+    });
+  }
   for (const s of c.signals || []) {
     if (!s.source_url || seen.has(s.source_url)) continue;
     seen.add(s.source_url);
@@ -741,6 +805,23 @@ function renderKeptBadge(n) {
   el.hidden = count === 0;
 }
 
+function renderDone() {
+  const main = $("#main"), footer = $("#footer");
+  const pending = data?.companies || [];
+  const kept = Number(data.totals?.kept) || 0;
+  const reviewed = Number(data.totals?.reviewed_today) || pending.length;
+  const keptLine = kept
+    ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. The sheet is optional sync, not the primary list.</p>`
+    : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
+  main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
+    <h2>You've reviewed today's companies.</h2>
+    <p>${reviewed} ${reviewed === 1 ? "company" : "companies"} reviewed today. Verdicts saved for the next tuning sweep.</p>
+    ${keptLine}
+    <button class="review-again" data-testid="review-again" type="button">Review Again</button></div>`;
+  footer.hidden = true;
+  renderDots();
+}
+
 function render() {
   const main = $("#main"), footer = $("#footer");
   if (!data) return;
@@ -749,20 +830,15 @@ function render() {
 
   const pending = data.companies;
   if (!pending.length) {
+    if (Number(data.totals?.reviewed_today) > 0) {
+      renderDone(); return;
+    }
     main.innerHTML = `<div class="empty" data-testid="empty-state"><h2>Nothing to review</h2>
       <p style="color:var(--label-2)">No company cleared the gates in the last run.</p></div>`;
     footer.hidden = true; renderDots(); return;
   }
   if (i >= pending.length) {
-    const kept = Number(data.totals?.kept) || 0;
-    const keptLine = kept
-      ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. The sheet is optional sync, not the primary list.</p>`
-      : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
-    main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
-      <h2>That's the morning</h2>
-      <p>${pending.length} companies reviewed. Verdicts saved for the next tuning sweep.</p>
-      ${keptLine}</div>`;
-    footer.hidden = true; renderDots(); return;
+    renderDone(); return;
   }
 
   const c = pending[i];
@@ -787,6 +863,7 @@ function render() {
   const evidence = articleLinks(c).filter(a => safeUrl(a.url)).map((a, i) =>
     `<a class="ev${i === 0 ? " primary" : ""}" data-testid="evidence-link"
         data-kind="${esc(a.kind)}"${i === 0 ? ' data-primary="true"' : ""}
+        ${a.kind === "source" && i === 0 ? 'data-primary-source="true"' : ""}
         href="${safeUrl(a.url)}" target="_blank" rel="noopener">
        ${esc(a.label)} <span class="chev">↗</span></a>`
   ).join("");
@@ -836,6 +913,7 @@ function render() {
               <div class="k" data-testid="score-label">Fresh</div></div>
           </div>
           <div class="score-hint" data-testid="score-hint">Match = fund fit · Fresh = new to them</div>
+          ${renderFundScores(c)}
         </div>
       </div>
 
@@ -881,11 +959,19 @@ function toast(msg) {
 async function decide(verdict) {
   const c = data.companies[i];
   if (!c) return;
+  if (sessionReviewed.has(c.company_id)) return;
+  sessionReviewed.add(c.company_id);
   history.push({ index: i, company_id: c.company_id });
   const res = await fetch("/api/verdict", {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ company_id: c.company_id, verdict }),
   });
+  if (!res.ok) {
+    history.pop();
+    sessionReviewed.delete(c.company_id);
+    toast("Couldn't save that decision");
+    return;
+  }
   let kept = data.totals?.kept;
   try {
     const body = await res.json();
@@ -899,12 +985,18 @@ async function decide(verdict) {
   } else {
     toast(`${c.name} — ${verdict}`);
   }
-  i += 1; render();
+  i += 1;
+  if (i >= data.companies.length) {
+    await loadToday();
+  } else {
+    render();
+  }
 }
 
 function undo() {
   const last = history.pop();
   if (!last) return;
+  sessionReviewed.delete(last.company_id);
   i = last.index; render(); toast("Undone");
 }
 
@@ -914,21 +1006,43 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "1") return decide("worth contacting");
   if (e.key === "2") return decide("unsure");
   if (e.key === "3") return decide("not for me");
-  if (e.key === "ArrowRight") { if (i < (data?.companies?.length || 0)) { i += 1; render(); } }
-  if (e.key === "ArrowLeft")  { if (i > 0) { i -= 1; render(); } }
+  if (e.key === "ArrowRight") {
+    if (i + 1 < (data?.companies?.length || 0)) { i += 1; render(); }
+  }
+  if (e.key === "ArrowLeft")  {
+    const target = i - 1;
+    if (target >= 0 && !sessionReviewed.has(data.companies[target].company_id)) {
+      i = target; render();
+    }
+  }
 });
 
 document.addEventListener("click", (e) => {
+  const again = e.target.closest("button[data-testid=\"review-again\"]");
+  if (again) return reviewAgain();
   const b = e.target.closest("button[data-v]");
   if (b) decide(b.dataset.v);
 });
 
-(async function boot() {
+async function loadToday() {
   data = await (await fetch("/api/today", {cache: "no-store"})).json();
   $("#date").textContent = new Date(data.date + "T00:00:00").toLocaleDateString("en-GB",
     { weekday: "long", day: "numeric", month: "long" });
+  i = 0; history = []; sessionReviewed = new Set();
   render();
-})();
+}
+
+async function reviewAgain() {
+  const res = await fetch("/api/review-again", {method: "POST"});
+  if (!res.ok) {
+    toast("Couldn't start the review again");
+    return;
+  }
+  await loadToday();
+  toast("Reviewing today's companies again");
+}
+
+loadToday();
 
 // The daily run rewrites the score table in place, so a page left open would
 // otherwise keep showing yesterday's shortlist forever. Poll cheaply and
@@ -945,7 +1059,7 @@ async function refresh() {
     const next = await (await fetch("/api/today", {cache: "no-store"})).json();
     if (shortlistSig(next) === shortlistSig(data)) return;   // nothing new
     data = next;
-    i = 0; history = [];
+    i = 0; history = []; sessionReviewed = new Set();
     render();
     toast("New run loaded — showing the latest shortlist");
   } catch (e) { /* transient db lock or network — retry next tick */ }

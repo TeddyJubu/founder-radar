@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from radar.config.models import FOUNDER_SIGNALS, SECTORS, STAGES, canon_enum
 
 # Bumping this invalidates every cache entry cleanly (05-pipeline §3.3).
-EXTRACTOR_VERSION = "extract-1"
+EXTRACTOR_VERSION = "extract-2"
 
 REJECTION_REASONS = (
     "roundup",
@@ -48,6 +48,7 @@ RejectionReason = Literal[
 ]
 
 ExtractionMethod = Literal["llm", "heuristic", "prefilter"]
+CompanyRole = Literal["startup", "parent", "investor", "acquirer", "university", "other"]
 
 # Below this the record goes to the Needs Review tab (05-pipeline §3.4 sets the
 # heuristic floor at 0.3; anything under 0.5 from the model is thin content).
@@ -104,6 +105,15 @@ class Extraction(BaseModel):
 
     # ---- the record
     company_name: Optional[str] = None
+    company_role: CompanyRole = Field(
+        "startup",
+        description=(
+            "The role of company_name in the article. Use startup only for the "
+            "operating company that is receiving funding, being spun out, or "
+            "otherwise the relevant early-stage subject. Use parent, investor, "
+            "acquirer, university or other for surrounding organisations."
+        ),
+    )
     company_website: Optional[str] = None
     one_line_description: Optional[str] = Field(
         None,
@@ -120,7 +130,15 @@ class Extraction(BaseModel):
     sector: Optional[str] = Field(None, description="One of: " + ", ".join(SECTORS))
     stage: Optional[str] = Field(None, description="One of: " + ", ".join(STAGES))
     hq_city: Optional[str] = None
-    hq_country_iso2: Optional[str] = Field(None, pattern=r"^[A-Z]{2}$")
+    hq_country_iso2: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Z]{2}$",
+        description=(
+            "ISO-3166-1 alpha-2 headquarters country, only when the article "
+            "explicitly states where the company is based or headquartered. "
+            "Do not infer it from a customer, investor, market, or founder."
+        ),
+    )
     founded_year: Optional[int] = Field(None, ge=1990, le=2030)
     founders: list[Founder] = Field(default_factory=list)
 
@@ -199,6 +217,9 @@ class Extraction(BaseModel):
         # i.e. the boolean is "is this a usable single-company signal?".
         if self.rejection_reason is not None:
             self.is_about_single_company = False
+        if self.company_role != "startup":
+            self.is_about_single_company = False
+            self.rejection_reason = "not_a_startup"
         return self
 
     # ------------------------------------------------------------- helpers
@@ -233,6 +254,7 @@ LLM_FIELDS: tuple[str, ...] = (
     "is_about_single_company",
     "rejection_reason",
     "company_name",
+    "company_role",
     "company_website",
     "one_line_description",
     "sector",

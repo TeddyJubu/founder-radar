@@ -123,7 +123,7 @@ def attributes_for(config: Any) -> tuple[str, ...]:
     """Which attributes are scored.
 
     Read from config rather than hard-coded so that adding a criterion is a
-    sheet edit — and so `test_percentage_of_known_not_raw_sum` can prove that
+    sheet edit — and so the fit denominator regression test can prove that
     adding one does not inflate every existing score.
     """
     configured = _lists(config).get("scored_attributes")
@@ -136,10 +136,9 @@ def attribute_raw(
     """06-scoring §6, one attribute, as plain data.
 
     Returns `(sub_score, weight, evidence, raw)`. This is the single source of
-    the per-attribute arithmetic: `attribute_component` wraps the same numbers
-    in a pydantic model for the daily path, and the bulk rescore
-    (`pipeline.rescore_all`) calls this directly, so the two paths cannot
-    drift (09-test-plan §8).
+    per-attribute arithmetic; `calculate_fund_fit` aggregates these values once
+    for both the pydantic daily path and the lean bulk rescore
+    (`pipeline.rescore_all`), so the two paths cannot drift (09-test-plan §8).
 
     A known value that is missing from the matrix scores 0, not unknown: a
     blank cell in the *matrix* means "worth nothing to this fund", which is a

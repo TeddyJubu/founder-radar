@@ -465,7 +465,7 @@ def _components(db, score_id) -> list[dict]:
 
 
 def _status(component: dict) -> str:
-    """`None` is never a failure — 06-scoring's percentage-of-known rule."""
+    """`None` is never a failure — the headline keeps unknowns explicit."""
     sub = component.get("sub_score")
     if sub is None:
         return "unknown"
