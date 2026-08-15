@@ -93,6 +93,8 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Score number | `score-value` | | rounded display text; two per card |
 | Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
 | Score hint | `score-hint` | | one-line explainer under the tiles |
+| Fund score grid | `fund-scores` | | all four fund-specific Match values |
+| Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank when unscored or rejected |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |
@@ -101,7 +103,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Explanation more | `explanation-more` | `data-expanded`, `aria-expanded` | present only when there are more than four clauses |
 | Company one-liner | `one-liner` | | absent when `one_liner` is null — never invented |
 | Evidence wrapper | `evidence` | | absent when there are no links |
-| Evidence link | `evidence-link` | `data-kind`, `data-primary` | zero or more; the first carries `data-primary="true"` and renders as a filled blue button — the way back to the source. Links come from `signals` first (they carry a headline to label with), then from `sources` (`company_source`, written for every mention) for any URL not already listed. A registry-only company has neither and shows no link at all. |
+| Evidence link | `evidence-link` | `data-kind`, `data-primary`, `data-primary-source` | every surfaced card has one valid primary source link with `data-primary-source="true"`; additional signal/source links may follow. A company without a valid `company_source` URL is not surfaced on Today. |
 | Footnote row | `card-footnote` | | |
 | Coverage note | `coverage-note` | `data-coverage` | present only when `thin` |
 | Caveat | `caveat` | `data-flag` | raw flag name, e.g. `age_unknown` |
@@ -114,6 +116,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Main region | `today-main` | | carries `aria-live="polite"` |
 | Header date | `today-date` | | hidden below 460px by design |
 | Done state | `done-state` | | |
+| Review Again | `review-again` | | clears only today's review markers; lasting verdicts remain |
 | Empty state | `empty-state` | | |
 
 **`data-value` carries the unrounded number.** Compare *that* against SQLite —
@@ -130,7 +133,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | A1 | `GET /` | 200, `content-type: text/html` |
 | A2 | `GET /api/today` | 200, valid JSON |
 | A3 | Top-level keys | `date`, `companies`, `totals`, `run` all present |
-| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `vehicle`, `tier` |
+| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` has exactly `outward`, `dsw`, `northstar`, `anticus` |
 | A5 | Tier filter | no company has `tier == "reject"` |
 | A6 | Ordering | `priority` is non-increasing across the array |
 | A7 | Tie-break | where `priority` is equal, `coverage` is non-increasing |
@@ -156,6 +159,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B9 | One current dot | exactly one `progress-dot[data-state="now"]` |
 | B10 | Three buttons | the three `verdict-*` testids each present exactly once |
 | B11 | Bar visible | `verdict-bar` not `hidden` while cards remain |
+| B15 | Four fund matches | exactly four `fund-score` elements; each displayed `data-value` matches the corresponding API `fund_scores[*].fit` |
 
 ### B12 — No placeholder leakage *(high value)*
 
@@ -196,7 +200,7 @@ Reset by reloading the page between tests where noted.
 | C8 | Press `Cmd/Ctrl+Z` after a verdict | returns to the company just decided |
 | C9 | Toast auto-hides | `toast` loses `.show` within 2.5s |
 | C10 | Decide through every card | `verdict-bar` becomes `hidden`; `done-state` appears |
-| C11 | Done state | `done-state` text contains `reviewed`; a `✓` is present |
+| C11 | Done state | `done-state` says `You've reviewed today's companies.` and contains a `✓` |
 | C12 | Keyboard-only run | complete C10 without a single mouse event |
 
 ### C13 — Modifier safety
@@ -204,6 +208,19 @@ Reset by reloading the page between tests where noted.
 With focus on the page, press `Cmd+1` / `Cmd+2` / `Cmd+3`. **No verdict may be
 recorded** — those are browser tab-switch shortcuts. `user_field` row count must
 be unchanged.
+
+### C14 — Refresh does not requeue a decision
+
+1. Note the first card's `data-company-id`.
+2. Press `3` and reload the page.
+3. **Pass:** the same company is not the first card, and the decision remains in
+   `user_field`.
+
+### C15 — Review Again is explicit
+
+1. Decide through the current list until `done-state` appears.
+2. Click `button[data-testid="review-again"]`.
+3. **Pass:** the first card returns, and its lasting verdict is unchanged.
 
 ---
 
@@ -217,10 +234,14 @@ sqlite3 -json /tmp/test-run.db "
   SELECT c.canonical_name, s.fund_fit_pct, s.discovery_edge, s.coverage,
          s.priority, s.explanation, s.tier
     FROM score s JOIN company c ON c.id = s.company_id
-    JOIN (SELECT company_id, MAX(priority) b FROM score
-           WHERE tier IN ('shortlist','watchlist') GROUP BY company_id) t
+    JOIN (SELECT s2.company_id, MAX(s2.priority) b
+            FROM score s2 JOIN company c2 ON c2.id = s2.company_id
+           WHERE s2.tier IN ('shortlist','watchlist')
+             AND c2.incorporated_on IS NOT NULL
+           GROUP BY s2.company_id) t
       ON t.company_id = s.company_id AND t.b = s.priority
    WHERE s.tier IN ('shortlist','watchlist')
+     AND c.incorporated_on IS NOT NULL
    ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name LIMIT 5;"
 ```
 
@@ -316,7 +337,7 @@ backgrounds. **Pass:** ≥ 4.5:1 for body text, ≥ 3:1 for text ≥ 24px.
 | E2 | `/api/verdict` returns 500 | stub the route to fail; the UI must not advance silently *(current behaviour is unverified — record what actually happens)* |
 | E3 | Slow API | throttle to 3s; no duplicate render, no flash of broken layout |
 | E4 | Double keypress | press `1` twice within 100ms; **exactly one** `user_field` row is written |
-| E5 | Reload mid-review | verdicts already given persist in the DB |
+| E5 | Reload mid-review | verdicts already given persist in the DB and decided companies stay out of Today |
 | E6 | Console clean | zero `error`-level console messages across a full run |
 | E7 | Network clean | no 4xx/5xx in the network log except those deliberately provoked in A9–A11 |
 

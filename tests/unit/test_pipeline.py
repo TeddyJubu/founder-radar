@@ -173,6 +173,52 @@ def test_extraction_method_reaches_the_company_row(db, config):
     assert row["one_liner"] == "Warehouse robots."
 
 
+def test_structured_founded_year_reaches_the_age_gate(db, config):
+    """Structured adapters must not turn an old company into age-unknown."""
+    from datetime import date as _date
+
+    from radar.pipeline import resolve_item, score_company
+    from radar.sources.base import RawItem
+
+    item = RawItem(
+        source_key="entrepreneur_first",
+        source_url="https://joinef.com/portfolio/old-venture",
+        external_id="old-venture",
+        published_at=_date(2026, 8, 1),
+        title="Old Venture",
+        structured={
+            "company_name": "Old Venture Ltd",
+            "founded_year": 2016,
+            "hq_country_iso2": "GB",
+            "hq_region": "uk_regions",
+            "company_website": "https://old-venture.example",
+            "one_line_description": "Builds useful things.",
+            "stage": "pre_seed",
+        },
+        kind_hint="accelerator_cohort",
+    )
+
+    cid = resolve_item(db, item, config)
+    row = db.one(
+        "SELECT incorporated_on, age_source, country_iso2, hq_region, website_url, "
+        "one_liner, stage FROM company WHERE id = ?",
+        (cid,),
+    )
+    assert row["incorporated_on"] == "2016-07-01"
+    assert row["age_source"] == "source_stated"
+    assert row["country_iso2"] == "GB"
+    assert row["hq_region"] == "uk_regions"
+    assert row["website_url"] == "https://old-venture.example"
+    assert row["one_liner"] == "Builds useful things."
+    assert row["stage"] == "pre_seed"
+
+    score_company(db, cid, config, today=_date(2026, 8, 8))
+    assert {
+        row["reject_reason"]
+        for row in db.query("SELECT reject_reason FROM score WHERE company_id = ?", (cid,))
+    } == {"max_company_age_months"}
+
+
 def test_an_article_headline_never_becomes_a_company(db, config):
     """A prose item the reader could not name is a source, not a subject.
 
@@ -378,3 +424,50 @@ def test_rescore_bulk_equals_daily(db, config):
     assert bulk_identity.keys() == daily_identity.keys()
     for key in daily_identity:
         assert bulk_identity[key] == daily_identity[key], key
+
+
+@pytest.mark.parametrize("policy", ["pessimistic", "assume"])
+def test_rescore_bulk_matches_daily_with_unknown_policies(db, config, policy):
+    """Both persistence paths use the same coverage semantics for unknowns."""
+    from radar.pipeline import rescore_all, score_company
+    from tests.factories import C, store_company
+
+    config.weights.unknown_policy["founder_signal"] = policy
+    if policy == "assume":
+        config.lists["assume_values"] = {"founder_signal": "technical_founder"}
+    company = C(canonical_name="Pessimistic Co", norm_key="pessimisticco",
+                founder_signal=None)
+    cid = store_company(db, company)
+
+    def snapshot():
+        scores = [
+            tuple(row[key] for key in
+                  ("fund_key", "fund_fit_pct", "coverage", "priority",
+                   "tier", "explanation"))
+            for row in db.query(
+                "SELECT fund_key, fund_fit_pct, coverage, priority, tier, explanation "
+                "FROM score WHERE company_id = ? ORDER BY fund_key", (cid,))
+        ]
+        components = [
+            tuple(row[key] for key in
+                  ("fund_key", "key", "sub_score", "weight", "contribution",
+                   "evidence"))
+            for row in db.query(
+                """SELECT s.fund_key, sc.key, sc.sub_score, sc.weight,
+                          sc.contribution, sc.evidence
+                     FROM score_component sc
+                     JOIN score s ON s.id = sc.score_id
+                    WHERE s.company_id = ?
+                    ORDER BY s.fund_key, sc.key""", (cid,))
+        ]
+        return scores, components
+
+    score_company(db, cid, config, today=date(2026, 8, 8))
+    daily = snapshot()
+    db.execute("DELETE FROM score_component")
+    db.execute("DELETE FROM score")
+
+    rescore_all(db, config, today=date(2026, 8, 8))
+    bulk = snapshot()
+
+    assert bulk == daily

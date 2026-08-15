@@ -61,10 +61,15 @@ def test_a3_top_level_keys(api):
 
 def test_a4_company_keys(api):
     required = {"company_id", "name", "fit", "edge", "coverage", "priority",
-                "explanation", "flags", "signals", "also_fits", "vehicle", "tier"}
+                "explanation", "flags", "signals", "also_fits", "fund_scores",
+                "vehicle", "tier"}
     assert api["companies"], "no companies to review"
     for c in api["companies"]:
         assert required <= set(c), f"{c.get('name')} missing {required - set(c)}"
+        assert len(c["fund_scores"]) == 4
+        assert {score["fund_key"] for score in c["fund_scores"]} == {
+            "outward", "dsw", "northstar", "anticus"
+        }
 
 
 def test_a5_rejects_never_reach_today(api):
@@ -154,6 +159,30 @@ def test_b6_b7_route_and_reasoning_present(today):
 
     # The sentence is still carried, verbatim, for anyone who wants it.
     assert len(today.locator(tid("explanation")).get_attribute("data-text")) > 20
+
+
+def test_b14_every_card_has_a_direct_primary_source_link(today, api):
+    link = today.locator(f'{tid("evidence-link")}['
+                         'data-primary-source="true"]')
+    assert link.count() == 1
+    assert link.get_attribute("href") == api["companies"][0]["source_url"]
+
+
+def test_b15_four_fund_match_scores_are_visible(today, api):
+    scores = today.locator(tid("fund-score"))
+    assert scores.count() == 4
+
+    displayed = {}
+    for i in range(scores.count()):
+        raw = scores.nth(i).get_attribute("data-value")
+        if raw:
+            displayed[scores.nth(i).get_attribute("data-fund")] = float(raw)
+    expected = {
+        score["fund_key"]: score["fit"]
+        for score in api["companies"][0]["fund_scores"]
+        if score["fit"] is not None
+    }
+    assert displayed == expected
 
 
 def test_b8_b9_progress_dots(today, api):
@@ -251,6 +280,45 @@ def test_c10_c11_reviewing_everything_reaches_the_done_state(today, api):
     assert today.locator(tid("verdict-bar")).is_hidden()
 
 
+def test_c14_refresh_does_not_requeue_a_decided_company(today):
+    company_id = today.locator(tid("card")).get_attribute("data-company-id")
+
+    today.keyboard.press("3")
+    today.wait_for_timeout(300)
+    today.reload(wait_until="networkidle")
+    today.wait_for_selector(tid("card"))
+
+    assert today.locator(tid("card")).get_attribute("data-company-id") != company_id
+
+
+def test_c15_review_again_restores_the_daily_queue(today, server):
+    with urllib.request.urlopen(server + "/api/today", timeout=5) as response:
+        current_api = json.loads(response.read())
+    first_company_id = current_api["companies"][0]["company_id"]
+
+    for _ in range(len(current_api["companies"])):
+        today.keyboard.press("3")
+        today.wait_for_timeout(120)
+
+    today.wait_for_selector(tid("done-state"))
+    today.locator(tid("review-again")).click()
+    today.wait_for_selector(tid("card"))
+
+    assert today.locator(tid("card")).get_attribute("data-company-id") == first_company_id
+
+
+def test_c16_back_navigation_does_not_reopen_a_decided_company(today):
+    first_company_id = today.locator(tid("card")).get_attribute("data-company-id")
+
+    today.keyboard.press("3")
+    today.wait_for_timeout(250)
+    second_company_id = today.locator(tid("card")).get_attribute("data-company-id")
+    today.keyboard.press("ArrowLeft")
+
+    assert second_company_id != first_company_id
+    assert today.locator(tid("card")).get_attribute("data-company-id") == second_company_id
+
+
 def test_c13_modifier_keys_never_record_a_verdict(today, server):
     """`Cmd+1` switches browser tabs. A handler that ignored modifiers would
     file a verdict every time the user changed tab."""
@@ -305,10 +373,10 @@ def test_d4c_ledger_shows_every_scored_rule_and_never_calls_unknown_a_failure(to
     the two drift apart and the ledger starts calling a criterion a match
     while the sentence below it says "Against:".
 
-    The `unknown` case is the one that matters most. 06-scoring's
-    percentage-of-known rule exists so a fact nobody could establish is never
-    counted against a company; a UI that draws `sub_score = None` with the
-    same mark as `sub_score = 0` puts that back, visually, on every card.
+    The `unknown` case is the one that matters most. The full-model percentage
+    keeps an unconfirmed fact in the denominator without treating it as a
+    failure; a UI that draws `sub_score = None` with the same mark as
+    `sub_score = 0` puts that back, visually, on every card.
     """
     components = api["companies"][0]["components"]
     rows = today.locator(tid("criterion"))

@@ -180,9 +180,9 @@ def test_the_ledger_marks_each_fund_rule_instead_of_listing_bare_facts(db):
 
 def test_the_ledger_never_renders_an_unknown_as_a_failure(db):
     """`sub_score = None` is "nobody could find out", not "it scored zero".
-    06-scoring's percentage-of-known rule exists so the second never stands in
-    for the first, and a digest that marks them alike undoes that in the one
-    place the client actually reads each morning."""
+    The full-model percentage keeps the two facts distinct, and a digest that
+    marks them alike undoes that in the one place the client actually reads
+    each morning."""
     cid = seed_company(db, "Kelvin Bio")
     seed_components(db, seed_score(db, cid))
     seed_run(db, on=DAY, shortlisted=1)
