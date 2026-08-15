@@ -94,7 +94,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
 | Score hint | `score-hint` | | one-line explainer under the tiles |
 | Fund score grid | `fund-scores` | | all four fund-specific Match values |
-| Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank only when unscored |
+| Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank when unscored or rejected |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |

@@ -11,7 +11,7 @@
 # Two values come from the environment, both set in /opt/founder-radar/.env:
 #
 #   RADAR_WEB_DOMAIN     radar.example.com
-#   RADAR_WEB_USER       aryan
+#   RADAR_WEB_USER       scout
 #   RADAR_WEB_PASS_HASH  bcrypt hash from `caddy hash-password`
 #
 # The hash is a hash: it is safe in the env file (mode 600) and is NOT the

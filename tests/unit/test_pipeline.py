@@ -174,12 +174,7 @@ def test_extraction_method_reaches_the_company_row(db, config):
 
 
 def test_structured_founded_year_reaches_the_age_gate(db, config):
-    """Directory adapters must not lose a founding year before scoring.
-
-    Structured sources such as Entrepreneur First already parse this fact. If
-    it is left outside the company schema at resolve time, a company from 2016
-    becomes `age_unknown` and can reach the review surface as a watchlist row.
-    """
+    """Structured adapters must not turn an old company into age-unknown."""
     from datetime import date as _date
 
     from radar.pipeline import resolve_item, score_company
@@ -195,6 +190,9 @@ def test_structured_founded_year_reaches_the_age_gate(db, config):
             "company_name": "Old Venture Ltd",
             "founded_year": 2016,
             "hq_country_iso2": "GB",
+            "hq_region": "uk_regions",
+            "company_website": "https://old-venture.example",
+            "one_line_description": "Builds useful things.",
             "stage": "pre_seed",
         },
         kind_hint="accelerator_cohort",
@@ -202,9 +200,17 @@ def test_structured_founded_year_reaches_the_age_gate(db, config):
 
     cid = resolve_item(db, item, config)
     row = db.one(
-        "SELECT incorporated_on, age_source FROM company WHERE id = ?", (cid,))
+        "SELECT incorporated_on, age_source, country_iso2, hq_region, website_url, "
+        "one_liner, stage FROM company WHERE id = ?",
+        (cid,),
+    )
     assert row["incorporated_on"] == "2016-07-01"
     assert row["age_source"] == "source_stated"
+    assert row["country_iso2"] == "GB"
+    assert row["hq_region"] == "uk_regions"
+    assert row["website_url"] == "https://old-venture.example"
+    assert row["one_liner"] == "Builds useful things."
+    assert row["stage"] == "pre_seed"
 
     score_company(db, cid, config, today=_date(2026, 8, 8))
     assert {

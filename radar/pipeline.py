@@ -791,7 +791,8 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
         name=name,
         ch_number=structured.get("company_number"),
         domain=structured.get("domain") or getattr(item, "domain", None),
-        country_iso2=structured.get("country_iso2"),
+        country_iso2=(structured.get("country_iso2")
+                      or structured.get("hq_country_iso2")),
         first_seen=getattr(item, "published_at", None) and str(item.published_at) or None,
     )
 
@@ -937,10 +938,25 @@ def _fields_from_structured(
         fields["date_confidence"] = "stated"
     if structured.get("sic_codes"):
         fields["sic_codes"] = json.dumps(structured["sic_codes"])
+    if structured.get("company_website"):
+        fields["website_url"] = structured["company_website"]
+    if structured.get("one_line_description"):
+        fields["one_liner"] = structured["one_line_description"]
+    if structured.get("sector"):
+        fields["sector"] = structured["sector"]
+    if structured.get("stage"):
+        fields["stage"] = structured["stage"]
+    if structured.get("hq_region"):
+        fields["hq_region"] = structured["hq_region"]
+    if structured.get("hq_city"):
+        fields["hq_city"] = structured["hq_city"]
     if structured.get("postal_code"):
         fields["hq_postcode"] = structured["postal_code"]
     if structured.get("locality"):
         fields["hq_city"] = structured["locality"]
+    if structured.get("country_iso2") or structured.get("hq_country_iso2"):
+        fields["country_iso2"] = (structured.get("country_iso2")
+                                   or structured.get("hq_country_iso2"))
     if structured.get("is_university_spinout") is not None:
         fields["is_university_spinout"] = int(bool(structured["is_university_spinout"]))
     if structured.get("university_name"):

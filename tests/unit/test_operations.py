@@ -753,3 +753,42 @@ def test_a_missing_env_file_is_not_an_error(tmp_path):
     from radar.cli import load_env_file
 
     assert load_env_file(tmp_path / "nope.env") == 0
+
+
+def test_today_requires_verified_age_and_uk_presence(db):
+    """Today is an opportunity queue, not the unknown-data research pool."""
+    from prototype.server import build_today
+    from radar.store.db import now_iso
+
+    stamp = now_iso()
+
+    def add(company, *, priority):
+        cid = store_company(db, company)
+        db.execute(
+            "INSERT INTO company_source(company_id, source_key, external_id, "
+            "source_url, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
+            (cid, "uktn", f"source-{cid}", "https://uktn.co.uk/story", stamp, stamp),
+        )
+        db.execute(
+            """INSERT INTO score
+                 (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+                  discovery_edge, priority, tier, reject_reason, explanation,
+                  flags, config_hash, scorer_version, scored_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (cid, "outward", "fund_ii", 80, 0.8, 70, priority, "watchlist", None,
+             "Matches on stage.", None, "testhash", "1", stamp),
+        )
+        return cid
+
+    valid = add(C(canonical_name="Verified UK Co", age_months=6, country="GB"), priority=90)
+    add(C(canonical_name="Unknown Age Co", age_months=None, country="GB"), priority=100)
+    add(C(canonical_name="Old UK Co", age_months=60, country="GB"), priority=99)
+    add(C(canonical_name="Funded UK Co", age_months=6, country="GB", funding=4_000_000), priority=98)
+    add(C(canonical_name="Dubai Co", age_months=6, country="AE"), priority=95)
+    add(C(canonical_name="Unverified Location Co", age_months=6, country=None,
+          hq_region=None, hq_postcode=None, companies_house_no=None,
+          hq_city="Dubai"), priority=94)
+
+    payload = build_today(db.conn)
+    assert [c["company_id"] for c in payload["companies"]] == [valid]
+    assert len(payload["companies"][0]["fund_scores"]) == 4

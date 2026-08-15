@@ -130,7 +130,15 @@ class Extraction(BaseModel):
     sector: Optional[str] = Field(None, description="One of: " + ", ".join(SECTORS))
     stage: Optional[str] = Field(None, description="One of: " + ", ".join(STAGES))
     hq_city: Optional[str] = None
-    hq_country_iso2: Optional[str] = Field(None, pattern=r"^[A-Z]{2}$")
+    hq_country_iso2: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Z]{2}$",
+        description=(
+            "ISO-3166-1 alpha-2 headquarters country, only when the article "
+            "explicitly states where the company is based or headquartered. "
+            "Do not infer it from a customer, investor, market, or founder."
+        ),
+    )
     founded_year: Optional[int] = Field(None, ge=1990, le=2030)
     founders: list[Founder] = Field(default_factory=list)
 
