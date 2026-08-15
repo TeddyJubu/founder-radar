@@ -43,7 +43,18 @@ h1 {
 .help:hover { background: color-mix(in srgb, var(--blue) 16%, var(--fill)); color: var(--blue); }
 .help:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 /* `.help` is a 24px circle for the single "?" glyph; a word needs to grow. */
-.kept-link { width: auto; border-radius: 999px; padding: 0 11px; }
+.kept-link {
+  width: auto; border-radius: 999px; padding: 0 11px;
+  gap: 6px; display: inline-flex; align-items: center;
+}
+.kept-badge {
+  min-width: 1.1em; padding: 0 5px; height: 16px;
+  border-radius: 999px;
+  background: var(--blue-fill); color: #fff;
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.kept-badge:empty, .kept-badge[data-count="0"] { display: none; }
 
 /* Progress: dots, not "2 of 6". A count invites counting; dots are glanceable. */
 .dots { display: flex; gap: 6px; align-items: center; }
@@ -99,24 +110,63 @@ h2 {
 .meta a:hover { text-decoration: underline; }
 .age { color: var(--label); font-weight: 500; }
 
-/* Fit and Edge are the same size on purpose. Edge is the whole v2 thesis —
-   "nobody has found this yet" — and shrinking it reproduces the v1 ranking
-   error visually. */
-.scores { display: flex; gap: var(--s2); flex: none; }
+/* Match is the primary number (fund criteria strength). Fresh is secondary —
+   younger / less covered / register-first. Testids stay score-fit / score-edge
+   so the API contract does not churn. */
+.scores {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: var(--s2); flex: none;
+}
+.score-row { display: flex; gap: var(--s2); }
 .score {
   width: 84px; padding: var(--s3) var(--s2) var(--s2);
   background: var(--fill); border-radius: var(--r-control);
   text-align: center;
+  cursor: help;
+}
+.score-fit {
+  width: 96px; padding: var(--s3) var(--s3) var(--s2);
+  background: color-mix(in srgb, var(--blue) 8%, var(--fill));
+  border: 0.5px solid color-mix(in srgb, var(--blue) 18%, transparent);
 }
 .score .n {
   font-size: 30px; line-height: 34px; font-weight: 600;
   letter-spacing: -0.6px; font-variant-numeric: tabular-nums;
 }
+.score-fit .n { font-size: 34px; line-height: 36px; }
 .score .k {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-2); text-transform: uppercase; letter-spacing: 0.4px;
   margin-top: 2px;
 }
+.score-hint {
+  max-width: 180px;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-3); text-align: right;
+}
+.fund-scores {
+  width: 100%; max-width: 360px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+}
+.fund-score {
+  min-width: 0; padding: 6px 4px 5px;
+  background: var(--fill); border: 0.5px solid var(--separator);
+  border-radius: var(--r-control); text-align: center; cursor: help;
+}
+.fund-score .n {
+  font-size: 16px; line-height: 19px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fund-score .k {
+  margin-top: 2px; font-size: 10px; line-height: 12px;
+  color: var(--label-2); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fund-score.high .n { color: var(--green); }
+.fund-score.mid .n { color: var(--label); }
+.fund-score.low .n { color: var(--orange); }
+.fund-score[data-tier="reject"] .n,
+.fund-score[data-tier="unscored"] .n { color: var(--label-3); }
 .score.high .n { color: var(--green); }
 .score.mid  .n { color: var(--label); }
 .score.low  .n { color: var(--orange); }
@@ -137,12 +187,144 @@ h2 {
   font-size: var(--subhead); line-height: var(--subhead-lh); color: var(--label-2);
 }
 
-/* The spec's explanation sentence, verbatim. Its arithmetic already
-   reconciles; re-deriving it here would create a second source of truth. */
-.why {
+/* Company description leads when we have one. Absent means absent — a
+   registry-only company is not described by inventing a SIC paraphrase. */
+.blurb {
   margin: var(--s5) 0 0;
-  font-size: var(--body); line-height: var(--body-lh);
+  font-size: var(--headline); line-height: var(--headline-lh);
+  font-weight: 510; color: var(--label);
+  max-width: 40rem;
+}
+
+/* The spec's explanation, still verbatim — each template clause on its own
+   line so a morning scan can pick Matches / Unknown / Route without
+   reading a 280-character paragraph. Arithmetic stays in the sentence;
+   we only break where `explain.py` already joined with ". ". */
+.why {
+  margin: var(--s4) 0 0;
+  display: flex; flex-direction: column; gap: 6px;
+  max-width: 40rem;
+}
+.why-clause {
+  margin: 0;
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label-2);
+}
+.why-clause[data-kind="match"],
+.why-clause[data-kind="found"] {
   color: var(--label);
+}
+.why-clause[data-kind="unknown"],
+.why-clause[data-kind="against"],
+.why-clause[data-kind="warn"] {
+  color: var(--orange);
+}
+/* ───────────────────────────────────────────────────────── the ledger */
+
+/* Why the scoring is a list and not the sentence it used to be.
+   `score.explanation` is prose assembled from `components`, and the card was
+   parsing that prose back into clauses to colour them — deriving structure
+   from a string that had just been built out of structure. Aryan read
+   "Against: sector (B2B SaaS). Unknown: traction signal." and had to work out
+   which criteria existed at all, let alone which had failed. The components
+   are in the payload already, so the row IS the criterion: one line per rule,
+   status in the left column, the actual value on the right.
+
+   Ten of these a morning is the design constraint. The icon column gives the
+   eye a single rail to run down; nothing else is allowed to compete with it. */
+.ledger { margin: var(--s5) 0 0; display: flex; flex-direction: column; gap: var(--s4); }
+
+.led-group { display: flex; flex-direction: column; gap: var(--s1); }
+
+.led-head {
+  display: flex; align-items: baseline; gap: var(--s2);
+  margin: 0 0 var(--s1);
+}
+.led-head h3 {
+  margin: 0;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 590; letter-spacing: 0.01em;
+  color: var(--label);
+}
+/* The group heading carries its own score, so the two numbers at the top of
+   the card stop being unexplained. "Match 63" above the fit rules says what
+   the 63 was counted from. */
+.led-head .led-score {
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 590; font-variant-numeric: tabular-nums;
+  color: var(--label-2);
+}
+.led-head .led-score b { color: var(--label); font-weight: 590; }
+
+.led-rows { list-style: none; margin: 0; padding: 0; }
+
+.led-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 2px var(--s3);
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 0.5px solid var(--separator);
+}
+.led-row:first-child { border-top: 0; }
+
+.led-ic {
+  grid-row: 1;
+  display: block; width: 16px; height: 16px;
+  transform: translateY(2px);          /* optical baseline, not box baseline */
+}
+.led-row[data-status="met"]     .led-ic { color: var(--green); }
+.led-row[data-status="partial"] .led-ic { color: var(--orange); }
+.led-row[data-status="missed"]  .led-ic { color: var(--red); }
+.led-row[data-status="unknown"] .led-ic { color: var(--label-2); }
+
+.led-name {
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label); font-weight: 400;
+}
+.led-val {
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  color: var(--label-2); text-align: right;
+}
+/* `--label-3` is 0.30 alpha — about 1.7:1 on white. It is right for a
+   progress dot and wrong for anything anyone has to read, so the unknown
+   row keeps `--label-2` and lets the dashed mark carry the de-emphasis. */
+.led-row[data-status="missed"] .led-val { color: var(--red); }
+
+/* The sentence only appears where it earns its place: a met criterion needs
+   no gloss ("Sector — Climate Tech" is self-evident), while an unknown or a
+   miss is exactly where Aryan asked what the rule even means. */
+.led-gloss {
+  grid-column: 2 / -1; margin: 0;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  color: var(--label-2);
+  max-width: 52ch;
+}
+
+/* The original sentence, kept verbatim and one tap away. Nothing here
+   paraphrases it; the ledger is the same data, not a retelling. */
+.why-full { margin: var(--s4) 0 0; }
+.why-full > summary {
+  display: inline-flex; align-items: center; gap: 6px;
+  list-style: none; cursor: pointer; width: fit-content;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 510; color: var(--blue);
+  border-radius: var(--r-control);
+}
+.why-full > summary::-webkit-details-marker { display: none; }
+.why-full > summary::after {
+  content: ""; width: 7px; height: 7px; flex: none;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform .25s var(--spring);
+}
+.why-full[open] > summary::after { transform: translateY(1px) rotate(-135deg); }
+.why-full > summary:hover { text-decoration: underline; }
+.why-full > summary:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.why-full .why { margin-top: var(--s2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .why-full > summary::after { transition: none; }
 }
 
 .evidence { margin: var(--s5) 0 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
@@ -163,11 +345,11 @@ h2 {
    it is filled while the rest stay quiet pills. Deliberately NOT competing
    with the verdict bar: this is blue and inline, those are the decision. */
 .ev.primary {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: #fff;
   font-weight: 590;
 }
-.ev.primary:hover { background: color-mix(in srgb, #fff 12%, var(--blue)); }
+.ev.primary:hover { background: color-mix(in srgb, #fff 12%, var(--blue-fill)); }
 .ev.primary .chev { color: color-mix(in srgb, #fff 65%, transparent); }
 
 .foot {
@@ -217,6 +399,17 @@ button.yes { background: var(--green); border-color: transparent; color: #fff; }
 button.yes .kbd { color: rgba(255,255,255,0.7); }
 button.no  { color: var(--red); }
 
+/* The primary action was the least legible thing on the screen: white on the
+   vivid system green measured 2.02:1 in dark mode and 2.22:1 in light. Light
+   is fixed by the accessible green in tokens.css (5.19:1). Dark keeps its
+   bright fill — dulling it would cost the green everywhere else it is used as
+   a mark on a dark card — so the text inverts instead, which is what Apple
+   does on bright fills anyway. Near-black on #30D158 is 10.4:1. */
+@media (prefers-color-scheme: dark) {
+  button.yes { color: #06210E; }
+  button.yes .kbd { color: rgba(6,33,14,0.66); }
+}
+
 .hint {
   margin-top: var(--s3); text-align: center;
   font-size: var(--caption); line-height: var(--caption-lh); color: var(--label-3);
@@ -233,6 +426,14 @@ button.no  { color: var(--red); }
 }
 .done-state h2 { font-size: var(--title2); line-height: var(--title2-lh); }
 .done-state p { color: var(--label-2); font-size: var(--subhead); }
+.done-state a {
+  color: var(--blue); text-decoration: none; font-weight: 500;
+}
+.done-state a:hover { text-decoration: underline; }
+.done-state .review-again {
+  display: inline-block; width: auto; margin-top: var(--s3);
+  color: var(--blue); font-weight: 600;
+}
 
 .toast {
   position: fixed; left: 50%; bottom: var(--s8);
@@ -269,18 +470,25 @@ button.no  { color: var(--red); }
   h1 { font-size: 28px; line-height: 34px; }
   .card { padding: var(--s5); }
   .top { flex-direction: column; gap: var(--s4); }
-  .scores { width: 100%; }
+  .scores { width: 100%; align-items: stretch; }
+  .score-row { width: 100%; }
+  .score-fit { width: auto; }
   .score { flex: 1; width: auto; padding: var(--s2) var(--s2) 6px; }
   .score .n { font-size: 26px; line-height: 30px; }
+  .score-fit .n { font-size: 28px; line-height: 32px; }
+  .score-hint { max-width: none; text-align: left; }
+  .fund-scores { max-width: none; }
   h2 { font-size: 26px; line-height: 32px; }
-  .why { font-size: var(--subhead); line-height: 21px; }
+  .blurb { font-size: var(--subhead); line-height: 21px; margin-top: var(--s4); }
+  .why-clause { font-size: var(--footnote); line-height: 18px; }
   button { font-size: var(--subhead); padding: 11px var(--s2); }
   .route { padding: var(--s3); margin-top: var(--s4); }
-  .why, .evidence { margin-top: var(--s4); }
+  .blurb, .why, .evidence { margin-top: var(--s4); }
 }
 @media (max-width: 460px) {
   .date { display: none; }             /* the header already says Today */
   button .kbd { display: none; }       /* no hardware keyboard to hint at */
+  .fund-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
 </head>
@@ -289,7 +497,7 @@ button.no  { color: var(--red); }
   <header data-testid="today-header">
     <h1 data-testid="today-title">Today</h1>
     <span class="date" id="date" data-testid="today-date"></span>
-    <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept</a>
+    <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept<span class="kept-badge" id="kept-badge" data-testid="kept-badge" data-count="0"></span></a>
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
     <div class="dots" id="dots" data-testid="progress" aria-hidden="true"></div>
   </header>
@@ -309,7 +517,7 @@ button.no  { color: var(--red); }
 
 <script>
 const $ = (s) => document.querySelector(s);
-let data = null, i = 0, history = [];
+let data = null, i = 0, history = [], sessionReviewed = new Set();
 
 const fmtMoney = (n) =>
   n == null ? null : "£" + (n >= 1e6 ? (n/1e6).toFixed(n % 1e6 ? 1 : 0) + "m"
@@ -332,6 +540,202 @@ function evidenceLabel(sig) {
 function sourceName(key) {
   return (key || "source").replace(/_/g, " ")
     .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+// Split where `explain.py` joined with ". ", and only when the next clause
+// opens with a known template prefix. A naive split would break on "Inc."
+// inside a headline; this keeps each clause byte-identical to the join.
+const EXPLAIN_CLAUSE =
+  /(?<=\.) (?=(?:Found via |Matches on |Against: |Unknown: |Route to |Low visibility|Only \d|Rejected: |⚠ |age |eligibility |good fit))/;
+
+function explanationClauses(text) {
+  const raw = String(text || "").trim();
+  return raw ? raw.split(EXPLAIN_CLAUSE).filter(Boolean) : [];
+}
+
+function explanationKind(clause) {
+  if (clause.startsWith("Found via ")) return "found";
+  if (clause.startsWith("Matches on ")) return "match";
+  if (clause.startsWith("Against: ")) return "against";
+  if (clause.startsWith("Unknown: ")) return "unknown";
+  if (clause.startsWith("⚠ ") || clause.startsWith("age ") ||
+      clause.startsWith("eligibility ") || clause.startsWith("Only ")) return "warn";
+  return "note";
+}
+
+// A long shortlist morning should not force-read every clause. Keep the
+// full sentence in the DOM (and in `data-text`) so D4 stays honest; only
+// hide the tail until expanded.
+// ─────────────────────────────────────────────────────────── the ledger
+
+// Plain words for the scoring keys, and — where it is not obvious — a line
+// saying what the rule is actually testing. `score.components` carries a
+// `label`, but "Discovery route" and "Founder signal" are the engine's names
+// for things, not a reader's, and the gloss is the part Aryan asked for: the
+// rules were "too brief to understand".
+//
+// A gloss is only rendered when the criterion is NOT met, because that is
+// where the question gets asked. "Sector — Climate Tech" explains itself.
+const CRITERION = {
+  sector:            {name: "Sector",          gloss: "What the company actually does."},
+  geography:         {name: "Location",        gloss: "Where it is based. Most of these funds have a hard region rule, so an unknown here is worth a minute on the website."},
+  stage:             {name: "Stage",           gloss: "How far along it is — idea, pre-seed, seed, growth."},
+  founder_signal:    {name: "Founders",        gloss: "Whether they have built something before, or came out of a university or research lab."},
+  traction_signal:   {name: "Traction",        gloss: "Any public sign of customers, revenue or usage."},
+  press_coverage:    {name: "Press coverage",  gloss: "Articles in the sources we track. Less coverage is better here — it means fewer investors have seen it."},
+  age:               {name: "Age",             gloss: "How long since it was incorporated. Without a Companies House match this stays unknown."},
+  disclosed_funding: {name: "Money raised",    gloss: "Funding announced publicly. Nothing found either way, so this sits mid rather than assuming they are unfunded."},
+  discovery_route:   {name: "How we found it", gloss: "A registry filing reaches you earlier than a news story does."},
+};
+
+// The four components that answer "has this fund already seen it?" — the
+// rest answer "does it fit?". Splitting them lets each group sit under the
+// score it produced, which is the only place Match and Fresh get defined
+// where someone is actually looking.
+const EDGE_KEYS = new Set(["press_coverage", "age", "disclosed_funding", "discovery_route"]);
+
+// One drawn family: same 6.4r circle, same 1.75 stroke, differing only in the
+// mark inside. Four states, because "we checked and it failed" and "we never
+// found out" are different facts and the card must not blur them.
+const LED_ICON = {
+  met:     `<circle cx="8" cy="8" r="6.4"/><path d="M5.4 8.2l1.8 1.8 3.4-3.9"/>`,
+  partial: `<circle cx="8" cy="8" r="6.4"/><path d="M8 1.6a6.4 6.4 0 0 1 0 12.8z" fill="currentColor" stroke="none"/>`,
+  missed:  `<circle cx="8" cy="8" r="6.4"/><path d="M5.5 8h5"/>`,
+  unknown: `<circle cx="8" cy="8" r="6.4" stroke-dasharray="2.1 2.5"/>`,
+};
+
+function ledIcon(status) {
+  return `<svg class="led-ic" viewBox="0 0 16 16" width="16" height="16" fill="none"
+               stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">${LED_ICON[status]}</svg>`;
+}
+
+// These two numbers are `POSITIVE_AT` and `NEGATIVE_AT` from
+// radar/score/explain.py, and they are duplicated deliberately: the sentence
+// in the <details> below calls a component a match at 0.6 and holds it
+// "Against:" at 0.34, so any other threshold here would let the ledger and
+// the sentence describe the same criterion two different ways on one card.
+const LED_POSITIVE_AT = 0.6;
+const LED_NEGATIVE_AT = 0.34;
+
+// `sub_score` is null when nothing was found, which is not the same as zero.
+// The full-model percentage keeps unknown criteria in its denominator, so the
+// UI keeps the distinction: an unknown never renders as a guessed failure.
+function ledStatus(component) {
+  const s = component.sub_score;
+  if (s === null || s === undefined) return "unknown";
+  if (s >= LED_POSITIVE_AT) return "met";
+  if (s <= LED_NEGATIVE_AT) return "missed";
+  return "partial";
+}
+
+// Evidence strings are written for a log line, not a card. These rewrites
+// change wording only where the engine's phrasing is machine-shaped; every
+// value ("£350,000 disclosed", "Climate Tech") passes through untouched.
+function ledValue(component, status) {
+  const raw = String(component.evidence || "").trim();
+  if (status === "unknown" || !raw || /^unknown$/i.test(raw)) return "not known";
+  // "age unknown" / "funding unknown" arrive with a real sub_score — the
+  // engine scores an undisclosed round at mid rather than nil — so they are
+  // not `status === "unknown"`, but they still must not read as a value.
+  if (/^age unknown$/i.test(raw)) return "not known";
+  // Not "none disclosed": we did not check and find nothing, we never found
+  // out. Saying "none" would be a claim the pipeline cannot support.
+  if (/^funding unknown$/i.test(raw)) return "not known";
+  if (/^0 tracked article\(s\)$/i.test(raw)) return "none yet";
+  return raw.replace(/\btracked article\(s\)/i, "tracked articles");
+}
+
+function ledRows(components) {
+  return components.map(comp => {
+    const status = ledStatus(comp);
+    const meta = CRITERION[comp.key] || {};
+    const name = meta.name || comp.label || comp.key;
+    const gloss = status !== "met" && meta.gloss
+      ? `<p class="led-gloss">${esc(meta.gloss)}</p>` : "";
+    return `<li class="led-row" data-testid="criterion"
+                data-key="${esc(comp.key)}" data-status="${status}">
+              ${ledIcon(status)}
+              <span class="led-name">${esc(name)}</span>
+              <span class="led-val">${esc(ledValue(comp, status))}</span>
+              ${gloss}
+            </li>`;
+  }).join("");
+}
+
+// Decided rules first, unknowns last: what we established outranks what we
+// failed to. Within each, the heavier weight leads.
+function ledSort(a, b) {
+  const rank = s => (s === "unknown" ? 1 : 0);
+  const d = rank(ledStatus(a)) - rank(ledStatus(b));
+  return d || (Number(b.weight) || 0) - (Number(a.weight) || 0);
+}
+
+function renderCriteria(c) {
+  const all = Array.isArray(c.components) ? c.components.filter(Boolean) : [];
+  if (!all.length) return "";
+
+  const groups = [
+    {key: "fit",  title: "Fits the fund", score: c.fit,
+     items: all.filter(x => !EDGE_KEYS.has(x.key)).sort(ledSort)},
+    {key: "edge", title: "New to them",   score: c.edge,
+     items: all.filter(x =>  EDGE_KEYS.has(x.key)).sort(ledSort)},
+  ].filter(g => g.items.length);
+
+  return `<div class="ledger" data-testid="criteria">
+    ${groups.map(g => `
+      <section class="led-group" data-testid="criteria-group" data-group="${g.key}">
+        <div class="led-head">
+          <h3>${esc(g.title)}</h3>
+          <span class="led-score">${g.key === "fit" ? "Match" : "Fresh"}
+            <b>${Math.round(Number(g.score) || 0)}</b></span>
+        </div>
+        <ul class="led-rows">${ledRows(g.items)}</ul>
+      </section>`).join("")}
+  </div>`;
+}
+
+function renderFundScores(c) {
+  const scores = Array.isArray(c.fund_scores) ? c.fund_scores : [];
+  if (!scores.length) return "";
+  return `<div class="fund-scores" data-testid="fund-scores" aria-label="Match score by fund">
+    ${scores.map(s => {
+      const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
+      const hasFit = Number.isFinite(value);
+      const display = hasFit ? `${Math.round(value)}%` : "—";
+      const coverage = s.coverage === null || s.coverage === undefined
+        ? "" : ` · ${Math.round(Number(s.coverage) * 100)}% evidence`;
+      const status = s.tier === "reject"
+        ? ` · ${s.reject_reason || "not eligible"}` : "";
+      const title = `${s.fund_name || s.fund_key}: ${display} match${coverage}${status}`;
+      const tone = hasFit ? band(value, 70, 45) : "low";
+      return `<div class="fund-score ${tone}" data-testid="fund-score"
+                   data-fund="${esc(s.fund_key)}"
+                   data-value="${hasFit ? esc(s.fit) : ""}"
+                   data-coverage="${s.coverage == null ? "" : esc(s.coverage)}"
+                   data-tier="${esc(s.tier || "unscored")}"
+                   title="${esc(title)}">
+                 <div class="n">${display}</div>
+                 <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+               </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function renderExplanation(text) {
+  const raw = String(text || "").trim();
+  const clauses = explanationClauses(raw);
+  if (!clauses.length) {
+    return `<div class="why" data-testid="explanation" data-text=""></div>`;
+  }
+  // No preview/"Show all" any more: the clauses live inside a <details> that
+  // is shut by default, so collapsing them a second time hid text behind two
+  // separate disclosures. The ledger above is the thing meant to be read.
+  const items = clauses.map(clause =>
+    `<p class="why-clause" data-testid="explanation-clause"
+        data-kind="${explanationKind(clause)}">${esc(clause)}</p>`).join("");
+  return `<div class="why" data-testid="explanation" data-text="${esc(raw)}"
+               data-collapsed="false">${items}</div>`;
 }
 
 // Everything on this card is scraped off somebody else's website — a company
@@ -371,6 +775,14 @@ function safeUrl(value) {
 function articleLinks(c) {
   const seen = new Set();
   const out = [];
+  if (c.source_url && !seen.has(c.source_url)) {
+    seen.add(c.source_url);
+    out.push({
+      url: c.source_url,
+      label: `Found at ${sourceName(c.source_key)}`,
+      kind: "source",
+    });
+  }
   for (const s of c.signals || []) {
     if (!s.source_url || seen.has(s.source_url)) continue;
     seen.add(s.source_url);
@@ -384,21 +796,49 @@ function articleLinks(c) {
   return out;
 }
 
+function renderKeptBadge(n) {
+  const el = $("#kept-badge");
+  if (!el) return;
+  const count = Math.max(0, Number(n) || 0);
+  el.dataset.count = String(count);
+  el.textContent = count > 0 ? String(count) : "";
+  el.hidden = count === 0;
+}
+
+function renderDone() {
+  const main = $("#main"), footer = $("#footer");
+  const pending = data?.companies || [];
+  const kept = Number(data.totals?.kept) || 0;
+  const reviewed = Number(data.totals?.reviewed_today) || pending.length;
+  const keptLine = kept
+    ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. The sheet is optional sync, not the primary list.</p>`
+    : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
+  main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
+    <h2>You've reviewed today's companies.</h2>
+    <p>${reviewed} ${reviewed === 1 ? "company" : "companies"} reviewed today. Verdicts saved for the next tuning sweep.</p>
+    ${keptLine}
+    <button class="review-again" data-testid="review-again" type="button">Review Again</button></div>`;
+  footer.hidden = true;
+  renderDots();
+}
+
 function render() {
   const main = $("#main"), footer = $("#footer");
   if (!data) return;
 
+  renderKeptBadge(data.totals?.kept);
+
   const pending = data.companies;
   if (!pending.length) {
+    if (Number(data.totals?.reviewed_today) > 0) {
+      renderDone(); return;
+    }
     main.innerHTML = `<div class="empty" data-testid="empty-state"><h2>Nothing to review</h2>
       <p style="color:var(--label-2)">No company cleared the gates in the last run.</p></div>`;
     footer.hidden = true; renderDots(); return;
   }
   if (i >= pending.length) {
-    main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
-      <h2>That's the morning</h2>
-      <p>${pending.length} companies reviewed. Verdicts saved for the next tuning sweep.</p></div>`;
-    footer.hidden = true; renderDots(); return;
+    renderDone(); return;
   }
 
   const c = pending[i];
@@ -423,6 +863,7 @@ function render() {
   const evidence = articleLinks(c).filter(a => safeUrl(a.url)).map((a, i) =>
     `<a class="ev${i === 0 ? " primary" : ""}" data-testid="evidence-link"
         data-kind="${esc(a.kind)}"${i === 0 ? ' data-primary="true"' : ""}
+        ${a.kind === "source" && i === 0 ? 'data-primary-source="true"' : ""}
         href="${safeUrl(a.url)}" target="_blank" rel="noopener">
        ${esc(a.label)} <span class="chev">↗</span></a>`
   ).join("");
@@ -445,8 +886,10 @@ function render() {
 
   // Every hook a test needs is a data-testid. The CSS classes are for
   // styling and may be renamed freely; the testids are the contract.
-  // `score-fit` and `score-edge` are named rather than positional so a test
-  // can never silently assert Edge against Fit if the tiles are reordered.
+  // `score-fit` / `score-edge` stay named (Match / Fresh in the label) so a
+  // reordering can never silently assert Fresh against Match.
+  const matchTitle = "Match — how strongly this company fits this fund's criteria. Unknown fields are skipped, never guessed.";
+  const freshTitle = "Fresh — how likely it is the fund hasn't already seen this (age, tracked press, disclosed funding, discovery route). Unknown funding stays mid, not perfect.";
   main.innerHTML = `
     <article class="card ${thin ? "thin" : ""}" data-testid="card"
              data-company-id="${esc(c.company_id)}" data-tier="${esc(c.tier)}"
@@ -457,14 +900,20 @@ function render() {
           <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
         </div>
         <div class="scores" data-testid="scores">
-          <div class="score ${band(c.fit, 70, 45)}" data-testid="score-fit"
-               data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}">
-            <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
-            <div class="k" data-testid="score-label">Fit</div></div>
-          <div class="score ${band(c.edge, 70, 45)}" data-testid="score-edge"
-               data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}">
-            <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
-            <div class="k" data-testid="score-label">Edge</div></div>
+          <div class="score-row">
+            <div class="score score-fit ${band(c.fit, 70, 45)}" data-testid="score-fit"
+                 data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}"
+                 title="${esc(matchTitle)}">
+              <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
+              <div class="k" data-testid="score-label">Match</div></div>
+            <div class="score score-edge ${band(c.edge, 70, 45)}" data-testid="score-edge"
+                 data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}"
+                 title="${esc(freshTitle)}">
+              <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
+              <div class="k" data-testid="score-label">Fresh</div></div>
+          </div>
+          <div class="score-hint" data-testid="score-hint">Match = fund fit · Fresh = new to them</div>
+          ${renderFundScores(c)}
         </div>
       </div>
 
@@ -473,7 +922,16 @@ function render() {
         <div class="veh" data-testid="route-vehicle">${esc(c.vehicle || "")}${cheque ? " · " + cheque : ""}</div>
       </div>
 
-      <p class="why" data-testid="explanation">${esc(c.explanation || "")}</p>
+      ${c.one_liner
+        ? `<p class="blurb" data-testid="one-liner">${esc(c.one_liner)}</p>`
+        : ""}
+
+      ${renderCriteria(c)}
+
+      <details class="why-full" data-testid="explanation-details">
+        <summary data-testid="explanation-toggle">How this was scored, in full</summary>
+        ${renderExplanation(c.explanation || "")}
+      </details>
 
       ${evidence ? `<div class="evidence" data-testid="evidence">${evidence}</div>` : ""}
 
@@ -501,19 +959,44 @@ function toast(msg) {
 async function decide(verdict) {
   const c = data.companies[i];
   if (!c) return;
+  if (sessionReviewed.has(c.company_id)) return;
+  sessionReviewed.add(c.company_id);
   history.push({ index: i, company_id: c.company_id });
-  await fetch("/api/verdict", {
+  const res = await fetch("/api/verdict", {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ company_id: c.company_id, verdict }),
   });
+  if (!res.ok) {
+    history.pop();
+    sessionReviewed.delete(c.company_id);
+    toast("Couldn't save that decision");
+    return;
+  }
+  let kept = data.totals?.kept;
+  try {
+    const body = await res.json();
+    if (typeof body.kept_count === "number") kept = body.kept_count;
+  } catch { /* older servers still return {ok:true} only */ }
   c.verdict = verdict;
-  toast(`${c.name} — ${verdict}`);
-  i += 1; render();
+  if (data.totals) data.totals.kept = kept;
+  renderKeptBadge(kept);
+  if (verdict === "worth contacting" || verdict === "unsure") {
+    toast(`${c.name} — saved to Kept`);
+  } else {
+    toast(`${c.name} — ${verdict}`);
+  }
+  i += 1;
+  if (i >= data.companies.length) {
+    await loadToday();
+  } else {
+    render();
+  }
 }
 
 function undo() {
   const last = history.pop();
   if (!last) return;
+  sessionReviewed.delete(last.company_id);
   i = last.index; render(); toast("Undone");
 }
 
@@ -523,21 +1006,66 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "1") return decide("worth contacting");
   if (e.key === "2") return decide("unsure");
   if (e.key === "3") return decide("not for me");
-  if (e.key === "ArrowRight") { if (i < (data?.companies?.length || 0)) { i += 1; render(); } }
-  if (e.key === "ArrowLeft")  { if (i > 0) { i -= 1; render(); } }
+  if (e.key === "ArrowRight") {
+    if (i + 1 < (data?.companies?.length || 0)) { i += 1; render(); }
+  }
+  if (e.key === "ArrowLeft")  {
+    const target = i - 1;
+    if (target >= 0 && !sessionReviewed.has(data.companies[target].company_id)) {
+      i = target; render();
+    }
+  }
 });
 
 document.addEventListener("click", (e) => {
+  const again = e.target.closest("button[data-testid=\"review-again\"]");
+  if (again) return reviewAgain();
   const b = e.target.closest("button[data-v]");
   if (b) decide(b.dataset.v);
 });
 
-(async function boot() {
-  data = await (await fetch("/api/today")).json();
+async function loadToday() {
+  data = await (await fetch("/api/today", {cache: "no-store"})).json();
   $("#date").textContent = new Date(data.date + "T00:00:00").toLocaleDateString("en-GB",
     { weekday: "long", day: "numeric", month: "long" });
+  i = 0; history = []; sessionReviewed = new Set();
   render();
-})();
+}
+
+async function reviewAgain() {
+  const res = await fetch("/api/review-again", {method: "POST"});
+  if (!res.ok) {
+    toast("Couldn't start the review again");
+    return;
+  }
+  await loadToday();
+  toast("Reviewing today's companies again");
+}
+
+loadToday();
+
+// The daily run rewrites the score table in place, so a page left open would
+// otherwise keep showing yesterday's shortlist forever. Poll cheaply and
+// re-render only when the shortlist itself changed — mid-run counter flicker
+// and untouched runs are no-ops, so a review in progress is never reset by
+// a run that changed nothing.
+function shortlistSig(p) {
+  return (p?.companies || []).map(c =>
+    `${c.company_id}|${Math.round(c.fit)}|${Math.round(c.edge)}|${c.tier}`).join(";");
+}
+
+async function refresh() {
+  try {
+    const next = await (await fetch("/api/today", {cache: "no-store"})).json();
+    if (shortlistSig(next) === shortlistSig(data)) return;   // nothing new
+    data = next;
+    i = 0; history = []; sessionReviewed = new Set();
+    render();
+    toast("New run loaded — showing the latest shortlist");
+  } catch (e) { /* transient db lock or network — retry next tick */ }
+}
+
+setInterval(refresh, 60_000);
 </script>
 </body>
 </html>

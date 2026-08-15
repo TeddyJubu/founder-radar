@@ -61,10 +61,15 @@ def test_a3_top_level_keys(api):
 
 def test_a4_company_keys(api):
     required = {"company_id", "name", "fit", "edge", "coverage", "priority",
-                "explanation", "flags", "signals", "also_fits", "vehicle", "tier"}
+                "explanation", "flags", "signals", "also_fits", "fund_scores",
+                "vehicle", "tier"}
     assert api["companies"], "no companies to review"
     for c in api["companies"]:
         assert required <= set(c), f"{c.get('name')} missing {required - set(c)}"
+        assert len(c["fund_scores"]) == 4
+        assert {score["fund_key"] for score in c["fund_scores"]} == {
+            "outward", "dsw", "northstar", "anticus"
+        }
 
 
 def test_a5_rejects_never_reach_today(api):
@@ -117,11 +122,16 @@ def test_b1_b2_single_card_with_a_name(today):
 
 
 def test_b3_b4_both_tiles_named_not_positional(today):
-    """Named tiles: a reordering can never make a test compare Edge to Fit."""
-    for testid, label in ((tid("score-fit"), "Fit"), (tid("score-edge"), "Edge")):
+    """Named tiles: a reordering can never make a test compare Fresh to Match."""
+    for testid, label in ((tid("score-fit"), "Match"), (tid("score-edge"), "Fresh")):
         tile = today.locator(testid)
         assert tile.count() == 1
         assert tile.locator(tid("score-label")).text_content() == label
+    hint = today.locator(tid("score-hint"))
+    assert hint.count() == 1
+    assert "fund fit" in hint.inner_text().lower()
+    assert today.locator(tid("score-fit")).get_attribute("title")
+    assert today.locator(tid("score-edge")).get_attribute("title")
 
 
 def test_b5_scores_render_as_integers(today):
@@ -129,9 +139,50 @@ def test_b5_scores_render_as_integers(today):
         assert re.fullmatch(r"\d+", n.strip()), n
 
 
-def test_b6_b7_route_and_explanation_present(today):
+def test_b6_b7_route_and_reasoning_present(today):
+    """The route, and a visible account of why this company scored as it did.
+
+    That account used to be the `score.explanation` sentence rendered as
+    clauses. It is now the criteria ledger, one row per scored rule, and the
+    sentence sits verbatim inside a shut `<details>` — so asserting on the
+    explanation's *visible* text would assert the disclosure is open, which is
+    not what B6/B7 are about. The claim being pinned is unchanged: the card
+    shows the route and says why, above the fold, without being touched.
+    """
     assert today.locator(tid("route-fund")).inner_text().strip()
-    assert len(today.locator(tid("explanation")).inner_text()) > 20
+
+    rows = today.locator(tid("criterion"))
+    assert rows.count() >= 3, "the ledger is the reasoning; it must not be empty"
+    # Visible without opening anything — the point of the redesign.
+    assert rows.first.is_visible()
+    assert len(today.locator(tid("criteria")).inner_text()) > 20
+
+    # The sentence is still carried, verbatim, for anyone who wants it.
+    assert len(today.locator(tid("explanation")).get_attribute("data-text")) > 20
+
+
+def test_b14_every_card_has_a_direct_primary_source_link(today, api):
+    link = today.locator(f'{tid("evidence-link")}['
+                         'data-primary-source="true"]')
+    assert link.count() == 1
+    assert link.get_attribute("href") == api["companies"][0]["source_url"]
+
+
+def test_b15_four_fund_match_scores_are_visible(today, api):
+    scores = today.locator(tid("fund-score"))
+    assert scores.count() == 4
+
+    displayed = {}
+    for i in range(scores.count()):
+        raw = scores.nth(i).get_attribute("data-value")
+        if raw:
+            displayed[scores.nth(i).get_attribute("data-fund")] = float(raw)
+    expected = {
+        score["fund_key"]: score["fit"]
+        for score in api["companies"][0]["fund_scores"]
+        if score["fit"] is not None
+    }
+    assert displayed == expected
 
 
 def test_b8_b9_progress_dots(today, api):
@@ -180,15 +231,19 @@ def test_c1_c2_c3_arrow_navigation(today):
     assert today.locator(tid("company-name")).inner_text() == first
 
 
-@pytest.mark.parametrize("key,verdict", [
-    ("1", "worth contacting"), ("2", "unsure"), ("3", "not for me"),
+@pytest.mark.parametrize("key,toast_bit", [
+    # Keep-worthy keys confirm the company landed on Kept, not the raw verdict
+    # string — matching the shortlist UX (`saved to Kept`).
+    ("1", "saved to Kept"),
+    ("2", "saved to Kept"),
+    ("3", "not for me"),
 ])
-def test_c4_c5_c6_keyboard_verdicts(today, key, verdict):
+def test_c4_c5_c6_keyboard_verdicts(today, key, toast_bit):
     name = today.locator(tid("company-name")).inner_text()
     today.keyboard.press(key)
     today.wait_for_selector(f'{tid("toast")}.show')
     toast = today.locator(tid("toast")).inner_text()
-    assert verdict in toast and name.split()[0] in toast
+    assert toast_bit in toast and name.split()[0] in toast
     assert today.locator(tid("company-name")).inner_text() != name
 
 
@@ -196,7 +251,7 @@ def test_c7_buttons_match_keyboard(today):
     name = today.locator(tid("company-name")).inner_text()
     today.locator(tid("verdict-unsure")).click()
     today.wait_for_selector(f'{tid("toast")}.show')
-    assert "unsure" in today.locator(tid("toast")).inner_text()
+    assert "saved to Kept" in today.locator(tid("toast")).inner_text()
     assert today.locator(tid("company-name")).inner_text() != name
 
 
@@ -223,6 +278,45 @@ def test_c10_c11_reviewing_everything_reaches_the_done_state(today, api):
     today.wait_for_selector(tid("done-state"))
     assert "reviewed" in today.locator(tid("done-state")).inner_text()
     assert today.locator(tid("verdict-bar")).is_hidden()
+
+
+def test_c14_refresh_does_not_requeue_a_decided_company(today):
+    company_id = today.locator(tid("card")).get_attribute("data-company-id")
+
+    today.keyboard.press("3")
+    today.wait_for_timeout(300)
+    today.reload(wait_until="networkidle")
+    today.wait_for_selector(tid("card"))
+
+    assert today.locator(tid("card")).get_attribute("data-company-id") != company_id
+
+
+def test_c15_review_again_restores_the_daily_queue(today, server):
+    with urllib.request.urlopen(server + "/api/today", timeout=5) as response:
+        current_api = json.loads(response.read())
+    first_company_id = current_api["companies"][0]["company_id"]
+
+    for _ in range(len(current_api["companies"])):
+        today.keyboard.press("3")
+        today.wait_for_timeout(120)
+
+    today.wait_for_selector(tid("done-state"))
+    today.locator(tid("review-again")).click()
+    today.wait_for_selector(tid("card"))
+
+    assert today.locator(tid("card")).get_attribute("data-company-id") == first_company_id
+
+
+def test_c16_back_navigation_does_not_reopen_a_decided_company(today):
+    first_company_id = today.locator(tid("card")).get_attribute("data-company-id")
+
+    today.keyboard.press("3")
+    today.wait_for_timeout(250)
+    second_company_id = today.locator(tid("card")).get_attribute("data-company-id")
+    today.keyboard.press("ArrowLeft")
+
+    assert second_company_id != first_company_id
+    assert today.locator(tid("card")).get_attribute("data-company-id") == second_company_id
 
 
 def test_c13_modifier_keys_never_record_a_verdict(today, server):
@@ -255,9 +349,94 @@ def test_d2_d3_scores_are_the_raw_database_values(today, api):
 
 
 def test_d4_explanation_is_character_for_character(today, api):
-    """The spec's sentence, verbatim. Its arithmetic already reconciles; any
-    edit here would be the UI re-deriving a claim it does not own."""
-    assert today.locator(tid("explanation")).inner_text() == api["companies"][0]["explanation"]
+    """The spec's sentence, verbatim. Layout may split it into clauses for
+    scanning, but every character still comes from `score.explanation` —
+    the UI must not re-derive or paraphrase a claim it does not own."""
+    expected = api["companies"][0]["explanation"]
+    why = today.locator(tid("explanation"))
+    assert why.get_attribute("data-text") == expected
+    # All clauses (including any collapsed preview tail) reconstruct the
+    # template sentence when joined with a single space — the same delimiter
+    # `explain.py` used between parts.
+    joined = today.evaluate(
+        """() => [...document.querySelectorAll('[data-testid="explanation-clause"]')]
+                   .map(el => el.textContent).join(' ')"""
+    )
+    assert joined == expected
+
+
+def test_d4c_ledger_shows_every_scored_rule_and_never_calls_unknown_a_failure(today, api):
+    """One row per component, with the status the engine would give it.
+
+    The thresholds are `POSITIVE_AT` / `NEGATIVE_AT` from `radar/score/explain.py`.
+    They are restated in the page, so this test is the thing that notices if
+    the two drift apart and the ledger starts calling a criterion a match
+    while the sentence below it says "Against:".
+
+    The `unknown` case is the one that matters most. The full-model percentage
+    keeps an unconfirmed fact in the denominator without treating it as a
+    failure; a UI that draws `sub_score = None` with the same mark as
+    `sub_score = 0` puts that back, visually, on every card.
+    """
+    components = api["companies"][0]["components"]
+    rows = today.locator(tid("criterion"))
+    assert rows.count() == len(components)
+
+    for comp in components:
+        row = today.locator(f'{tid("criterion")}[data-key="{comp["key"]}"]')
+        assert row.count() == 1, f"{comp['key']} is scored but not shown"
+        status = row.get_attribute("data-status")
+        sub = comp["sub_score"]
+        if sub is None:
+            expected = "unknown"
+        elif sub >= 0.6:
+            expected = "met"
+        elif sub <= 0.34:
+            expected = "missed"
+        else:
+            expected = "partial"
+        assert status == expected, f"{comp['key']}: sub_score={sub} drawn as {status}"
+
+    assert today.locator(f'{tid("criterion")}[data-status="unknown"]').count() == sum(
+        1 for c in components if c["sub_score"] is None)
+
+
+def test_d4d_gloss_explains_only_what_is_not_already_obvious(today, api):
+    """A met rule needs no sentence; an unknown or a miss is exactly where
+    Aryan asked what the rule was even testing. Glossing every row would put
+    the wall of text back in a new shape."""
+    met = today.locator(f'{tid("criterion")}[data-status="met"]')
+    if met.count():
+        assert met.first.locator(".led-gloss").count() == 0
+
+    for status in ("unknown", "missed"):
+        rows = today.locator(f'{tid("criterion")}[data-status="{status}"]')
+        if rows.count():
+            assert rows.first.locator(".led-gloss").count() == 1, status
+
+
+def test_d4b_one_liner_is_honest_when_absent_and_verbatim_when_present(today, api):
+    """Registry companies have no description. Fabricating one from a SIC or
+    sector would fail the client's "say unknown rather than guess" rule. When
+    the extractor did write a one-liner, the card must show that string
+    verbatim — and above the explanation, so the company describes itself
+    before the scoring prose does."""
+    # The demo shortlist is mostly registry-derived: no one-liner may appear.
+    if not api["companies"][0].get("one_liner"):
+        assert today.locator(tid("one-liner")).count() == 0
+
+    blurb = "Turns brewery waste into packaging foam."
+    today.evaluate(
+        """(blurb) => {
+             data.companies[i].one_liner = blurb;
+             render();
+           }""",
+        blurb,
+    )
+    assert today.locator(tid("one-liner")).inner_text() == blurb
+    blurb_y = today.locator(tid("one-liner")).bounding_box()["y"]
+    why_y = today.locator(tid("explanation")).bounding_box()["y"]
+    assert blurb_y < why_y
 
 
 def test_d5_display_text_is_the_rounding_of_its_own_tile(today):
@@ -469,6 +648,42 @@ def test_k3_kept_page_reaches_today_and_back(page, server, api):
     page.wait_for_selector(tid("kept"))
     page.locator(tid("nav-today")).click()
     page.wait_for_selector(tid("card"))
+
+
+
+def test_k4_kept_badge_counts_on_today(page, server, api):
+    """The header badge is how Kept stays visible without opening the list."""
+    # Session-scoped DB accumulates verdicts from earlier interaction tests.
+    # Force a known "not for me" first so the next keep must raise the count.
+    company_id = api["companies"][-1]["company_id"]
+    assert _post(server, {"company_id": company_id, "verdict": "not for me"})[0] == 200
+
+    page.goto(server + "/", wait_until="networkidle")
+    page.wait_for_selector(tid("card"))
+    before = int((page.locator(tid("kept-badge")).get_attribute("data-count") or "0"))
+
+    status, body = _post(server, {"company_id": company_id, "verdict": "worth contacting"})
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["kept_count"] == before + 1
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector(tid("card"))
+    badge = page.locator(tid("kept-badge"))
+    assert badge.get_attribute("data-count") == str(before + 1)
+    assert badge.inner_text().strip() == str(before + 1)
+
+
+def test_k5_help_page_is_reachable_from_kept(page, server, api):
+    assert _post(server, {"company_id": api["companies"][0]["company_id"],
+                          "verdict": "worth contacting"})[0] == 200
+    page.goto(server + "/kept", wait_until="networkidle")
+    page.wait_for_selector(tid("kept"))
+    page.locator(tid("nav-help")).click()
+    page.wait_for_selector(tid("help"))
+    text = page.locator(tid("help")).inner_text()
+    assert "Kept" in text
+    assert "user_field" in text
 
 
 def test_x4b_hostile_source_text_cannot_run_script(today):

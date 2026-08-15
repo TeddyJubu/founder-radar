@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How it works — UK Founder Radar</title>
+<link rel="stylesheet" href="/tokens.css">
+<style>
+body {
+  margin: 0; background: var(--bg); color: var(--label);
+  font: var(--body)/var(--body-lh) var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 720px; margin: 0 auto; padding: var(--s6) var(--s5) var(--s8); }
+header {
+  display: flex; align-items: baseline; gap: var(--s4); flex-wrap: wrap;
+  padding-bottom: var(--s5); border-bottom: 0.5px solid var(--separator);
+  margin-bottom: var(--s6);
+}
+h1 { font-size: var(--title1); margin: 0; letter-spacing: -0.02em; }
+.nav { margin-left: auto; display: flex; gap: var(--s4); }
+.nav a { color: var(--blue); text-decoration: none; font-size: var(--subhead); }
+.nav a:hover { text-decoration: underline; }
+
+h2 {
+  font-size: var(--title2); line-height: var(--title2-lh);
+  margin: var(--s7) 0 var(--s3); letter-spacing: -0.02em;
+}
+p, li { color: var(--label); font-size: var(--body); line-height: var(--body-lh); }
+p { margin: 0 0 var(--s3); }
+ul, ol { margin: 0 0 var(--s4); padding-left: 1.2em; }
+li + li { margin-top: 0.35em; }
+code {
+  font-size: 0.92em; background: var(--fill); padding: 1px 5px; border-radius: 4px;
+}
+.note {
+  margin: var(--s4) 0;
+  padding: var(--s4);
+  border-radius: var(--r-control);
+  background: var(--fill);
+  color: var(--label-2); font-size: var(--subhead); line-height: var(--subhead-lh);
+}
+a { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="wrap" data-testid="help">
+  <header>
+    <h1>How the parts connect</h1>
+    <nav class="nav">
+      <a href="/kept" data-testid="nav-kept">Kept</a>
+      <a href="/" data-testid="nav-today">← Today</a>
+    </nav>
+  </header>
+
+  <p>Three surfaces, one database. The daily run writes companies and scores into
+     SQLite; everything else is a view or a thin write on top of that.</p>
+
+  <h2>Data flow</h2>
+  <ol>
+    <li><strong>Google Sheet</strong> (Fund Criteria, Scoring Weights, Settings, Sources)
+        is the editable brain. Each morning the pipeline reads it, validates every cell,
+        and scores against that config.</li>
+    <li><strong>Sources</strong> fill the database with companies and evidence. The engine
+        gates, scores, and tiers each one (<code>shortlist</code> / <code>watchlist</code> /
+        <code>reject</code>).</li>
+    <li><strong>This web interface</strong> (Today + Kept) is where you review today’s
+        queue and keep companies you like. Picks are stored here in the app.</li>
+    <li><strong>Telegram</strong> delivers the morning digest and maps chat commands
+        (<code>/today</code>, <code>/run</code>, <code>/status</code>, …) onto the same
+        CLI the timer uses. It does not hold a second shortlist.</li>
+  </ol>
+
+  <div class="note">
+    Full self-serve detail also lives in <code>docs/ops-guide.md</code> in the repo —
+    same content, for reading outside the app.
+  </div>
+
+  <h2>Shortlist vs Kept</h2>
+  <ul>
+    <li><strong>Engine shortlist</strong> — <code>score.tier = 'shortlist'</code>. The system’s
+        opinion. It moves when you change thresholds.</li>
+    <li><strong>Kept</strong> — your picks. Press <b>1</b> (Worth contacting) or <b>2</b> (Unsure)
+        on Today. Stored in SQLite <code>user_field</code> with <code>field = 'verdict'</code>.
+        Open <a href="/kept">Kept</a> any time; the header count is the same badge on Today.</li>
+  </ul>
+  <p><b>Not for me</b> is recorded for tuning but never appears on Kept.</p>
+
+  <h2>Where Kept is stored</h2>
+  <ul>
+    <li><strong>Primary:</strong> this app’s SQLite database, table <code>user_field</code>.</li>
+    <li><strong>Optional mirror:</strong> Google Sheet Companies tab, column Z (Verdict).
+        On sheet sync, picks made here are written out, and edits typed in the sheet are
+        folded back in. You do not need Excel open to track your list.</li>
+    <li><strong>Also feeds:</strong> <code>founder-radar tune</code>, which sweeps thresholds
+        against your verdicts.</li>
+  </ul>
+
+  <h2>Update funds later</h2>
+  <p>Edit the <strong>Fund Criteria</strong> tab in the sheet — one row per vehicle.
+     Leave <code>Fund key</code> / <code>Vehicle key</code> alone on existing rows.
+     Add a new fund by adding rows with new keys; set <code>Active</code> to FALSE to
+     retire a vehicle without deleting history. After save, the next
+     <code>founder-radar run</code> (or <code>rescore</code>) picks it up. Bad cells fall
+     back to the last good value and show a red status note in the sheet.</p>
+
+  <h2>Edit fund criteria &amp; thresholds</h2>
+  <ul>
+    <li><strong>Fund Criteria</strong> — geography, cheque range, age caps, hard rejects
+        (<code>key:value</code> pairs separated by <code>·</code>), sector plus/minus.</li>
+    <li><strong>Scoring Weights</strong> — 0–4 matrix and attribute importance (blank = 1).</li>
+    <li><strong>Settings</strong> — <code>shortlist_fit</code>, <code>shortlist_edge</code>,
+        <code>min_coverage</code>, age/funding gates, region list, digest cap.</li>
+  </ul>
+
+  <h2>Add or remove sourcing channels</h2>
+  <ul>
+    <li><strong>Turn off / on:</strong> Sources tab → <code>Enabled</code> TRUE/FALSE.
+        No deploy needed; the next run skips disabled adapters.</li>
+    <li><strong>Add a brand-new source:</strong> needs a code adapter under
+        <code>radar/sources/</code> registered in the sources registry, then a Sources-tab
+        row. Enabling alone cannot invent a scraper.</li>
+  </ul>
+
+  <p class="note">CLI reminders: <code>founder-radar doctor</code>,
+     <code>founder-radar sync-sheet</code>, <code>founder-radar sources --list</code>.</p>
+</div>
+</body>
+</html>

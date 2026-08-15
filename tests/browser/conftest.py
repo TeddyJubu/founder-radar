@@ -4,7 +4,8 @@ Everything here exists to make the suite hermetic. Three properties matter:
 
 * **A disposable database per session.** Verdicts are persistent writes, so a
   suite that reused one file would pass on the first run and drift on the
-  second. `/tmp/demo.db` is copied, never opened.
+  second. Each session rebuilds the register-derived demo (TESTING.md §0.2)
+  into a temp path and never opens `/tmp/demo.db`.
 * **A free port, chosen at run time.** Port 8787 is usually serving a live
   preview and 8788 is what `TESTING.md` tells a human to use; CI must collide
   with neither, so the port is whatever the OS hands out.
@@ -18,7 +19,7 @@ all Playwright and this server need.
 from __future__ import annotations
 
 import json
-import shutil
+import sqlite3
 import socket
 import subprocess
 import sys
@@ -31,7 +32,6 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 SERVER = REPO / "prototype" / "server.py"
-DEMO_DB = Path("/tmp/demo.db")
 
 
 def _free_port() -> int:
@@ -71,13 +71,27 @@ def _build_demo_db(path: Path) -> None:
 
 @pytest.fixture(scope="session")
 def demo_db(tmp_path_factory) -> Path:
-    """A copy of the live demo database, or a rebuilt one. Never the original."""
+    """A disposable register-derived database for the suite (TESTING.md §0.2).
+
+    Always rebuilt — never a copy of `/tmp/demo.db`. The live demo can carry
+    hundreds of shortlist rows and leftover `user_field` verdicts; copying it
+    makes layout and Kept-count tests depend on whoever last ran a pipeline.
+    """
     target = tmp_path_factory.mktemp("today") / "test-run.db"
-    if DEMO_DB.exists():
-        shutil.copy(DEMO_DB, target)
-    else:
-        _build_demo_db(target)
+    _build_demo_db(target)
     return target
+
+
+@pytest.fixture(autouse=True)
+def fresh_daily_review(demo_db: Path):
+    """Keep browser tests isolated without clearing lasting verdicts."""
+    from prototype.server import reset_daily_review
+
+    conn = sqlite3.connect(str(demo_db))
+    try:
+        reset_daily_review(conn)
+    finally:
+        conn.close()
 
 
 @pytest.fixture(scope="session")

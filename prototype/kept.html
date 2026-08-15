@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   The companies Aryan has kept. Server-rendered: `render_kept_rows` in
-  server.py replaces the placeholder below, for the same reason the onboarding
+  server.py replaces the placeholders below, for the same reason the onboarding
   fund rules are — this page has no JavaScript, and a list of decisions is a
   poor thing to make depend on a script.
 -->
@@ -20,13 +20,21 @@ body {
 .wrap { max-width: 900px; margin: 0 auto; padding: var(--s6) var(--s5) var(--s7); }
 
 header {
-  display: flex; align-items: baseline; gap: var(--s4);
-  padding-bottom: var(--s5); border-bottom: 0.5px solid var(--separator);
+  display: flex; align-items: baseline; gap: var(--s4); flex-wrap: wrap;
+  padding-bottom: var(--s4); border-bottom: 0.5px solid var(--separator);
 }
 h1 { font-size: var(--title1); margin: 0; letter-spacing: -0.02em; }
-.back { margin-left: auto; color: var(--blue); text-decoration: none; font-size: var(--subhead); }
+.nav { margin-left: auto; display: flex; gap: var(--s4); align-items: baseline; }
+.back { color: var(--blue); text-decoration: none; font-size: var(--subhead); }
 .back:hover { text-decoration: underline; }
 
+.kept-intro {
+  margin: var(--s4) 0 0;
+  color: var(--label-2); font-size: var(--subhead); line-height: var(--subhead-lh);
+}
+.kept-intro .count {
+  display: inline-block; vertical-align: middle; margin-right: 4px;
+}
 .kept-group { margin-top: var(--s6); }
 .kept-group h2 {
   font-size: var(--headline); margin: 0 0 var(--s3);
@@ -66,9 +74,13 @@ h1 { font-size: var(--title1); margin: 0; letter-spacing: -0.02em; }
 <div class="wrap" data-testid="kept">
   <header>
     <h1>Kept</h1>
-    <a class="back" href="/" data-testid="nav-today">← Today</a>
+    <nav class="nav">
+      <a class="back" href="/help" data-testid="nav-help-header">Help</a>
+      <a class="back" href="/" data-testid="nav-today">← Today</a>
+    </nav>
   </header>
 
+  <!--KEPT_INTRO-->
   <!--KEPT_ROWS-->
 </div>
 </body>

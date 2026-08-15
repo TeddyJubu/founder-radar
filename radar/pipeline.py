@@ -609,7 +609,6 @@ def _bulk_score_rows(company: dict, cfg: Any, attributes: tuple[str, ...], *,
     """
     from types import SimpleNamespace
 
-    from radar.score.criteria import attribute_label, attribute_raw
     from radar.score.derive import derive_updates
     from radar.score.discovery_edge import _edge_parts
     from radar.score.explain import explain
@@ -694,32 +693,20 @@ def _bulk_score_rows(company: dict, cfg: Any, attributes: tuple[str, ...], *,
 
 def _fit_numbers(company: dict, fund_key: str, cfg: Any,
                  attributes: tuple[str, ...]) -> dict:
-    """Fund fit on plain dicts — the same arithmetic as `fund_fit`
-    (06-scoring §6), reading each attribute through the shared `attribute_raw`
-    core so the daily path and the bulk rescore compute identical numbers.
-    """
-    from radar.score.criteria import attribute_label, attribute_raw
+    """Adapt the shared Fund Fit calculation to the bulk row shape."""
+    from radar.score.fund_fit import calculate_fund_fit
 
-    components: list[tuple] = []
-    earned = 0.0
-    max_achievable = 0.0
-    raw_sum = 0.0
-    covered = 0
-    for attr in attributes:
-        sub, weight, evidence, raw = attribute_raw(company, attr, fund_key, cfg)
-        label = attribute_label(attr)
-        if sub is None:
-            components.append((attr, label, None, weight, None, evidence))
-            continue
-        covered += 1
-        earned += weight * sub
-        max_achievable += weight
-        raw_sum += raw or 0
-        components.append((attr, label, sub, weight, weight * sub, evidence))
-    pct = 100.0 * earned / max_achievable if max_achievable else 0.0
-    coverage = covered / len(attributes) if attributes else 0.0
-    return {"pct": round(pct, 1), "coverage": round(coverage, 2),
-            "raw_sum": round(raw_sum, 1), "components": components}
+    calculation = calculate_fund_fit(company, fund_key, cfg, attributes)
+    return {
+        "pct": calculation.pct,
+        "coverage": calculation.coverage,
+        "raw_sum": calculation.raw_sum,
+        "components": [
+            (component.key, component.label, component.sub_score,
+             component.weight, component.contribution, component.evidence)
+            for component in calculation.components
+        ],
+    }
 
 
 def _contribution(sub_score: float | None, weight: float) -> float | None:
@@ -804,7 +791,8 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
         name=name,
         ch_number=structured.get("company_number"),
         domain=structured.get("domain") or getattr(item, "domain", None),
-        country_iso2=structured.get("country_iso2"),
+        country_iso2=(structured.get("country_iso2")
+                      or structured.get("hq_country_iso2")),
         first_seen=getattr(item, "published_at", None) and str(item.published_at) or None,
     )
 
@@ -814,7 +802,7 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
         if extraction.is_about_single_company is False:
             return None
 
-    fields.update(_fields_from_structured(structured))
+    fields.update(_fields_from_structured(structured, existing=fields))
     fields["discovery_route"] = _route_of(item, cfg)
 
     resolution = upsert_record(
@@ -924,18 +912,51 @@ def _route_of(item: Any, cfg: Any) -> str | None:
     return _ROUTE_BY_KIND.get(getattr(item, "kind_hint", None), "news")
 
 
-def _fields_from_structured(structured: Mapping[str, Any]) -> dict[str, Any]:
+def _fields_from_structured(
+    structured: Mapping[str, Any], *, existing: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Map facts from a source that already parsed its own page.
+
+    Some directory adapters expose a founding year rather than a full date.
+    The database deliberately has no ``founded_year`` column: the canonical
+    age field is ``incorporated_on``. Keep the same mid-year convention used by
+    prose extraction, otherwise an old structured record becomes age-unknown
+    and can leak into the review queue.
+
+    A real ``date_of_creation`` always wins. ``existing`` protects a more
+    specific date already supplied by extraction when an item happens to carry
+    both structured and prose evidence.
+    """
     fields: dict[str, Any] = {}
     if structured.get("company_number"):
         fields["companies_house_no"] = structured["company_number"]
     if structured.get("date_of_creation"):
         fields["incorporated_on"] = structured["date_of_creation"]
+    elif structured.get("founded_year") and not (existing or {}).get("incorporated_on"):
+        fields["incorporated_on"] = f"{int(structured['founded_year']):04d}-07-01"
+        fields["age_source"] = "source_stated"
+        fields["date_confidence"] = "stated"
     if structured.get("sic_codes"):
         fields["sic_codes"] = json.dumps(structured["sic_codes"])
+    if structured.get("company_website"):
+        fields["website_url"] = structured["company_website"]
+    if structured.get("one_line_description"):
+        fields["one_liner"] = structured["one_line_description"]
+    if structured.get("sector"):
+        fields["sector"] = structured["sector"]
+    if structured.get("stage"):
+        fields["stage"] = structured["stage"]
+    if structured.get("hq_region"):
+        fields["hq_region"] = structured["hq_region"]
+    if structured.get("hq_city"):
+        fields["hq_city"] = structured["hq_city"]
     if structured.get("postal_code"):
         fields["hq_postcode"] = structured["postal_code"]
     if structured.get("locality"):
         fields["hq_city"] = structured["locality"]
+    if structured.get("country_iso2") or structured.get("hq_country_iso2"):
+        fields["country_iso2"] = (structured.get("country_iso2")
+                                   or structured.get("hq_country_iso2"))
     if structured.get("is_university_spinout") is not None:
         fields["is_university_spinout"] = int(bool(structured["is_university_spinout"]))
     if structured.get("university_name"):

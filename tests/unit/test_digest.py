@@ -64,6 +64,29 @@ def seed_score(db, cid, *, fund="northstar", vehicle="spinout_inspire", tier="sh
     return db.scalar("SELECT last_insert_rowid()")
 
 
+# The five fund-fit components plus age, in the shape `score_component` holds
+# them. `sub_score=None` means nobody could establish the fact — which is not
+# the same as establishing that it is zero, and the digest must not blur them.
+FIT_COMPONENTS = [
+    ("geography", 1.0, "Yorkshire", 4.0),
+    ("sector", 0.25, "B2B SaaS", 4.0),
+    ("stage", 0.5, "Pre-seed", 3.0),
+    ("founder_signal", None, "unknown", 3.0),
+    ("traction_signal", None, "unknown", 2.0),
+    ("age", 0.98, "1 month old", 30.0),
+]
+
+
+def seed_components(db, score_id, components=None):
+    for key, sub, evidence, weight in (components or FIT_COMPONENTS):
+        db.execute(
+            """INSERT INTO score_component
+                 (score_id, key, label, sub_score, weight, contribution, evidence)
+               VALUES (?,?,?,?,?,?,?)""",
+            (score_id, key, key.replace("_", " ").title(), sub, weight, None, evidence),
+        )
+
+
 def seed_run(db, *, on=DAY, scanned=412, gated_out=374, shortlisted=6, status="ok",
              llm_calls=120, cost=0.42, mode="daily"):
     db.execute(
@@ -135,6 +158,100 @@ def test_full_day_entry_carries_route_facts_evidence_and_link(full_day):
     assert block[2] == "   Newcastle · 1 month old · Life Sciences"
     assert "SH01 filed 22 Jul" in block[3]
     assert block[4] == "   🔗 kelvinbio.com"
+
+
+def test_the_ledger_marks_each_fund_rule_instead_of_listing_bare_facts(db):
+    """The line under each company used to read `Newcastle · 1 month old ·
+    Life Sciences` — three criteria printed as neutral facts when the engine
+    had already judged every one. Same values, now each says how it counted."""
+    cid = seed_company(db, "Kelvin Bio", domain="kelvinbio.com")
+    seed_components(db, seed_score(db, cid))
+    seed_run(db, on=DAY, shortlisted=1)
+
+    text = render_digest(db, period="today", on_date=DAY)
+
+    assert "🟢 Location: Yorkshire" in text
+    assert "🔴 Sector: B2B SaaS" in text
+    assert "🟠 Stage: Pre-seed" in text
+    assert "🟢 Age: 1 month old" in text
+    # The bare facts line it replaced is gone, not printed alongside.
+    assert "Newcastle · 1 month old" not in text
+
+
+def test_the_ledger_never_renders_an_unknown_as_a_failure(db):
+    """`sub_score = None` is "nobody could find out", not "it scored zero".
+    The full-model percentage keeps the two facts distinct, and a digest that
+    marks them alike undoes that in the one place the client actually reads
+    each morning."""
+    cid = seed_company(db, "Kelvin Bio")
+    seed_components(db, seed_score(db, cid))
+    seed_run(db, on=DAY, shortlisted=1)
+
+    text = render_digest(db, period="today", on_date=DAY)
+
+    assert "⚪ Not known: founders, traction" in text
+    for absent in ("🔴 Founders", "🔴 Traction", "🟢 Founders", "🟢 Traction"):
+        assert absent not in text
+
+
+def test_the_ledger_shows_what_matched_and_not_only_what_failed(db):
+    """A company only reaches the digest by matching something. An earlier cut
+    ranked failures first, which showed three red rows and hid the rule the
+    company had qualified on — describing a different company than the one
+    that was scored."""
+    cid = seed_company(db, "Kelvin Bio")
+    seed_components(db, seed_score(db, cid))
+    seed_run(db, on=DAY, shortlisted=1)
+
+    text = render_digest(db, period="today", on_date=DAY)
+    assert "🟢" in text, "a shortlisted company must show the rules it met"
+
+
+def test_a_failed_rule_is_never_crowded_out_by_heavier_rules_that_passed(db):
+    """`founder_signal` and `traction_signal` carry the lowest fit weights, so
+    ranking purely by weight drops exactly those two. Here everything heavy
+    passes and the light one fails: a top-three-by-weight would print four
+    green rows and quietly lose the only reason to hesitate."""
+    cid = seed_company(db, "Looks Perfect Ltd")
+    seed_components(db, seed_score(db, cid), [
+        ("geography", 1.0, "Newcastle", 4.0),
+        ("sector", 1.0, "Deep Tech", 4.0),
+        ("stage", 1.0, "Seed", 3.0),
+        ("founder_signal", 1.0, "Durham spinout", 3.0),
+        ("traction_signal", 0.0, "no customers found", 2.0),
+        ("age", 1.0, "2 months old", 30.0),
+    ])
+    seed_run(db, on=DAY, shortlisted=1)
+
+    text = render_digest(db, period="today", on_date=DAY)
+    assert "🔴 Traction: no customers found" in text
+    assert "🟢" in text, "and the rules it passed still show"
+
+
+def test_an_entry_without_components_keeps_its_facts_line(db):
+    """Scores written before `score_component` was populated have nothing to
+    mark. The entry falls back rather than losing its facts entirely."""
+    cid = seed_company(db, "Old Score Ltd")
+    seed_score(db, cid)                       # no components
+    seed_run(db, on=DAY, shortlisted=1)
+
+    text = render_digest(db, period="today", on_date=DAY)
+    assert "Newcastle · 1 month old · Life Sciences" in text
+
+
+def test_the_explanation_is_not_repeated_underneath_its_own_ledger(db):
+    """`score.explanation` is prose assembled from the same components the
+    ledger just listed. A signal headline still shows — that is provenance,
+    not a retelling."""
+    cid = seed_company(db, "Kelvin Bio")
+    seed_components(db, seed_score(db, cid))
+    seed_run(db, on=DAY, shortlisted=1)
+
+    text = render_digest(db, period="today", on_date=DAY)
+    assert "Matches on geography, sector and founder signal." not in text
+
+    seed_signal(db, cid, "SH01 filed 22 Jul")
+    assert "SH01 filed 22 Jul" in render_digest(db, period="today", on_date=DAY)
 
 
 def test_a_described_company_reads_as_a_company_not_as_an_article(db):

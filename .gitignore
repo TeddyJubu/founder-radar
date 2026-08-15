@@ -18,6 +18,13 @@ google-sa.json
 # local data
 data/
 *.db
+
+# agent tooling state — local to one machine, never part of the project.
+# `.freebuff/` is 240MB of SQLite and preview logs; it only takes one
+# `git add -A` for that to become a commit nobody can undo cheaply.
+.freebuff/
+.herenow/
+.impeccable/
 *.db-wal
 *.db-shm
 backups/

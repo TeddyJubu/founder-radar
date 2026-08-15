@@ -1,4 +1,4 @@
-"""Fund Fit — the weighted matrix, percentage-of-known, and coverage.
+"""Fund Fit — the weighted matrix, evidence-aware percentage, and coverage.
 
 06-scoring §6. Two tables are multiplied together:
 
@@ -9,21 +9,56 @@
 
 They are different functions over different tables and must not be confused.
 
-The headline is a **percentage of the maximum achievable over known
-attributes**, which is comparable across funds with different criteria counts
-and across companies with different amounts of known information. That creates
-one trap — a company with one known attribute scoring 1.0 gets 100% — and
-`coverage` plus a coverage floor is the fix.
+The headline is a **percentage of the configured maximum across all
+attributes**. Only confirmed attributes earn points; unknown attributes stay
+unknown in their component record but remain in the headline denominator. That
+means a sparse two-criterion match cannot look like a perfect match. The
+separate `coverage` value reports how many attributes were confirmed, and the
+coverage floor still controls shortlist eligibility.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .criteria import ComponentScore, attribute_component, attributes_for
+from .criteria import ComponentScore, attribute_label, attribute_raw, attributes_for
 from .derive import _get
+
+
+class FitComponent(NamedTuple):
+    """Lean component data shared by the pydantic and bulk score paths."""
+
+    key: str
+    label: str
+    sub_score: float | None
+    weight: float
+    evidence: str
+    raw: int | None
+
+    @property
+    def contribution(self) -> float | None:
+        return self.weight * self.sub_score if self.sub_score is not None else None
+
+
+@dataclass(frozen=True, slots=True)
+class FundFitCalculation:
+    """The complete plain-data Fund Fit calculation.
+
+    Keeping this independent of Pydantic is important for `rescore --all`;
+    both paths still get one arithmetic implementation without forcing the
+    bulk path to construct daily-path models.
+    """
+
+    components: tuple[FitComponent, ...]
+    pct: float
+    coverage: float
+    raw_sum: float
+    earned: float
+    max_achievable: float
+    max_all: float
 
 
 class FitScore(BaseModel):
@@ -44,6 +79,56 @@ class FitScore(BaseModel):
         return [c for c in self.components if c.sub_score is not None]
 
 
+def calculate_fund_fit(
+    company: Any,
+    fund_key: str,
+    config: Any,
+    attributes: tuple[str, ...] | None = None,
+) -> FundFitCalculation:
+    """Calculate Fund Fit once, without constructing a Pydantic model.
+
+    The daily evaluator wraps this result in `FitScore`; the bulk rescore
+    adapts the same result to its existing plain tuples. Unknown source values
+    remain absent from the evidence coverage count, while a configured
+    pessimistic policy can still contribute zero to the fit denominator.
+    """
+    attributes = attributes if attributes is not None else attributes_for(config)
+    components: list[FitComponent] = []
+    for attribute in attributes:
+        sub_score, weight, evidence, raw = attribute_raw(
+            company, attribute, fund_key, config)
+        components.append(FitComponent(
+            key=attribute,
+            label=attribute_label(attribute),
+            sub_score=sub_score,
+            weight=weight,
+            evidence=evidence,
+            raw=raw,
+        ))
+    components = tuple(components)
+
+    known = tuple(component for component in components if component.sub_score is not None)
+    earned = sum(component.weight * component.sub_score for component in known)
+    max_achievable = sum(component.weight for component in known)
+    max_all = sum(component.weight for component in components)
+    pct = 100.0 * earned / max_all if max_all else 0.0
+
+    # Coverage means confirmed source evidence, not merely a score produced by
+    # an unknown-value policy such as `pessimistic` or `assume`.
+    covered = sum(1 for component in components if _get(company, component.key) is not None)
+    coverage = covered / len(attributes) if attributes else 0.0
+
+    return FundFitCalculation(
+        components=components,
+        pct=round(pct, 1),
+        coverage=round(coverage, 2),
+        raw_sum=round(sum((component.raw or 0) for component in known), 1),
+        earned=round(earned, 4),
+        max_achievable=round(max_achievable, 4),
+        max_all=round(max_all, 4),
+    )
+
+
 def fund_fit(company: Any, fund: Any, config: Any, vehicle: Any = None) -> FitScore:
     """06-scoring §6, verbatim, with the coverage correction from §2.6.
 
@@ -52,40 +137,31 @@ def fund_fit(company: Any, fund: Any, config: Any, vehicle: Any = None) -> FitSc
     `vehicle_key` is carried through only so the score row can name the route.
     """
     fund_key = fund if isinstance(fund, str) else fund.key
-    attributes = attributes_for(config)
-
-    components = [attribute_component(company, attr, fund_key, config) for attr in attributes]
-
-    known = [c for c in components if c.sub_score is not None]
-    earned = sum(c.weight * c.sub_score for c in known)
-    max_achievable = sum(c.weight for c in known)  # denominator: KNOWN only
-    max_all = sum(c.weight for c in components)
-
-    pct = 100.0 * earned / max_achievable if max_achievable else 0.0
-
-    # ponytail: 06-scoring §6 writes `coverage = max_ach / max_all`, but the
-    # worked table in §2.6 gives 0.40 / 0.60 / 0.80 / 1.00 for two, three, four
-    # and five known attributes, which is a *count*, not a weighted share — and
-    # `test_one_known_attribute_cannot_shortlist` needs coverage < 0.5 for a
-    # company whose two known attributes happen to carry half the weight. The
-    # count reading is the one that satisfies both, so it is what is
-    # implemented. It is also the more honest number: coverage answers "how
-    # much did we find out?", not "how much of the weight did we find out?".
-    covered = sum(1 for attr in attributes if _get(company, attr) is not None)
-    coverage = covered / len(attributes) if attributes else 0.0
+    calculation = calculate_fund_fit(company, fund_key, config)
+    components = [
+        ComponentScore(
+            key=component.key,
+            label=component.label,
+            sub_score=component.sub_score,
+            weight=component.weight,
+            evidence=component.evidence,
+            raw=component.raw,
+        )
+        for component in calculation.components
+    ]
 
     return FitScore(
         fund_key=fund_key,
         vehicle_key=(vehicle.vehicle_key if vehicle is not None else None),
-        pct=round(pct, 1),
-        coverage=round(coverage, 2),
+        pct=calculation.pct,
+        coverage=calculation.coverage,
         # The raw sum is still reported because the client is used to it; it is
         # not comparable across funds, which is why it is not the headline
         # (06-scoring §5.2).
-        raw_sum=round(sum((c.raw or 0) for c in known), 1),
-        earned=round(earned, 4),
-        max_achievable=round(max_achievable, 4),
-        max_all=round(max_all, 4),
+        raw_sum=calculation.raw_sum,
+        earned=calculation.earned,
+        max_achievable=calculation.max_achievable,
+        max_all=calculation.max_all,
         components=components,
     )
 

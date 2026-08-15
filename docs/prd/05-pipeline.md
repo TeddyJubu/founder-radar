@@ -144,6 +144,7 @@ class Extraction(BaseModel):
         "already_large_company","no_company_identified","paywalled"]] = None
 
     company_name:        Optional[str] = None
+    company_role:        Literal["startup", "parent", "investor", "acquirer", "university", "other"] = "startup"
     company_website:     Optional[str] = None
     one_line_description: Optional[str] = Field(None, max_length=200)
     sector:              Optional[Sector] = None        # closed enum from Lists
@@ -164,7 +165,8 @@ class Extraction(BaseModel):
 Two design choices worth keeping:
 
 1. **The "is this even about one startup?" decision is a schema field, not a second call.** One request, one price, and it becomes a plain assertion in the golden tests.
-2. **`evidence_quote_*` gives a free, deterministic hallucination check.** After parsing, assert the quote appears verbatim in the source text (after whitespace normalisation). If it doesn't, the model invented it — drop the field and log it. This costs ~30 output tokens and catches a large fraction of extraction errors with no AI involved.
+2. **The subject role is explicit.** `company_name` must be the operating startup, not a parent, investor, fund, university or acquirer named around it. A non-startup role turns the record into `not_a_startup` rather than allowing the surrounding organisation to become a recommendation.
+3. **`evidence_quote_*` gives a free, deterministic hallucination check.** After parsing, assert the quote appears verbatim in the source text (after whitespace normalisation). If it doesn't, the model invented it — drop the field and log it. This costs ~30 output tokens and catches a large fraction of extraction errors with no AI involved.
 
 ### 3.3 Calling the model
 
@@ -180,7 +182,7 @@ Two design choices worth keeping:
 
 If the provider is unavailable after retries, `heuristic.py` runs:
 
-- Company name from `og:title` / JSON-LD `about` / the first `X Ltd|Limited` match
+- Company name from a relation-aware headline target (`X invests in Y`, `X acquires Y`) before JSON-LD `about` / the first `X Ltd|Limited` match
 - Amount from a currency regex
 - Date from article metadata
 - Everything else `None`
@@ -320,7 +322,10 @@ def pick_ch_match(candidates, company) -> dict | None:
     return None       # ambiguous or none → leave incorporated_on NULL, set age_unknown
 ```
 
-Ambiguous is not a guess. `age_unknown` routes the company to watchlist with "age unconfirmed — check Companies House", which is honest and takes Aryan ten seconds to resolve.
+Ambiguous is not a guess. `age_unknown` keeps the company in the research pool
+with "age unconfirmed — check Companies House", but it does not reach the Today
+review queue. Today is the surfaced-opportunity queue, so every card must have
+age evidence; the row can appear after enrichment verifies `incorporated_on`.
 
 **Privacy filter at ingest**, in the adapter, before the database: drop `date_of_birth`, `address`, `country_of_residence` and `nationality` from every officer and PSC record. Do not merely avoid displaying them.
 
