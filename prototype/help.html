@@ -124,6 +124,16 @@ a { color: var(--blue); }
         row. Enabling alone cannot invent a scraper.</li>
   </ul>
 
+  <h2>Change the login password</h2>
+  <p>This app sits behind a Caddy reverse proxy with basic auth. On the server,
+     run <code>caddy hash-password --plaintext 'your-new-password'</code>, put the
+     resulting hash into <code>RADAR_WEB_PASS_HASH</code> in
+     <code>/opt/founder-radar/.env</code>, then restart Caddy with
+     <code>systemctl restart caddy</code>. The username is
+     <code>RADAR_WEB_USER</code> in the same file. Never write the plaintext
+     password into the repo, a chat thread, or anywhere else that is not the
+     server itself.</p>
+
   <p class="note">CLI reminders: <code>founder-radar doctor</code>,
      <code>founder-radar sync-sheet</code>, <code>founder-radar sources --list</code>.</p>
 </div>

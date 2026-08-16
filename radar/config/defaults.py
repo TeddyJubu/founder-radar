@@ -430,13 +430,23 @@ DEFAULT_SOURCES = [
     SourceConfig(key="companies_house", track="B", note="The register sweep — Track B"),
     SourceConfig(key="northern_accelerator", track="A"),
     SourceConfig(key="cambridge_enterprise", track="A"),
-    SourceConfig(key="oxford_university_innovation", track="A"),
+    # Registry key, not a display name: the Sources-tab Enabled toggle and the
+    # health join both key on `adapter.key`, so the seed must equal the
+    # registry key exactly (this was `oxford_university_innovation` once, which
+    # made the toggle inert and the health column blind).
+    SourceConfig(key="oxford_innovation", track="A"),
     SourceConfig(key="zinc_vc", track="A"),
     SourceConfig(key="conception_x", track="A"),
     SourceConfig(key="entrepreneur_first", track="A"),
     SourceConfig(key="businesscloud", track="A"),
     SourceConfig(key="uktn", track="A"),
     SourceConfig(key="govuk_search", track="A"),
+    # Client ask A5 — dedicated Innovate UK award feeds (04-sources Tier 1).
+    # `ukri_gtr` (weekly) and `innovate_uk` (monthly) are the "first
+    # appearance" grant announcements Aryan asked for; both filter by date and
+    # dedupe on (source_key, external_id), so running them every day is cheap.
+    SourceConfig(key="ukri_gtr", track="A", note="Innovate UK awards via UKRI GtR"),
+    SourceConfig(key="innovate_uk", track="A", note="Innovate UK funded-projects workbook"),
     SourceConfig(key="vc_portfolios", track="A", note="The denylist — feeds on_vc_portfolio"),
 ]
 

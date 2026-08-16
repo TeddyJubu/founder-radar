@@ -371,6 +371,25 @@ def test_source_failures_appear_only_on_the_sources_tab(db, sheet):
     assert "uktn" in sheet.column(RUN_LOG, "O")
 
 
+def test_oxford_health_joins_under_its_registry_key(db, sheet):
+    """The Sources tab joins health by the same key the adapter runs under.
+
+    The seeded key used to be `oxford_university_innovation` while the adapter
+    and its health rows are `oxford_innovation`, so Oxford's row never showed
+    its failures (and its Enabled toggle was ignored). With the seed unified,
+    a failed run appears on the Oxford row.
+    """
+    from radar.config.defaults import default_config
+    from radar.render.sheet import build_sources
+
+    error = seed_failed_source(db, "oxford_innovation")
+    rows = build_sources(db, default_config(), today=TODAY_DATE)
+
+    row = next(r for r in rows if r.cells["A"] == "oxford_innovation")
+    assert row.cells["G"] == "❌"
+    assert error in row.cells["H"]
+
+
 # --------------------------------------------------------------------- tuning
 
 

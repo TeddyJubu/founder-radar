@@ -18,6 +18,7 @@ Source identity affects trust weighting and Discovery Edge, both table lookups.
 from __future__ import annotations
 
 import importlib
+import logging
 import re
 import time
 from collections.abc import Mapping
@@ -27,6 +28,8 @@ from typing import Any, Iterable, Iterator, Sequence
 from urllib.parse import urljoin, urlsplit
 
 from radar.sources.base import FetchContext, RawItem, SourceBlocked, SourceError
+
+log = logging.getLogger(__name__)
 
 # Declaration order is fetch order. Track B first: Companies House has the
 # tightest rate-limit budget and the most valuable output, and news sources are
@@ -194,8 +197,18 @@ class FetchResult:
 def enabled_adapters(cfg: Any, keys: Sequence[str] | None = None) -> list[Any]:
     """Registry order, filtered by the `Sources` sheet tab and by `--source`."""
     wanted = set(keys) if keys else None
+    configured = list(getattr(cfg, "sources", []) or [])
+    # A configured key that is not a registry key is a toggle that does nothing
+    # and a health column that never fills — the `oxford_university_innovation`
+    # vs `oxford_innovation` bug. Surface it in the log instead of staying
+    # silent: one warning line per run beats a source that cannot be disabled.
+    for key in sorted({s.key for s in configured} - set(REGISTRY)):
+        log.warning(
+            "configured source %r matches no registered adapter — "
+            "its Enabled toggle has no effect", key,
+        )
     disabled = {
-        s.key for s in getattr(cfg, "sources", []) or [] if not getattr(s, "enabled", True)
+        s.key for s in configured if not getattr(s, "enabled", True)
     }
     out = []
     for key, adapter in REGISTRY.available().items():
