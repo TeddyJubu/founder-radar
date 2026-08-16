@@ -20,8 +20,10 @@ and a CLI entry point that can only be exercised live is one that rots.
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -459,3 +461,110 @@ def test_denylist_is_idempotent(db):
     assert db.scalar(
         "SELECT COUNT(*) FROM signal WHERE company_id = ? AND kind = 'vc_portfolio_listing'",
         (held.id,)) == 1
+
+
+# --------------------------------------------- client-requested categories
+
+# Client-issues plan §3.8 (A5): Aryan's exact ask — "expand [sources] with
+# more early-stage sources like university spinouts, accelerator/demo day
+# cohorts, Innovate UK announcements". Each category must exist as a registered
+# adapter AND have at least one member switched on by default, or the request
+# silently becomes sheet-configuration that nobody enabled.
+#
+# All keys here are registry keys — the adapter `key` attributes. The seeded
+# config must use exactly these keys (see
+# `test_every_default_source_key_resolves_in_the_registry`), or the Enabled
+# toggle and the Sources-tab health join silently stop working.
+CATEGORY_KEYS: dict[str, set[str]] = {
+    "university spinouts": {
+        "cambridge_enterprise", "oxford_innovation", "ucl_ventures",
+        "edinburgh_innovations", "sheffield", "converge",
+    },
+    "accelerator cohorts": {
+        "northern_accelerator", "conception_x", "zinc_vc",
+        "founders_factory", "techstars_london", "carbon13", "bethnal_green",
+    },
+    "innovate_uk / grants": {"innovate_uk", "ukri_gtr", "govuk_search"},
+}
+
+
+def test_client_requested_source_categories_are_registered_and_enabled():
+    from radar.config.defaults import DEFAULT_SOURCES
+
+    registered = set(REGISTRY)
+    enabled = {s.key for s in DEFAULT_SOURCES}
+    for category, keys in CATEGORY_KEYS.items():
+        assert registered & keys, f"{category}: no adapter registered"
+        assert enabled & keys, f"{category}: nothing enabled by default"
+
+
+def test_dedicated_innovate_uk_feeds_are_enabled_by_default():
+    """Client ask A5 pinned exactly: the generic `govuk_search` passing the
+    category test above is not enough — the *dedicated* Innovate UK award
+    feeds (`ukri_gtr` weekly, `innovate_uk` monthly) must be on by default
+    or the "first appearance" grant announcements never reach the pipeline.
+    """
+    from radar.config.defaults import DEFAULT_SOURCES
+
+    enabled = {s.key for s in DEFAULT_SOURCES}
+    missing = {"innovate_uk", "ukri_gtr"} - enabled
+    assert not missing, (
+        f"dedicated Innovate UK feeds not enabled by default: {missing}"
+    )
+
+
+# --------------------------------------- config keys must equal registry keys
+
+
+def test_every_default_source_key_resolves_in_the_registry():
+    """A seeded key that is not a registry key is a toggle that does nothing
+    and a health column that never fills.
+
+    This is the exact `oxford_university_innovation` vs `oxford_innovation`
+    bug, stated generally: the Sources tab names the adapter by `SourceConfig
+    .key`, the registry runs the adapter by `adapter.key`, and the two must be
+    the same string or the client's `Enabled` flip is ignored.
+    """
+    from radar.config.defaults import DEFAULT_SOURCES
+
+    unknown = {s.key for s in DEFAULT_SOURCES} - set(REGISTRY)
+    assert not unknown, f"Sources-tab keys with no adapter: {unknown}"
+
+
+def test_disabling_a_configured_source_removes_its_adapter():
+    """The Enabled toggle must control the adapter it names.
+
+    Behavioral pin on the same bug: with the seed key fixed, flipping Oxford
+    off actually removes `oxford_innovation` from the run; with it on, the
+    adapter is included.
+    """
+    from radar.config.models import SourceConfig
+    from radar.sources import enabled_adapters
+
+    disabled_cfg = SimpleNamespace(sources=[
+        SourceConfig(key="oxford_innovation", track="A", enabled=False),
+    ])
+    keys = {a.key for a in enabled_adapters(disabled_cfg)}
+    assert "oxford_innovation" not in keys
+
+    enabled_cfg = SimpleNamespace(sources=[
+        SourceConfig(key="oxford_innovation", track="A", enabled=True),
+    ])
+    keys = {a.key for a in enabled_adapters(enabled_cfg)}
+    assert "oxford_innovation" in keys
+
+
+def test_unknown_configured_key_warns_instead_of_staying_silent(caplog):
+    """A stale key in the sheet (e.g. an old `oxford_university_innovation`
+    row that predates the fix) must log a warning, not quietly do nothing —
+    that silence is how this bug lived on the box for weeks."""
+    from types import SimpleNamespace as NS
+
+    from radar.config.models import SourceConfig
+    from radar.sources import enabled_adapters
+
+    cfg = NS(sources=[SourceConfig(key="oxford_university_innovation", track="A")])
+    with caplog.at_level(logging.WARNING, logger="radar.sources"):
+        enabled_adapters(cfg)
+    assert "oxford_university_innovation" in caplog.text
+    assert "no effect" in caplog.text

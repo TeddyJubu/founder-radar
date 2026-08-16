@@ -24,6 +24,7 @@ Rules from 05-pipeline §3.2, all asserted here:
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -143,6 +144,85 @@ def test_prompt_requires_the_operating_startup_subject():
     assert "operating startup" in SYSTEM_PROMPT
     assert "parent company" in SYSTEM_PROMPT
     assert "investor" in SYSTEM_PROMPT
+
+
+def test_parent_role_record_never_resolves_to_a_company(db, config):
+    """Client-issues plan §3.1 (A4) — the parent-company complaint, end to end.
+
+    A schema record whose subject is a parent/investor is not usable, and the
+    resolve stage must refuse it: no company row, nothing to gate or score.
+    The positive control proves the refusal is about the *role*, not the
+    article — the same page naming the operating startup resolves fine.
+    """
+    from radar.extract.schema import Extraction
+    from radar.pipeline import resolve_item
+    from radar.sources.base import RawItem
+
+    def item_for(name: str) -> RawItem:
+        return RawItem(
+            source_key="uktn",
+            source_url="https://uktn.co.uk/acme-story",
+            external_id="acme-story",
+            published_at=date(2026, 8, 1),
+            title=f"{name} completes acquisition",
+        )
+
+    parent = Extraction.model_validate({
+        "is_about_single_company": True,
+        "company_name": "Acme Group plc",
+        "company_role": "parent",
+        "extraction_confidence": 0.9,
+    })
+    assert parent.is_about_single_company is False
+    assert parent.rejection_reason == "not_a_startup"
+    assert parent.is_usable is False
+
+    raw = item_for("Acme Group plc")
+    object.__setattr__(raw, "extraction", parent)   # exactly what extract_stage does
+    assert resolve_item(db, raw, config) is None
+    assert db.scalar("SELECT COUNT(*) FROM company") == 0, \
+        "a parent-role record became a company row"
+
+    # Positive control: the operating startup named by the same article.
+    startup = Extraction.model_validate({
+        "is_about_single_company": True,
+        "company_name": "Acme Robotics Ltd",
+        "company_role": "startup",
+        "extraction_confidence": 0.9,
+        "one_line_description": "Builds warehouse robots for small logistics teams.",
+    })
+    assert startup.is_usable is True
+    raw2 = item_for("Acme Robotics Ltd")
+    object.__setattr__(raw2, "extraction", startup)
+    cid = resolve_item(db, raw2, config)
+    assert cid is not None
+    assert db.scalar("SELECT canonical_name FROM company WHERE id = ?", (cid,)) \
+        == "Acme Robotics Ltd"
+
+
+def test_foreign_company_from_news_is_gated(config):
+    """Client-issues plan §3.2 (A3) — a US company arriving through a news
+    article must be rejected, not surfaced (the US/Dubai complaint).
+
+    Uses the deterministic heuristic reader so the test needs no provider: the
+    fallback path identifies the explicit headquarters country, the record
+    carries it, and the universal gate turns it into a hard reject.
+    """
+    from radar.extract.heuristic import heuristic_extract
+    from tests.factories import C, score_one
+
+    got = heuristic_extract(
+        title="US-based Acme raises $2m seed round",
+        text=("Acme is a US-based company that builds warehouse robots for "
+              "small logistics teams. It has raised $2m from a syndicate of "
+              "angel investors. ") * 2,
+    )
+    assert got.hq_country_iso2 == "US"
+
+    company = C(country=got.hq_country_iso2, age_months=8)
+    s = score_one(company, fund="outward", cfg=config)
+    assert s.tier == "reject"
+    assert s.reject_reason == "min_uk_presence"
 
 
 # ------------------------------------------------------------- hallucinations

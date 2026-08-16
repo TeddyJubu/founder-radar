@@ -138,6 +138,72 @@ def test_coverage_counts_known_attributes_not_weighted_share(cfg):
     assert fit.coverage != weighted, "coverage remains a count, not a weighted share"
 
 
+def test_edge_varies_across_the_today_queue(db, cfg):
+    """Client-issues plan §3.3 (C11) — the client's words, verbatim: "Edge
+    seems to be the same across the results."
+
+    Discovery Edge is a function of visibility (age, press, funding, route), so
+    a mixed queue must show different Fresh values. If this ever sees one
+    number everywhere, the UI is displaying a constant again — or the engine
+    is, which is the version-1 complaint returning in a new shape.
+    """
+    from prototype.server import build_today
+    from radar.pipeline import score_company
+    from radar.store.db import now_iso
+    from tests.factories import C, store_company
+
+    def add(name: str, **kw) -> None:
+        company = C(
+            canonical_name=name, norm_key=name.lower().replace(" ", ""),
+            hq_postcode="NE1 4ST", is_university_spinout=False,
+            discovery_route=kw.pop("discovery_route", "registry"), **kw,
+        )
+        cid = store_company(db, company)
+        stamp = now_iso()
+        db.execute(
+            "INSERT INTO company_source(company_id, source_key, external_id, "
+            "source_url, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
+            (cid, "uktn", f"ext-{name}", f"https://uktn.co.uk/{name}", stamp, stamp),
+        )
+        score_company(db, cid, cfg, today=date(2026, 8, 8))
+
+    add("Obscure Co", age_months=3, funding=0, news_mention_count=0)
+    add("Famous Co", age_months=30, funding=2_000_000, news_mention_count=8,
+        discovery_route="news")
+
+    payload = build_today(db.conn)
+    edges = {row["edge"] for row in payload["companies"]}
+    assert len(edges) >= 2, f"Fresh identical everywhere ({edges}) = the v1 complaint"
+
+
+def test_no_shortlist_row_under_the_coverage_floor(db, cfg):
+    """Client-issues plan §3.4 (C13) — "100 Match even when only one or two
+    criteria are confirmed", as a data-wide invariant.
+
+    The tiering engine already requires `coverage >= min_coverage` for a
+    shortlist; this pins that guarantee against the whole scored database, so
+    a future edit cannot let a sparse company sneak past the floor again.
+    """
+    from radar.pipeline import score_company
+    from tests.factories import C, store_company
+
+    for index, months in enumerate((4, 8, 12, 18)):
+        company = C(
+            canonical_name=f"Floor Co {index:02d}", norm_key=f"floorco{index:02d}",
+            age_months=months, sector="climate_tech", geography="north_east",
+            is_university_spinout=False, hq_postcode="NE1 4ST",
+            founder_signal="research_spinout", discovery_route="registry",
+        )
+        cid = store_company(db, company)
+        score_company(db, cid, cfg, today=date(2026, 8, 8))
+
+    rows = db.query("SELECT fund_fit_pct, coverage FROM score WHERE tier = 'shortlist'")
+    assert rows, "expected at least one shortlisted row from the seeded queue"
+    floor = cfg.settings.min_coverage
+    assert all(r["coverage"] >= floor for r in rows), (
+        f"a shortlist row sits under the {floor:.0%} coverage floor")
+
+
 def test_derivation_lets_a_registry_company_shortlist(cfg):
     """THE regression guard on the registry-first fix. Without the
     derivation rules in 06-scoring §2 this company scores on geography

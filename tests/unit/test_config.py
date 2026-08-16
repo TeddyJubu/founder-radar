@@ -125,6 +125,11 @@ def test_onboarding_states_every_active_hard_rule():
     assert "£5m" in by_fund["outward"], "Outward's round cap is missing again"
     assert "£20m" in by_fund["outward"]
     assert "66%" in by_fund["outward"]
+    # Client-issues plan §3.5 (D14): the exact prose that started this whole
+    # section — Outward's ECF backing belongs to the fund (it takes British
+    # Business Bank money), never to the company itself. The word must not
+    # describe Outward.
+    assert "government" not in by_fund["outward"].lower()
     # An inactive vehicle describes money that cannot be deployed.
     assert "co-investment" not in by_fund["dsw"].lower()
 

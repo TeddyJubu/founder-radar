@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "deploy" / "backup.sh"
+CADDYFILE = Path(__file__).resolve().parents[2] / "deploy" / "Caddyfile"
 
 
 @pytest.fixture
@@ -70,3 +71,21 @@ def test_backup_script_fails_loudly_without_a_database(tmp_path):
                          capture_output=True, text=True)
     assert out.returncode != 0
     assert "no database" in out.stderr
+
+
+def test_web_surface_requires_a_password():
+    """Client-issues plan §3.6 (F17) — the login surface.
+
+    The web app is only ever reachable through Caddy basic auth, and the
+    password must exist only as the environment hash — never as a committed
+    bcrypt hash or plaintext (the client could not log in on 16 Aug, and the
+    password-change procedure is the one thing he asked to control himself).
+    """
+    text = CADDYFILE.read_text()
+
+    assert "basic_auth" in text, "the web surface lost its password gate"
+    assert "{$RADAR_WEB_USER} {$RADAR_WEB_PASS_HASH}" in text, \
+        "the password must come from the environment, not the file"
+    # Every bcrypt hash starts with $2a/$2b/$2y; a committed one here would
+    # be a credential in the repo. A plaintext password would be worse.
+    assert "$2" not in text, "a bcrypt hash leaked into the Caddyfile"

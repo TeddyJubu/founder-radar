@@ -129,3 +129,26 @@ founder-radar sync-sheet
 
 If something looks empty or wrong: `founder-radar doctor`, then check the
 Sources and Run Log tabs in the sheet.
+
+---
+
+## 7. Change the login password
+
+The web review surface sits behind a Caddy reverse proxy with basic auth. To
+change the password, on the server:
+
+```bash
+caddy hash-password --plaintext 'your-new-password'   # prints a bcrypt hash
+```
+
+Put that hash into `RADAR_WEB_PASS_HASH` in `/opt/founder-radar/.env` (the
+username is `RADAR_WEB_USER` in the same file), then restart:
+
+```bash
+systemctl restart caddy
+```
+
+Never write the plaintext password into the repo, a chat thread, or anywhere
+that is not the server itself — the same rule as the Google service-account
+key (README). Share the new password with team members over a channel that is
+not this repo.
