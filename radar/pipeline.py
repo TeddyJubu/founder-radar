@@ -29,11 +29,10 @@ from datetime import date, datetime
 from typing import Any, Iterable, Mapping, Sequence
 
 from radar.config.models import Config
+from radar.score.criteria import SCORER_VERSION
 from radar.store.db import Db, new_id, now_iso
 
 log = logging.getLogger(__name__)
-
-SCORER_VERSION = "2.0.0"
 
 
 # ------------------------------------------------------------------- results

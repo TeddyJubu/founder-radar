@@ -29,6 +29,7 @@ from typing import Iterable
 from radar.sources._common import (
     absolute_url,
     clean_text,
+    first_text,
     guard_nonempty,
     html_doc,
     node_fingerprint,
@@ -104,7 +105,7 @@ class BethnalGreenAdapter:
     # --------------------------------------------------------------- private
 
     def _item(self, card) -> RawItem | None:
-        name = _first_text(card, NAME_SELECTORS)
+        name = first_text(card, NAME_SELECTORS)
         if not name:
             return None
 
@@ -136,7 +137,7 @@ class BethnalGreenAdapter:
             structured={
                 "company_name": name,
                 "company_website": website,
-                "one_line_description": _first_text(
+                "one_line_description": first_text(
                     card, (".card_text", "p"), exclude=name) or None,
                 "accelerator_name": "Bethnal Green Ventures",
                 "stage": "pre_seed",
@@ -150,15 +151,6 @@ class BethnalGreenAdapter:
             },
             kind_hint="accelerator_cohort",
         )
-
-
-def _first_text(card, selectors, *, exclude: str | None = None) -> str:
-    for selector in selectors:
-        for node in card.css(selector):
-            text = clean_text(node.text(strip=True))
-            if text and text != exclude:
-                return text
-    return ""
 
 
 ADAPTER = BethnalGreenAdapter()

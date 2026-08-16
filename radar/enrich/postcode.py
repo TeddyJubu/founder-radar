@@ -15,9 +15,10 @@ Three traps, all of them encoded here rather than in a comment somewhere else:
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from typing import Any, Iterable
+
+from radar.resolve.normalise import outcode_of
 
 log = logging.getLogger(__name__)
 
@@ -36,9 +37,6 @@ UK_COUNTRIES = {"england", "scotland", "wales", "northern ireland"}
 #: 03-data-model §5 — DSW's SEIS fund targets outside London–Oxbridge, and the
 #: rule is an outcode-prefix check, never a fuzzy city-name match.
 GOLDEN_TRIANGLE_PREFIXES = ("OX", "CB")
-
-_OUTCODE_ONLY = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]?$")
-_FULL_POSTCODE = re.compile(r"^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,19 +57,6 @@ class PostcodeInfo:
     def in_golden_triangle(self) -> bool:
         return self.outcode.upper().startswith(GOLDEN_TRIANGLE_PREFIXES) or \
             self.geography == "london"
-
-
-def outcode_of(postcode: Any) -> str | None:
-    """`'NE1 4ST'` → `'NE1'`. Returns None for anything that isn't a UK postcode."""
-    if not postcode:
-        return None
-    text = re.sub(r"\s+", "", str(postcode)).upper()
-    if not text:
-        return None
-    if _OUTCODE_ONLY.fullmatch(text):
-        return text
-    match = _FULL_POSTCODE.fullmatch(text)
-    return match.group(1) if match else None
 
 
 def _first(value: Any) -> str | None:

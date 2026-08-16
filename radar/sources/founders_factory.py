@@ -27,6 +27,7 @@ from radar.sources._common import (
     absolute_url,
     after,
     clean_text,
+    first_text,
     guard_nonempty,
     html_doc,
     node_fingerprint,
@@ -79,7 +80,7 @@ class FoundersFactoryAdapter:
         return [item for item in items if item is not None]
 
     def _item(self, card) -> RawItem | None:
-        title = _first_text(card, TITLE_SELECTORS)
+        title = first_text(card, TITLE_SELECTORS)
         link = card.css_first("a[href]")
         href = link.attributes.get("href") if link else None
         if not title or not href:
@@ -112,15 +113,6 @@ class FoundersFactoryAdapter:
                        if any(w in f"{title} {blob}".lower() for w in INVESTMENT_WORDS)
                        else "news_mention"),
         )
-
-
-def _first_text(card, selectors, *, exclude: str | None = None) -> str:
-    for selector in selectors:
-        for node in card.css(selector):
-            text = clean_text(node.text(strip=True))
-            if text and text != exclude:
-                return text
-    return ""
 
 
 ADAPTER = FoundersFactoryAdapter()

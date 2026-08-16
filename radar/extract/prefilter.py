@@ -104,9 +104,11 @@ def extract_text(html: str) -> str:
     dependency on a native package.
 
     ponytail: the two extractors do not produce byte-identical text, and the
-    llm cache is keyed on that text — installing trafilatura after the
-    fixtures were recorded invalidates them. `tests/fixtures/rekey_llm_cache.py`
-    rebuilds the keys without calling a provider.
+    llm cache is keyed on that text — so the golden fixtures pin the builtin
+    extractor (`tests/fixtures/_golden_extractor.py`), keeping the recorded
+    keys valid whether or not trafilatura is installed. A `PROMPT_VERSION`
+    bump still moves every key; `tests/fixtures/rekey_llm_cache.py` rebuilds
+    them without calling a provider.
     """
     if not html:
         return ""

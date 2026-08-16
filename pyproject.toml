@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "founder-radar"
-version = "2.0.0"
+dynamic = ["version"]
 description = "UK Founder Radar — daily scan for early-stage UK startups, routed to four VC funds"
 requires-python = ">=3.11,<3.14"
 dependencies = [
@@ -45,6 +45,11 @@ include = ["radar*"]
 
 [tool.setuptools.package-data]
 radar = ["store/*.sql", "store/migrations/*.sql"]
+
+# One copy of the version, in radar/__init__.py: setuptools reads it here at
+# build time, and the CLI's `--version` reads it at run time.
+[tool.setuptools.dynamic]
+version = { attr = "radar.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

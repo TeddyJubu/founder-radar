@@ -32,13 +32,12 @@ from radar.config.models import (
     TRACTION_SIGNALS,
     canon_enum,
 )
+from radar.resolve.normalise import outcode_of
 
 # One month, averaged over the Gregorian cycle. Used everywhere an age is
 # expressed in months so that "36 months" means the same number in the gate,
 # in Discovery Edge and in the test factory.
 DAYS_PER_MONTH = 30.4375
-
-_OUTCODE = re.compile(r"^[A-Z]{1,2}[0-9][A-Z0-9]?", re.IGNORECASE)
 
 
 # --------------------------------------------------------------- the records
@@ -146,14 +145,6 @@ class Company(BaseModel):
 
 
 # ------------------------------------------------------------------- helpers
-
-
-def outcode_of(postcode: str | None) -> str | None:
-    """`"NE1 4ST"` → `"NE1"`. Returns None rather than guessing."""
-    if not postcode:
-        return None
-    match = _OUTCODE.match(str(postcode).strip().upper().replace(" ", ""))
-    return match.group(0) if match else None
 
 
 def months_between(start: date, end: date) -> float:

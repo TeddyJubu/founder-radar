@@ -28,6 +28,7 @@ from radar.sources._common import (
     absolute_url,
     attr_of,
     clean_text,
+    first_text,
     guard_nonempty,
     html_doc,
     node_fingerprint,
@@ -122,7 +123,7 @@ class ConceptionXAdapter:
     # --------------------------------------------------------------- private
 
     def _item(self, card) -> RawItem | None:
-        name = _first_text(card, NAME_SELECTORS)
+        name = first_text(card, NAME_SELECTORS)
         if not name:
             return None
         href = attr_of(card, None, "href") or attr_of(card, "a[href]", "href")
@@ -132,14 +133,14 @@ class ConceptionXAdapter:
         blob = clean_text(card.text(separator=" ", strip=True))
         cohort_match = COHORT.search(
             attr_of(card, None, "data-cohort")
-            or _first_text(card, COHORT_SELECTORS) or blob)
+            or first_text(card, COHORT_SELECTORS) or blob)
         cohort = f"CX{cohort_match.group(1)}" if cohort_match else None
         university = attr_of(card, None, "data-university") \
             or text_of(card, ".venture-university") or None
 
         structured = {
             "company_name": name,
-            "one_line_description": _first_text(card, BLURB_SELECTORS, exclude=name) or None,
+            "one_line_description": first_text(card, BLURB_SELECTORS, exclude=name) or None,
             "cohort": cohort,
             "university_name": university,
             "is_university_spinout": True,      # every venture is PhD-founded
@@ -159,14 +160,6 @@ class ConceptionXAdapter:
             structured=structured,
             kind_hint="accelerator_cohort",
         )
-
-
-def _first_text(card, selectors, *, exclude: str | None = None) -> str:
-    for selector in selectors:
-        value = text_of(card, selector)
-        if value and value != exclude:
-            return value
-    return ""
 
 
 ADAPTER = ConceptionXAdapter()

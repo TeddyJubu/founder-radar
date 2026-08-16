@@ -23,13 +23,12 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from radar.fetch.layout import LayoutChanged
+from radar.resolve.normalise import is_placeholder_name, norm_key
 from radar.sources.base import FetchContext, RawItem, SourceError, SourceKind
 
 log = logging.getLogger(__name__)
@@ -59,17 +58,7 @@ SIC_TO_TIER: dict[str, str] = {
 DEFAULT_WINDOW_DAYS = 7
 DEFAULT_SIZE = 5000
 
-#: 04-sources §3.4 #4 — keep the company number, these often rename into real
-#: companies, but never treat the name as identity.
-PLACEHOLDER_NAME_RE = re.compile(r"^(?:blue\s*sky|company|newco)\s*\d+$", re.I)
-
 _ENV_KEYS = ("CH_API_KEY", "COMPANIES_HOUSE_API_KEY", "RADAR_CH_API_KEY")
-
-_LEGAL_SUFFIXES = {
-    "ltd", "limited", "plc", "llp", "lp", "llc", "cic", "cio", "inc",
-    "incorporated", "corp", "corporation", "co", "company", "gmbh", "ag", "sa",
-    "sas", "sarl", "bv", "nv", "ab", "oy", "as", "aps", "srl", "spa", "pty",
-}
 
 
 # ------------------------------------------------------------- small helpers
@@ -89,46 +78,6 @@ def normalise_ch_number(value: Any) -> str | None:
     if text.isdigit():
         return text.zfill(8)
     return text
-
-
-def norm_name(value: str) -> str:
-    """Normalised company name. Mirrors 05-pipeline §4.1.
-
-    Phase 2 owns `radar.resolve.normalise`; this defers to it the moment it
-    exists so there is exactly one definition in the running system.
-    """
-    try:  # pragma: no cover - exercised once Phase 2 lands
-        from radar.resolve.normalise import norm_name as _shared  # type: ignore
-
-        return _shared(value)
-    except Exception:
-        pass
-    s = unicodedata.normalize("NFKD", value or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower().replace("&", " and ")
-    s = re.sub(r"[​-‍﻿]", "", s)
-    s = re.sub(r"[^\w\s]", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    if s.startswith("the "):
-        s = s[4:]
-    toks = s.split()
-    while toks and toks[-1] in _LEGAL_SUFFIXES:
-        toks.pop()
-    return " ".join(toks)
-
-
-def norm_key(value: str) -> str:
-    try:  # pragma: no cover - exercised once Phase 2 lands
-        from radar.resolve.normalise import norm_key as _shared  # type: ignore
-
-        return _shared(value)
-    except Exception:
-        pass
-    return norm_name(value).replace(" ", "")
-
-
-def is_placeholder_name(name: str) -> bool:
-    return bool(PLACEHOLDER_NAME_RE.match(norm_name(name)))
 
 
 def is_denylisted_only(sic_codes: Sequence[str], denylist: Iterable[str] = SIC_DENYLIST) -> bool:

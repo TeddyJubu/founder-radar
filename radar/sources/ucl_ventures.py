@@ -20,6 +20,7 @@ from radar.sources._common import (
     absolute_url,
     after,
     clean_text,
+    first_text,
     guard_nonempty,
     html_doc,
     node_fingerprint,
@@ -77,7 +78,7 @@ class UclVenturesAdapter:
         return [item for item in items if item is not None]
 
     def _item(self, card) -> RawItem | None:
-        title = _first_text(card, TITLE_SELECTORS)
+        title = first_text(card, TITLE_SELECTORS)
         if not title:
             return None
         link = card.css_first("a[href]")
@@ -115,15 +116,6 @@ class UclVenturesAdapter:
             },
             kind_hint="spinout",
         )
-
-
-def _first_text(card, selectors, *, exclude: str | None = None) -> str:
-    for selector in selectors:
-        for node in card.css(selector):
-            text = clean_text(node.text(strip=True))
-            if text and text != exclude:
-                return text
-    return ""
 
 
 ADAPTER = UclVenturesAdapter()

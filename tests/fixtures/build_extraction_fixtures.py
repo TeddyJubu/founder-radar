@@ -43,6 +43,10 @@ sys.path.insert(0, str(ROOT))
 from radar.extract.llm import DEFAULT_MODEL, PROMPT_VERSION, cache_key  # noqa: E402
 from radar.extract.prefilter import prefilter  # noqa: E402
 
+# The golden keys are recorded against the builtin extractor, whatever this
+# box has installed — see _golden_extractor.py for the why.
+from _golden_extractor import pin_builtin_extractor  # noqa: E402, F401
+
 ARTICLES = ROOT / "tests" / "fixtures" / "articles"
 LLM_CACHE = ROOT / "tests" / "fixtures" / "llm_cache"
 
@@ -1028,6 +1032,7 @@ FIXTURES: list[Fixture] = [
 
 
 def main() -> int:
+    pin_builtin_extractor()
     ARTICLES.mkdir(parents=True, exist_ok=True)
     LLM_CACHE.mkdir(parents=True, exist_ok=True)
 

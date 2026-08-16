@@ -24,6 +24,7 @@ from radar.resolve.merge import (
     unmerge,
     upsert_record,
 )
+from radar.resolve.review import enqueue_review, resolve_review
 from radar.store.db import now_iso
 
 PAIRS = [
@@ -125,6 +126,38 @@ def test_merge_is_reversible(db):
     assert db.scalar("SELECT merged_into FROM company WHERE id = ?", (b.company_id,)) is None
     assert db.scalar("SELECT COUNT(*) FROM signal WHERE company_id = ?", (b.company_id,)) == 1
     assert db.scalar("SELECT COUNT(*) FROM signal WHERE company_id = ?", (a.company_id,)) == 0
+
+
+def test_review_queue_is_idempotent_with_a_deterministic_pair_key(db):
+    """Re-finding the same pair must not grow the queue (05-pipeline §4.2), and
+    the queue key is a deterministic function of the *unordered* pair: the same
+    pair presented either way round resolves to the same key via one `_meta`
+    lookup, never a scan of the queue."""
+    a = upsert_record(db, Record(name="Acme Robotics"), source_key="t",
+                      source_url="https://a", external_id="a")
+    b = upsert_record(db, Record(name="Acme Robotic Arms"), source_key="t",
+                      source_url="https://b", external_id="b")
+    assert a.action == "created"
+    assert b.action == "review" and b.review_key is not None
+
+    # Same pair, both orders -> the same key, and the queue still has one entry.
+    assert enqueue_review(db, a.company_id, b.company_id, b.match) == b.review_key
+    assert enqueue_review(db, b.company_id, a.company_id, b.match) == b.review_key
+    assert db.scalar("SELECT COUNT(*) FROM _meta WHERE key LIKE 'review:%'") == 1
+
+    # A different pair gets a different key.
+    h = upsert_record(db, Record(name="Acme Holdings"), source_key="t",
+                      source_url="https://h", external_id="h")
+    g = upsert_record(db, Record(name="Acme Holding"), source_key="t",
+                      source_url="https://g", external_id="g")
+    assert h.action == "created"
+    assert g.action == "review"
+    assert g.review_key != b.review_key
+    assert db.scalar("SELECT COUNT(*) FROM _meta WHERE key LIKE 'review:%'") == 2
+
+    # Dismissing one pair removes exactly its entry.
+    resolve_review(db, b.review_key, merge=False)
+    assert db.scalar("SELECT COUNT(*) FROM _meta WHERE key LIKE 'review:%'") == 1
 
 
 def test_duplicate_audit_returns_zero_rows(db):
