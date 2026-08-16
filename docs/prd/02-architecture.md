@@ -342,7 +342,10 @@ Also required, and cheap:
 
 Naming the absences is as useful as naming the parts.
 
-- **No web server, no API, no dashboard.** The Sheet is the interface. A second UI doubles the surface area for zero gain.
+- **No web server, API, or dashboard in the radar core.** The isolated
+  `prototype/` server is a thin review surface over SQLite (`/`, `/kept`, and
+  `/dashboard`); it does not duplicate scoring or become a second editable
+  system. The Sheet remains the production dashboard and configuration owner.
 - **No message queue, no Redis, no Celery.** One machine, one daily run, fourteen sources. A queue would be pure ceremony.
 - **No ORM.** The provenance model is graph-shaped and reads better as SQL.
 - **No Docker.** One Python virtual environment plus one systemd unit is less to go wrong on 1 vCPU, and easier for Teddy to debug over SSH.

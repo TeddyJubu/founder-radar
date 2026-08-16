@@ -48,13 +48,15 @@ a { color: var(--blue); }
   <header>
     <h1>How the parts connect</h1>
     <nav class="nav">
+      <a href="/dashboard" data-testid="nav-dashboard">Dashboard</a>
       <a href="/kept" data-testid="nav-kept">Kept</a>
       <a href="/" data-testid="nav-today">← Today</a>
     </nav>
   </header>
 
-  <p>Three surfaces, one database. The daily run writes companies and scores into
-     SQLite; everything else is a view or a thin write on top of that.</p>
+  <p>Three production interfaces and a small web review surface, one database.
+     The daily run writes companies and scores into SQLite; everything else is a
+     view or a thin write on top of that.</p>
 
   <h2>Data flow</h2>
   <ol>
