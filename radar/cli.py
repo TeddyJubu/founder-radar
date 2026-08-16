@@ -20,6 +20,7 @@ from pathlib import Path
 
 import click
 
+from radar import __version__
 from radar.store.db import Db, default_db_path
 
 EXIT_OK, EXIT_PARTIAL, EXIT_FATAL = 0, 1, 2
@@ -80,7 +81,7 @@ def _emit(data, as_json: bool) -> None:
 @click.group()
 @click.option("--db", "db_path", default=None, help="SQLite path (default: $RADAR_DB)")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
-@click.version_option("2.0.0", prog_name="founder-radar")
+@click.version_option(__version__, prog_name="founder-radar")
 @click.pass_context
 def cli(ctx: click.Context, db_path: str | None, as_json: bool) -> None:
     ctx.ensure_object(dict)

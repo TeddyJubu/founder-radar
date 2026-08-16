@@ -25,6 +25,7 @@ from radar.sources._common import (
     absolute_url,
     attr_of,
     clean_text,
+    first_text,
     guard_nonempty,
     html_doc,
     node_fingerprint,
@@ -85,7 +86,7 @@ class OxfordInnovationAdapter:
     # --------------------------------------------------------------- private
 
     def _item(self, card) -> RawItem | None:
-        name = _first_text(card, NAME_SELECTORS)
+        name = first_text(card, NAME_SELECTORS)
         if not name:
             # A card with no name is not a company; skipping one card is fine,
             # skipping *all* of them already raised above.
@@ -99,7 +100,7 @@ class OxfordInnovationAdapter:
                 break
 
         incorporated = self._incorporation_date(card)
-        description = _first_text(card, DESC_SELECTORS, exclude=name)
+        description = first_text(card, DESC_SELECTORS, exclude=name)
         sector = _meta(card, ("sector", "industry"))
         department = _meta(card, ("department", "faculty", "division"))
 
@@ -150,14 +151,6 @@ class OxfordInnovationAdapter:
                     return parsed
         datetime_attr = attr_of(card, "time[datetime]", "datetime")
         return parse_date(datetime_attr) if datetime_attr else None
-
-
-def _first_text(card, selectors, *, exclude: str | None = None) -> str:
-    for selector in selectors:
-        value = text_of(card, selector)
-        if value and value != exclude:
-            return value
-    return ""
 
 
 def _meta(card, names) -> str | None:

@@ -232,21 +232,6 @@ def upsert_record(db, record: Record, *, source_key: str, source_type: str = "ne
 # ------------------------------------------------------------------ merging
 
 
-def choose_winner(db, a_id: str, b_id: str) -> tuple[str, str]:
-    """Prefer the record with a Companies House number, else the older one."""
-    a = db.one("SELECT * FROM company WHERE id=?", (a_id,))
-    b = db.one("SELECT * FROM company WHERE id=?", (b_id,))
-    if a is None or b is None:
-        raise ValueError("both companies must exist")
-    a_rank = (a["companies_house_no"] is not None, b["first_seen"] < a["first_seen"] and 0 or 1)
-    del a_rank  # readability: the comparison below is the real rule
-    if (a["companies_house_no"] is None) != (b["companies_house_no"] is None):
-        return (a_id, b_id) if a["companies_house_no"] is not None else (b_id, a_id)
-    if a["first_seen"] != b["first_seen"]:
-        return (a_id, b_id) if a["first_seen"] < b["first_seen"] else (b_id, a_id)
-    return (a_id, b_id) if a_id <= b_id else (b_id, a_id)   # stable tie-break
-
-
 def _row_dict(row) -> dict[str, Any]:
     return {k: row[k] for k in row.keys()}
 

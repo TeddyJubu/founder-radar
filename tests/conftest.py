@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,23 @@ def _no_network():
         yield
     finally:
         socket.socket = real_socket  # type: ignore[misc]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _pin_golden_extractor():
+    """Golden llm-cache keys are hashes of the *builtin* extractor's text.
+
+    Without this the suite's result would depend on which extras the machine
+    has: CI (`.[dev]`, no trafilatura) computes builtin keys, a dev box with
+    the `extract` extra computes trafilatura keys, and one of them always
+    misses the committed cache. Pinning makes the keys environment-
+    independent. See `tests/fixtures/_golden_extractor.py`.
+    """
+    sys.path.insert(0, str(FIXTURES))
+    from _golden_extractor import pin_builtin_extractor
+
+    pin_builtin_extractor()
+    yield
 
 
 @pytest.fixture

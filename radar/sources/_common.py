@@ -15,12 +15,12 @@ from __future__ import annotations
 import html as html_module
 import json
 import re
-import unicodedata
 from datetime import date, datetime
 from typing import Any, Iterable, Iterator, Sequence
 from urllib.parse import urljoin, urlsplit
 
 from radar.fetch.layout import LayoutChanged, guard_nonempty, selector_fingerprint
+from radar.resolve.normalise import norm_key, norm_name
 from radar.sources.base import SourceBlocked, SourceError
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "SourceError",
     "absolute_url",
     "clean_text",
+    "first_text",
     "guard_nonempty",
     "html_doc",
     "norm_key",
@@ -47,16 +48,6 @@ __all__ = [
 _WS = re.compile(r"\s+")
 _TAG = re.compile(r"<[^>]+>")
 _SCRIPT = re.compile(r"(?is)<(script|style|noscript)\b.*?</\1>")
-
-# 05-pipeline §4.1. Deliberately NOT stripped: group, holdings, ventures,
-# partners, labs, technologies — those are part of the trading name.
-LEGAL_SUFFIXES = {
-    "ltd", "limited", "plc", "llp", "lp", "llc", "cic", "cio", "inc",
-    "incorporated", "corp", "corporation", "co", "company", "gmbh", "ag", "sa",
-    "sas", "sarl", "bv", "nv", "ab", "oy", "as", "aps", "srl", "spa", "pty",
-}
-
-_ZERO_WIDTH = re.compile("[\u200b\u200c\u200d\ufeff]")
 
 
 # ------------------------------------------------------------------- strings
@@ -82,34 +73,6 @@ def clean_text(value: str | None) -> str:
     if not value:
         return ""
     return _WS.sub(" ", html_module.unescape(value)).strip()
-
-
-def norm_name(value: str | None) -> str:
-    """05-pipeline §4.1 normalisation, verbatim.
-
-    # ponytail: duplicated from the spec because `radar.resolve` is Phase 4 and
-    # does not exist yet. When it lands, this should become a re-export — the
-    # VC denylist match must use the *same* key as entity resolution or the two
-    # will disagree about what "already seen" means.
-    """
-    if not value:
-        return ""
-    s = unicodedata.normalize("NFKD", value)
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower().replace("&", " and ")
-    s = _ZERO_WIDTH.sub("", s)
-    s = re.sub(r"[^\w\s]", " ", s)
-    s = _WS.sub(" ", s).strip()
-    if s.startswith("the "):
-        s = s[4:]
-    tokens = s.split()
-    while tokens and tokens[-1] in LEGAL_SUFFIXES:
-        tokens.pop()
-    return " ".join(tokens)
-
-
-def norm_key(value: str | None) -> str:
-    return norm_name(value).replace(" ", "")
 
 
 def slug_of(url: str) -> str:
@@ -376,6 +339,25 @@ def text_of(node, selector: str | None = None, *, default: str = "") -> str:
     if target is None:
         return default
     return clean_text(target.text(separator=" ", strip=True))
+
+
+def first_text(card, selectors, *, exclude: str | None = None) -> str:
+    """First non-empty text matching any selector, node by node.
+
+    The single definition of the "pick the first useful string off a card"
+    pattern that the HTML adapters used to copy into every site file (it was
+    in nine of them before this existed). Scans every matching node in
+    selector order, so when the first node of a selector is empty — or equals
+    `exclude`, e.g. a name that must not double as the description — a later
+    node still answers. The empty string means "no selector produced
+    anything"; callers decide what None should be.
+    """
+    for selector in selectors:
+        for node in card.css(selector):
+            text = clean_text(node.text(strip=True))
+            if text and text != exclude:
+                return text
+    return ""
 
 
 def attr_of(node, selector: str | None, name: str) -> str | None:

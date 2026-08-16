@@ -46,10 +46,14 @@ GENERIC = {
 _ZERO_WIDTH = re.compile("[\u200b-\u200d\u2060\ufeff]")  # zero-width chars
 
 # 03-data-model §3: the placeholder_name table is seeded with the static list
-# "plus anything matching ^(bluesky|company)\d+$". Companies House hands out
-# names like "BLUE SKY 4471 LIMITED" to formation agents, so hundreds of
-# unrelated spinouts share one before they rename.
-_PLACEHOLDER_RE = re.compile(r"^(bluesky|company)\d+$")
+# "plus anything matching ^(bluesky|company|newco)\d+$". Companies House hands
+# out names like "BLUE SKY 4471 LIMITED" and "NEWCO 123 LTD" to formation
+# agents, so hundreds of unrelated spinouts share one before they rename
+# (04-sources §3.4 #4). `norm_key` strips spaces, so "blue sky 4471" and
+# "newco 123" both land here. This is the one definition of placeholder in
+# the system — `sources.companies_house` re-exports it rather than keeping
+# its own regex.
+_PLACEHOLDER_RE = re.compile(r"^(bluesky|company|newco)\d+$")
 
 
 def norm_name(s: str | None) -> str:
@@ -388,8 +392,13 @@ def norm_postcode(value: str | None) -> str | None:
     return f"{m.group(1)} {m.group(2)}"
 
 
-def outcode(value: str | None) -> str | None:
-    """The outward code — `NE1 4ST` → `NE1`. This is the postcodes.io cache key."""
+def outcode_of(value: str | None) -> str | None:
+    """The outward code — `NE1 4ST` → `NE1`. This is the postcodes.io cache key.
+
+    The single definition of "outcode" in the system: `score.derive` and
+    `enrich.postcode` re-export this instead of keeping their own regexes.
+    Returns None for anything that is not a UK postcode or outcode.
+    """
     full = norm_postcode(value)
     if full:
         return full.split(" ")[0]

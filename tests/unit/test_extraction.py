@@ -164,6 +164,77 @@ def test_no_hallucinations(offline_llm):
             assert got.evidence_quote_amount is not None
 
 
+# ------------------------------------------- golden keys are extractor-proof
+
+
+def test_golden_cache_keys_are_independent_of_trafilatura(monkeypatch):
+    """The committed llm-cache keys must never depend on trafilatura being
+    installed (09-test-plan §3 — extractor drift).
+
+    `prefilter.extract_text` prefers trafilatura when it is installed, and the
+    two extractors do not produce byte-identical text (when the drift was
+    fixed, trafilatura 2.2.0 returned 365 chars where the builtin extractor
+    returned 418 for the same article). So without the golden-extractor pin
+    (`tests/fixtures/_golden_extractor.py`) a machine with the `extract` extra
+    installed hashes different keys than CI and fails every golden test there
+    while CI stays green.
+
+    This test replays that machine deterministically: it fakes trafilatura
+    being installed and proves the golden keys are unchanged. If the pin is
+    ever removed, the fake leaks into the key computation, the keys stop
+    matching the committed cache, and this fails in CI — the exact drift the
+    golden suite cannot see, because CI has no trafilatura to drift with.
+    """
+    import importlib
+    import sys
+
+    from radar.extract.llm import DEFAULT_MODEL, cache_key
+    from radar.extract.prefilter import _builtin_extract
+
+    # `radar.extract` re-exports the `prefilter` *function*, shadowing the
+    # submodule attribute — resolve via sys.modules, not attribute access.
+    prefilter_mod = importlib.import_module("radar.extract.prefilter")
+
+    # A trafilatura whose output differs from the builtin extractor. The marker
+    # makes the divergence unconditional, so the guard can never go quiet by
+    # accident (whitespace is normalised away before hashing, prose is not).
+    class _FakeTrafilatura:
+        @staticmethod
+        def extract(html: str, **kwargs: object) -> str:
+            return _builtin_extract(html) + "\n\n[trafilatura-extracted]"
+
+    monkeypatch.setitem(sys.modules, "trafilatura", _FakeTrafilatura)
+
+    committed = {p.stem for p in (FIXTURES / "llm_cache").glob("*.json")}
+    checked = 0
+    for slug in ALL_ARTICLE_FIXTURES:
+        html = _html(slug)
+        builtin_key = cache_key(_builtin_extract(html), DEFAULT_MODEL)
+        if builtin_key not in committed:
+            continue  # prefilter-rejected fixture — never reaches the model
+        # (a) the fake really would change the key if it were in play — if
+        # this ever stops diverging, the guard is vacuous and must be fixed.
+        fake_key = cache_key(_FakeTrafilatura.extract(html), DEFAULT_MODEL)
+        assert fake_key != builtin_key, (
+            f"{slug}: fake trafilatura did not change the extracted text — "
+            "the extractor-drift guard is vacuous"
+        )
+        # (b) the golden path must still hash the builtin text.
+        key = cache_key(prefilter_mod.extract_text(html), DEFAULT_MODEL)
+        assert key == builtin_key, (
+            f"{slug}: extract_text produced key {key[:12]}… but the committed "
+            "cache is keyed on the builtin extractor ({builtin_key[:12]}…) — "
+            "the golden fixtures depend on which extractor is installed"
+        )
+        checked += 1
+    # Every committed entry must belong to a live fixture, and every fixture
+    # that reaches the model must have been checked.
+    assert checked == len(committed), (
+        f"checked {checked} fixtures against {len(committed)} committed cache "
+        "entries — the fixture set and the cache have drifted"
+    )
+
+
 def test_invented_company_is_dropped_by_grounding(offline_llm):
     """Fixture 22: the model invented a company name the article never names.
     Grounding must drop the claim, not the record."""

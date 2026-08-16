@@ -402,7 +402,7 @@ def offline_llm(monkeypatch):
     monkeypatch.setattr("radar.extract.llm.client.call", _call)
 ```
 
-Re-record with `REFRESH_LLM=1 pytest`, then **review the diff of the recorded responses in the pull request.** That diff is the regression signal when the prompt changes — you literally see what the model started saying differently.
+`REFRESH_LLM=1 pytest` is the live-recording path and exists for when a real provider response is genuinely wanted. The committed entries, however, are **hand-authored by the fixture builder** (`tests/fixtures/build_extraction_fixtures.py`) and verified end-to-end at build time — recording needs an API key and pins the vendor's current whims, while hand-authored payloads pin the behaviour. The maintenance workflow — which tool does what, and the exact steps for a `PROMPT_VERSION` bump — is §3.1 below.
 
 **The 25 fixtures must span the hard cases:**
 
@@ -449,6 +449,39 @@ def test_heuristic_fallback_when_llm_unavailable(monkeypatch):
 ```
 
 **Never assert exact string equality on free-text fields.** `temperature=0` does not guarantee byte-identical output — mixture-of-experts routing and batch-dependent floating-point reduction make provider inference non-deterministic in practice. Assert exact on enums and IDs, set-equality on founders after normalisation, and a rapidfuzz similarity ≥ 80 on descriptions.
+
+### 3.1 Maintaining the golden fixtures — the pin, the builder, the rekey
+
+Three committed pieces under `tests/fixtures/` keep the golden tests honest, and each has exactly one job:
+
+| Piece | Job |
+|---|---|
+| `_golden_extractor.py` | **Pin.** Routes `prefilter.extract_text` to the dependency-free builtin extractor for every fixture-key computation (pytest session, the builder, the rekey tool). Without it, a machine with the `extract` extra installed hashes trafilatura's text — different keys than CI — and the golden suite fails there while staying green here. Production code is untouched. |
+| `build_extraction_fixtures.py` | **Builder.** The source of truth for the 25 fixtures: renders `articles/<slug>.html`, writes the hand-authored `payload` blocks to `llm_cache/<key>.json` and the expectations to `articles/<slug>.expected.json`, prunes stale entries, then runs `extract()` end-to-end over the fresh cache and asserts every expectation. Self-verifying — a mis-generated fixture is a build error, not a surprise at test time. |
+| `rekey_llm_cache.py` | **Rekey.** For when a key change moves every filename but the payloads stay valid: recomputes each fixture's key with the *real* code path (`prefilter` → `cache_key`) and moves the recorded entries to their new keys. No provider, no network, no payload edits. |
+
+Run either with the project venv, from the repo root:
+
+```
+.venv/bin/python tests/fixtures/build_extraction_fixtures.py
+.venv/bin/python tests/fixtures/rekey_llm_cache.py
+```
+
+**A `PROMPT_VERSION` bump, step by step.** The cache key is `sha256(prompt_version | model | normalise_ws(text))`, so bumping the constant invalidates every key while the hand-authored payloads stay valid — maintenance is usually just a rename, occasionally a payload edit:
+
+1. Edit the prompt in `radar/extract/llm.py` and bump `PROMPT_VERSION`. (The bump is what invalidates the old keys; without it the new prompt silently reuses old answers.)
+2. Decide which of the two the change actually is:
+   - **Keys moved, behaviour unchanged** — e.g. a reworded prompt whose intended answers are the same. Run `rekey_llm_cache.py`; it moves every entry to its new key, and the `git diff` should read as pure renames.
+   - **Behaviour changed** — the model is now *supposed* to answer differently. Hand-edit the affected `payload` blocks in the builder, then run `build_extraction_fixtures.py`. Its self-verification fails loudly on any fixture that no longer matches its own payload, so the edit-and-run loop is the review.
+3. Run the full suite: `uv run python -m pytest`.
+4. Review the diff in the pull request — which keys moved and which payloads changed is exactly the regression signal §3 promised.
+
+A `DEFAULT_MODEL` change is the same shape: the model id is inside the hash, so keys move and rekey applies; the recorded `model_id` fields are then confirmed by the builder or the suite.
+
+Two things the golden fixtures never do, deliberately:
+
+- **Never let the extractor choice into the key.** The pin exists because trafilatura and the builtin extractor return different text for the same article (365 vs 418 chars when the drift was fixed), and the key hashes that text. `test_golden_cache_keys_are_independent_of_trafilatura` in `tests/unit/test_extraction.py` fakes trafilatura being installed and asserts the golden keys are unchanged — so if the pin is ever removed, the suite fails in CI even though CI has no trafilatura to drift with.
+- **Never record from a live provider as the primary path.** The committed entries are hand-authored; `REFRESH_LLM=1` recording is the occasional exception, and its output should be reviewed into the builder rather than committed as-is.
 
 ---
 

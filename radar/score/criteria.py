@@ -19,6 +19,10 @@ from radar.config.models import SCORED_ATTRIBUTES
 
 from .derive import _get, _lists
 
+# The one definition of the scorer version in the system. Stamped onto every
+# scored row (radar.pipeline imports it from here) and every ComponentScore,
+# so a scoring-rule change that should invalidate old scores bumps it in
+# exactly one place.
 SCORER_VERSION = "2.0.0"
 
 # The matrix is 0-4; every sub-score in the system is 0-1.

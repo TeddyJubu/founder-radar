@@ -5,9 +5,11 @@ ambiguous pair is never silently resolved, and it never blocks a run either
 (the mention is created as its own record and the pair is queued).
 
 Storage is `_meta` under the `review:` prefix, the same pattern the merge
-undo and the filings-checked markers use. The schema has no review table by
-design — a queue is transient state, not a fact about a company, and keeping
-it out of the relational schema means it cannot be confused with provenance.
+undo and the filings-checked markers use — and the key is a deterministic
+function of the pair, so the idempotency check is one `_meta` lookup, never a
+scan of the queue. The schema has no review table by design — a queue is
+transient state, not a fact about a company, and keeping it out of the
+relational schema means it cannot be confused with provenance.
 
 `review_queue()` returns the pairs with both names resolved so the CLI can
 print something a human can act on, and `resolve_review()` merges the pair
@@ -19,31 +21,38 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from radar.store.db import new_id, now_iso
+from radar.store.db import now_iso
 
 _PREFIX = "review:"
+
+
+def _pair_key(winner_id: str, loser_id: str) -> str:
+    """Deterministic, order-independent key for the unordered pair.
+
+    The key IS the pair: the two ids sorted and joined with `|` (ULIDs never
+    contain it). One `_meta` lookup is therefore the whole idempotency check —
+    no scan of the queue, so queueing N pairs costs O(N), not O(N²). Order
+    must not matter, because a later run may present the pair the other way
+    round; sorting makes winner/loser presentation irrelevant.
+    """
+    lo, hi = sorted((winner_id, loser_id))
+    return f"{_PREFIX}{lo}|{hi}"
 
 
 def enqueue_review(db: Any, winner_id: str, loser_id: str, result: Any) -> str:
     """Queue `(winner, loser)` for a human decision. Returns the stable key.
 
     Idempotent per pair: re-finding the same pair on a later run must not grow
-    the queue. `result` is the `MatchResult` the ladder produced, so the queue
-    carries the rule, the score and the evidence a human needs to decide.
+    the queue, so the key is derived from the pair itself and the existing
+    entry is found in O(1) — returning it untouched keeps the original
+    `created_at`, which is what keeps the queue's newest-first order stable.
+    `result` is the `MatchResult` the ladder produced, so the queue carries
+    the rule, the score and the evidence a human needs to decide.
     """
-    # Idempotent per pair: re-finding the same pair on a later run must not
-    # grow the queue, so the existing key is returned when the pair is known.
-    for row in db.query("SELECT key, value FROM _meta WHERE key LIKE ?",
-                        (f"{_PREFIX}%",)):
-        try:
-            value = json.loads(row["value"])
-        except (TypeError, json.JSONDecodeError):
-            continue
-        ids = {value.get("winner_id"), value.get("loser_id")}
-        if ids == {winner_id, loser_id}:
-            return row["key"]
+    key = _pair_key(winner_id, loser_id)
+    if db.get_meta(key) is not None:
+        return key  # already queued — return the stable key untouched
 
-    key = new_id()
     payload = {
         "winner_id": winner_id,
         "loser_id": loser_id,
@@ -55,7 +64,7 @@ def enqueue_review(db: Any, winner_id: str, loser_id: str, result: Any) -> str:
     }
     db.execute(
         "INSERT OR REPLACE INTO _meta(key, value) VALUES (?, ?)",
-        (f"{_PREFIX}{key}", json.dumps(payload, sort_keys=True, default=str)),
+        (key, json.dumps(payload, sort_keys=True, default=str)),
     )
     return key
 

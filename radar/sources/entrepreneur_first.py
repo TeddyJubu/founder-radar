@@ -22,7 +22,7 @@ from typing import Iterable
 from radar.sources._common import (
     absolute_url,
     attr_of,
-    clean_text,
+    first_text,
     guard_nonempty,
     html_doc,
     node_fingerprint,
@@ -134,7 +134,7 @@ class EntrepreneurFirstAdapter:
         return True
 
     def _item(self, card) -> RawItem | None:
-        name = _first_text(card, NAME_SELECTORS)
+        name = first_text(card, NAME_SELECTORS)
         if not name:
             return None
         # Identity, carefully. The live card's first `a[href]` is a *tag* link
@@ -160,14 +160,14 @@ class EntrepreneurFirstAdapter:
                 break
 
         location = (attr_of(card, None, "data-location")
-                    or _first_text(card, LOCATION_SELECTORS))
+                    or first_text(card, LOCATION_SELECTORS))
         year_text = attr_of(card, None, "data-year") or text_of(card, ".portfolio__year")
         year_match = _YEAR.search(year_text or "")
         founded_year = int(year_match.group(0)) if year_match else None
 
         structured = {
             "company_name": name,
-            "one_line_description": _first_text(card, DESC_SELECTORS, exclude=name) or None,
+            "one_line_description": first_text(card, DESC_SELECTORS, exclude=name) or None,
             "company_website": website,
             "location": location or None,
             "founded_year": founded_year,
@@ -200,14 +200,6 @@ def _min_year(now: date | None) -> int | None:
     if now is None:
         return None
     return now.year - 3
-
-
-def _first_text(card, selectors, *, exclude: str | None = None) -> str:
-    for selector in selectors:
-        value = text_of(card, selector)
-        if value and value != exclude:
-            return value
-    return ""
 
 
 ADAPTER = EntrepreneurFirstAdapter()
