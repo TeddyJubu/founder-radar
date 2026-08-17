@@ -653,8 +653,8 @@ def test_enrichment_does_not_starve_hydration_behind_new_filing_checks(db):
     In production the first run checked 500 companies' filing histories. On
     the next run those checked rows were followed by enough unchecked rows to
     consume the whole budget again, so officers/PSC never ran and no registry
-    company could earn a qualifier. Keep some budget for the already-checked
-    cohort so the Today queue can make progress while the backlog drains.
+    company could earn a qualifier. Keep budget for the already-checked cohort
+    so the Today queue can make progress while the backlog drains.
     """
     from radar.enrich import RequestBudget, enrich_companies
     from radar.store.db import now_iso
@@ -671,6 +671,25 @@ def test_enrichment_does_not_starve_hydration_behind_new_filing_checks(db):
 
     assert result.enriched >= 1
     assert any("/officers" in url for url in http.requests)
+
+
+def test_incomplete_appointment_hydration_remains_queued(db):
+    """Rows marked hydrated before pass 3 completes must be resumable."""
+    from radar.enrich import enrichment_queue
+    from radar.store.db import now_iso
+
+    _queue(db, 1)
+    company = db.one("SELECT id FROM company LIMIT 1")
+    stamp = now_iso()
+    db.execute(
+        "UPDATE company SET enriched_at = ?, officer_count = 1 WHERE id = ?",
+        (stamp, company["id"]),
+    )
+
+    assert any(row["id"] == company["id"] for row in enrichment_queue(db))
+
+    db.set_meta("ch_appointments_complete:" + company["id"], stamp)
+    assert not any(row["id"] == company["id"] for row in enrichment_queue(db))
 
 
 # --------------------------------------------------------- §8 the CI greps
