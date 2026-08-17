@@ -309,6 +309,7 @@ Run at **each** viewport, in **both** colour schemes
 | V5 | Name not clipped | `company-name` `scrollWidth <= clientWidth + 1` |
 | V6 | Dark mode differs | body `background-color` differs between the two schemes |
 | V7 | Screenshot | capture full page for each combination; attach to the report |
+| V9 | Header controls do not overlap | at 725px and 393px, the Dashboard, Kept, help, and progress boxes have non-overlapping horizontal bounds |
 
 ### V8 — Contrast (WCAG AA, which Apple HIG also targets)
 
