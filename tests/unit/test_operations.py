@@ -837,3 +837,16 @@ def test_today_requires_verified_age_and_uk_presence(db):
     payload = build_today(db.conn)
     assert [c["company_id"] for c in payload["companies"]] == [valid]
     assert len(payload["companies"][0]["fund_scores"]) == 4
+
+    diagnostics = payload["eligibility_diagnostics"]
+    assert diagnostics["scored_companies"] == 6
+    assert diagnostics["eligible_before_review"] == 1
+    assert diagnostics["shown"] == 1
+    assert diagnostics["excluded"] == 5
+    assert {row["key"]: row["count"] for row in diagnostics["reasons"]} == {
+        "age_unknown": 1,
+        "max_company_age_months": 1,
+        "max_total_funding_gbp": 1,
+        "min_uk_presence": 1,
+        "uk_unverified": 1,
+    }

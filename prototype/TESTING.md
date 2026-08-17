@@ -118,6 +118,9 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Done state | `done-state` | | |
 | Review Again | `review-again` | | clears only today's review markers; lasting verdicts remain |
 | Empty state | `empty-state` | | |
+| Eligibility diagnostics | `eligibility-diagnostics` | `scored`, `shown`, `excluded` counts | aggregate first-blocking-reason counts; no company rows or scraped values |
+| Eligibility summary | `eligibility-summary` | | explains the aggregate scope and privacy boundary |
+| Eligibility reason | `eligibility-reason` | `data-reason` | one row per non-zero exclusion reason |
 
 **`data-value` carries the unrounded number.** Compare *that* against SQLite —
 `score-value` text is rounded for display and will differ by up to 0.5.
@@ -132,7 +135,8 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 |---|---|---|
 | A1 | `GET /` | 200, `content-type: text/html` |
 | A2 | `GET /api/today` | 200, valid JSON |
-| A3 | Top-level keys | `date`, `companies`, `totals`, `run` all present |
+| A3 | Top-level keys | `date`, `companies`, `totals`, `run`, `eligibility_diagnostics` all present |
+| A3b | Eligibility diagnostics | scored minus shown equals excluded, and reason counts sum to excluded; each reason is aggregate-only |
 | A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` has exactly `outward`, `dsw`, `northstar`, `anticus` |
 | A5 | Tier filter | no company has `tier == "reject"` |
 | A6 | Ordering | `priority` is non-increasing across the array |

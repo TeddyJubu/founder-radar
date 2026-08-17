@@ -38,6 +38,26 @@ HERE = Path(__file__).resolve().parent
 # already decided, and re-litigating them is what the Companies tab is for.
 REVIEWABLE = ("shortlist", "watchlist")
 
+# Today diagnostics deliberately expose counts, not row-level data. The first
+# matching key is the one reported for a company, so the rows reconcile to the
+# scored-company total instead of counting one company several times.
+TODAY_DIAGNOSTIC_LABELS = {
+    "merged": "Merged into another company",
+    "not_reviewable_tier": "No shortlist or watchlist score",
+    "max_company_age_months": "Older than the current age limit",
+    "age_unknown": "Age not verified",
+    "freshness_gate": "A freshness gate failed",
+    "max_total_funding_gbp": "Funding is above the current cap",
+    "max_stage": "Stage is later than the current limit",
+    "already_on_vc_portfolio": "Already on a tracked VC portfolio",
+    "min_uk_presence": "Fails the UK-presence gate",
+    "uk_unverified": "UK presence not verified",
+    "missing_provenance": "No usable source URL",
+    "reviewed_today": "Already reviewed today",
+    "display_limit": "Beyond today's display limit",
+}
+TODAY_DIAGNOSTIC_ORDER = tuple(TODAY_DIAGNOSTIC_LABELS)
+
 
 def _is_http_url(value: str | None) -> bool:
     """Only real web URLs count as provenance links on Today."""
@@ -407,6 +427,110 @@ def _eligible_today_company_ids(conn: sqlite3.Connection) -> set[str]:
         REVIEWABLE,
     )
     return {row["id"] for row in rows if _is_http_url(row["source_url"])}
+
+
+def _today_eligibility_diagnostics(
+    conn: sqlite3.Connection,
+    config: Any,
+    *,
+    today: date,
+    review_date: str,
+    limit: int,
+    shown_ids: set[str],
+) -> dict:
+    """Explain the Today drop-off using the same final gates as the queue.
+
+    This is intentionally an aggregate-only contract. It reads the scored
+    company population, applies ``apply_freshness_gates`` at the same
+    acceptance boundary as ``build_today``, and assigns each scored company
+    one first blocking reason. Names, URLs, score explanations, and scraped
+    values never leave this function.
+    """
+    from radar.score.gates import apply_freshness_gates
+
+    rows = conn.execute(
+        """SELECT c.id AS company_id, c.merged_into, c.incorporated_on,
+                         c.country_iso2, c.hq_region, c.hq_postcode,
+                         c.companies_house_no, c.hq_city, c.total_funding_gbp,
+                         c.stage, c.on_vc_portfolio,
+                         MAX(CASE WHEN s.tier IN (?, ?) THEN 1 ELSE 0 END)
+                             AS has_reviewable_score
+                    FROM company c
+                    JOIN score s ON s.company_id = c.id
+                   GROUP BY c.id""",
+        REVIEWABLE,
+    ).fetchall()
+
+    source_ids = {
+        row["company_id"]
+        for row in conn.execute(
+            "SELECT company_id, source_url FROM company_source"
+        )
+        if _is_http_url(row["source_url"])
+    }
+    reviewed_ids = {
+        row["company_id"]
+        for row in conn.execute(
+            "SELECT company_id FROM daily_review WHERE review_date = ?",
+            (review_date,),
+        )
+    }
+
+    reason_counts: dict[str, int] = {}
+    reviewable_companies = 0
+    eligible_before_review = 0
+
+    def exclude(reason: str) -> None:
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    for row in rows:
+        company_id = row["company_id"]
+        if row["merged_into"]:
+            exclude("merged")
+            continue
+        if not row["has_reviewable_score"]:
+            exclude("not_reviewable_tier")
+            continue
+
+        reviewable_companies += 1
+        freshness = apply_freshness_gates(row, config, today=today)
+        if not freshness.passed:
+            exclude(freshness.reason or "freshness_gate")
+            continue
+        if freshness.flags:
+            exclude(freshness.flags[0])
+            continue
+        if company_id not in source_ids:
+            exclude("missing_provenance")
+            continue
+
+        eligible_before_review += 1
+        if company_id in reviewed_ids:
+            exclude("reviewed_today")
+        elif company_id not in shown_ids:
+            # A company that passed every gate but was not returned is outside
+            # the requested page size. This keeps the diagnostic honest when
+            # a large run produces more candidates than Today displays.
+            exclude("display_limit")
+
+    reasons = [
+        {
+            "key": key,
+            "label": TODAY_DIAGNOSTIC_LABELS[key],
+            "count": reason_counts[key],
+        }
+        for key in TODAY_DIAGNOSTIC_ORDER
+        if reason_counts.get(key)
+    ]
+    return {
+        "scored_companies": len(rows),
+        "reviewable_companies": reviewable_companies,
+        "eligible_before_review": eligible_before_review,
+        "display_limit": max(0, int(limit)),
+        "shown": len(shown_ids),
+        "excluded": max(0, len(rows) - len(shown_ids)),
+        "reasons": reasons,
+    }
 
 
 def reset_daily_review(conn: sqlite3.Connection, review_date: str | None = None) -> int:
@@ -913,6 +1037,14 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
     run = conn.execute(
         "SELECT started_at, items_fetched, companies_new, shortlisted, status "
         "FROM run ORDER BY id DESC LIMIT 1").fetchone()
+    eligibility_diagnostics = _today_eligibility_diagnostics(
+        conn,
+        config,
+        today=today,
+        review_date=review_date,
+        limit=limit,
+        shown_ids={row["company_id"] for row in out},
+    )
 
     return {
         "date": today.isoformat(),
@@ -928,6 +1060,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "kept": kept_count(conn),
         },
         "run": dict(run) if run else None,
+        "eligibility_diagnostics": eligibility_diagnostics,
     }
 
 
