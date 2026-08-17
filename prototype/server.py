@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -33,6 +34,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).resolve().parent
+log = logging.getLogger(__name__)
 
 # Tiers a human is asked to look at. `reject` never reaches Today: the gates
 # already decided, and re-litigating them is what the Companies tab is for.
@@ -542,15 +544,16 @@ def reset_daily_review(conn: sqlite3.Connection, review_date: str | None = None)
 
 
 def render_kept_intro(conn: sqlite3.Connection) -> str:
-    """Where the list lives, and that the sheet is an optional mirror."""
+    """Where the list lives, and that each decision is mirrored to Sheets."""
     from html import escape
 
     n = kept_count(conn)
     return (
         f'<p class="kept-intro" data-testid="kept-intro">'
         f'<span class="count" data-testid="kept-total">{escape(str(n))}</span> '
-        f'saved in this app. The Google Sheet&rsquo;s Verdict column is an '
-        f'optional mirror after sync &mdash; not the primary list. '
+        f'saved in this app and mirrored to the Google Sheet&rsquo;s Verdict '
+        f'column when configured. A full <code>sync-sheet</code> run catches '
+        f'up any missed write. '
         f'<a class="lnk" href="/help" data-testid="nav-help">How the parts connect</a>.'
         f'</p>'
     )
@@ -1116,6 +1119,27 @@ def set_verdict(conn: sqlite3.Connection, company_id: str, verdict: str) -> int:
     return kept_count(conn)
 
 
+def mirror_verdict_to_sheet(company_id: str, verdict: str) -> str:
+    """Best-effort Google Sheet mirror after the local verdict is committed.
+
+    SQLite remains the write-ahead record for the web surface. A Sheets
+    outage, missing local configuration, or a stale row must never turn a
+    successful user decision into a failed HTTP request; the scheduled full
+    render can catch up later.
+    """
+    try:
+        from radar.render.sheet import mirror_verdict
+
+        return str(mirror_verdict(company_id, verdict)["status"])
+    except RuntimeError as exc:
+        # Missing SHEET_ID/GOOGLE_SA_JSON is expected for local development.
+        log.info("Google Sheet mirror unavailable for %s (%s)", company_id, exc)
+        return "not_configured"
+    except Exception:  # noqa: BLE001 - the mirror cannot block the local save
+        log.exception("Google Sheet mirror failed for %s", company_id)
+        return "failed"
+
+
 def make_handler(conn: sqlite3.Connection):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, ctype: str) -> None:
@@ -1188,7 +1212,12 @@ def make_handler(conn: sqlite3.Connection):
                 self._send(400, b'{"error":"bad verdict"}', "application/json")
                 return
             n = set_verdict(conn, company_id, verdict)
-            payload = json.dumps({"ok": True, "kept_count": n}).encode()
+            sheet_sync = mirror_verdict_to_sheet(company_id, verdict)
+            payload = json.dumps({
+                "ok": True,
+                "kept_count": n,
+                "sheet_sync": sheet_sync,
+            }).encode()
             self._send(200, payload, "application/json")
 
         def log_message(self, *args) -> None:      # quiet

@@ -198,7 +198,8 @@ def open_gateway(sheet_id: str | None = None,
     import gspread
     from google.oauth2.service_account import Credentials
 
-    key = sheet_id or os.environ.get("SHEET_ID")
+    key = (sheet_id or os.environ.get("SHEET_ID")
+           or os.environ.get("RADAR_SHEET_ID"))
     if not key:
         raise RuntimeError("SHEET_ID is not set — run `founder-radar doctor`")
     sa_path = credentials_path or os.environ.get("GOOGLE_SA_JSON")
@@ -206,6 +207,48 @@ def open_gateway(sheet_id: str | None = None,
         raise RuntimeError("GOOGLE_SA_JSON is not set — run `founder-radar doctor`")
     creds = Credentials.from_service_account_file(sa_path, scopes=list(SCOPES))
     return GspreadGateway(gspread.authorize(creds).open_by_key(key))
+
+
+def mirror_verdict(company_id: str, verdict: str, *,
+                   gateway: SheetGateway | None = None) -> dict[str, Any]:
+    """Mirror one web decision into the existing Companies row.
+
+    The web review surface commits SQLite first, then calls this narrow path.
+    Reading column A before writing column Z means a manual sort cannot send a
+    verdict to the wrong company, and touching only Z leaves Aryan's notes,
+    contacted date, and fund destination alone. A missing row is reported to
+    the caller rather than creating an unjoined row; the next full
+    ``sync-sheet`` render will create it from SQLite.
+    """
+    if not company_id:
+        raise ValueError("company_id is required")
+    if verdict not in {"worth contacting", "not for me", "unsure"}:
+        raise ValueError("unsupported verdict")
+
+    gw = gateway or open_gateway()
+    companies_range = READ_RANGES[COMPANIES]
+    rows = list((gw.batch_get([companies_range]).get(companies_range, []) or []))
+    row_number: int | None = None
+    row_values: Sequence[Any] = ()
+    for number, row in enumerate(rows, start=1):
+        if row and str(row[0]).strip() == company_id:
+            row_number = number
+            row_values = row
+            break
+
+    if row_number is None:
+        return {"status": "not_found"}
+
+    verdict_column = USER_FIELD_COLUMN["verdict"]
+    verdict_index = col_index(verdict_column)
+    current = (str(row_values[verdict_index]).strip()
+               if verdict_index < len(row_values) else "")
+    if current == verdict:
+        return {"status": "already_synced", "row": row_number}
+
+    cell = a1(COMPANIES, verdict_column, row_number, verdict_column, row_number)
+    gw.batch_set([ValueRange(cell, [[verdict]])], RAW)
+    return {"status": "synced", "row": row_number}
 
 
 # ------------------------------------------------------------- formatting

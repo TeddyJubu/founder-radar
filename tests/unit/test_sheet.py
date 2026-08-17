@@ -33,7 +33,7 @@ from radar.render.formatting import (
     USER_COLUMN_FIELD,
     col_index,
 )
-from radar.render.sheet import plan_tab, read_user_columns, sync_sheet
+from radar.render.sheet import mirror_verdict, plan_tab, read_user_columns, sync_sheet
 from tests.fakes import FakeSheetGateway, seed_companies, seed_failed_source
 
 # 09-test-plan §5, verbatim. Eleven visible + one hidden.
@@ -263,6 +263,40 @@ def test_a_verdict_made_outside_the_sheet_survives_and_reaches_it(db, sheet):
     assert kept["value"] == "worth contacting"
     # Surviving is not enough — it has to show up where he looks for it.
     assert "worth contacting" in sheet.column(COMPANIES, "Z")
+
+
+def test_web_verdict_mirrors_only_the_matching_companies_cell(db, sheet):
+    """A web pick updates Z beside its ID without touching other user cells."""
+    ids = seed_companies(db, 3)
+    render(db, sheet)
+    row = sheet.row_of(COMPANIES, ids[1])
+    sheet.set_cell(COMPANIES, f"AA{row}", "follow up after demo")
+    sheet.reset()
+    sheet.writes.clear()
+
+    result = mirror_verdict(ids[1], "worth contacting", gateway=sheet)
+
+    assert result == {"status": "synced", "row": row}
+    assert sheet.at(COMPANIES, row, "Z") == "worth contacting"
+    assert sheet.at(COMPANIES, row, "AA") == "follow up after demo"
+    assert sheet.methods() == ["batch_get", "batch_set"]
+    assert sheet.writes == [("RAW", f"'{COMPANIES}'!Z{row}:Z{row}")]
+
+    sheet.reset()
+    sheet.writes.clear()
+    assert mirror_verdict(ids[1], "worth contacting", gateway=sheet) == {
+        "status": "already_synced", "row": row}
+    assert sheet.methods() == ["batch_get"]
+
+
+def test_web_verdict_reports_a_company_missing_from_the_sheet(db, sheet):
+    """A stale sheet is caught up by the next full render, not a fake row."""
+    seed_companies(db, 1)
+    render(db, sheet)
+    sheet.reset()
+    assert mirror_verdict("missing-company", "unsure", gateway=sheet) == {
+        "status": "not_found"}
+    assert sheet.methods() == ["batch_get"]
 
 
 def test_clearing_a_verdict_in_the_sheet_still_deletes_it(db, sheet):
