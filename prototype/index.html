@@ -42,7 +42,10 @@ h1 {
 }
 .help:hover { background: color-mix(in srgb, var(--blue) 16%, var(--fill)); color: var(--blue); }
 .help:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
-/* `.help` is a 24px circle for the single "?" glyph; a word needs to grow. */
+/* `.help` is a 24px circle for the single "?" glyph; word links need to
+   grow to their content instead of letting the label overflow into the next
+   control. */
+.dashboard-link,
 .kept-link {
   width: auto; border-radius: 999px; padding: 0 11px;
   gap: 6px; display: inline-flex; align-items: center;
@@ -538,6 +541,8 @@ button.no  { color: var(--red); }
   .blurb, .why, .evidence { margin-top: var(--s4); }
 }
 @media (max-width: 460px) {
+  header { flex-wrap: wrap; row-gap: var(--s2); }
+  .dots { flex-basis: 100%; justify-content: flex-end; }
   .date { display: none; }             /* the header already says Today */
   button .kbd { display: none; }       /* no hardware keyboard to hint at */
   .fund-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -549,7 +554,7 @@ button.no  { color: var(--red); }
   <header data-testid="today-header">
     <h1 data-testid="today-title">Today</h1>
     <span class="date" id="date" data-testid="today-date"></span>
-    <a class="help" href="/dashboard" data-testid="nav-dashboard" title="Calendar and kept history">Dashboard</a>
+    <a class="help dashboard-link" href="/dashboard" data-testid="nav-dashboard" title="Calendar and kept history">Dashboard</a>
     <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept<span class="kept-badge" id="kept-badge" data-testid="kept-badge" data-count="0"></span></a>
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
     <div class="dots" id="dots" data-testid="progress" aria-hidden="true"></div>

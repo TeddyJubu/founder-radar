@@ -600,6 +600,25 @@ def test_v6_dark_mode_is_a_designed_peer(page, server):
     assert seen["light"] != seen["dark"], seen
 
 
+@pytest.mark.parametrize("width", [725, 393])
+def test_v9_header_navigation_links_do_not_overlap(page, server, width):
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto(server + "/", wait_until="networkidle")
+    page.wait_for_selector(tid("card"))
+
+    names = ("nav-dashboard", "nav-kept", "nav-onboarding", "progress")
+    boxes = [page.locator(tid(name)).bounding_box() for name in names]
+    for i, left in enumerate(boxes):
+        for right, right_name in zip(boxes[i + 1:], names[i + 1:]):
+            horizontal = left["x"] < right["x"] + right["width"]
+            horizontal &= right["x"] < left["x"] + left["width"]
+            vertical = left["y"] < right["y"] + right["height"]
+            vertical &= right["y"] < left["y"] + left["height"]
+            assert not (horizontal and vertical), (
+                f"header controls overlap at {width}px: {names[i]} and {right_name}"
+            )
+
+
 # ═════════════════════════════════════════════════════════ X — accessibility
 
 
