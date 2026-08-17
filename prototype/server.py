@@ -570,39 +570,61 @@ def render_kept_rows(conn: sqlite3.Connection) -> str:
             '</p>'
         )
 
-    blocks: list[str] = []
+    rows: list[str] = []
     for verdict in KEPT_VERDICTS:
-        items = kept[verdict]
-        if not items:
-            continue
-        rows = []
-        for c in items:
+        for c in kept[verdict]:
             facts = " · ".join(f for f in (c["where"], c["sector"]) if f)
             score = (f'{c["fit"]:.0f} / {c["edge"]:.0f}'
                      if c["fit"] is not None and c["edge"] is not None else "")
+            description = escape(c["one_liner"] or facts or "No description recorded")
+            fund = escape(c["fund"])
+            if c["vehicle"]:
+                fund += f' · {escape(c["vehicle"])}'
+            status_class = (
+                "status-contact" if verdict == "worth contacting" else "status-unsure"
+            )
             links = "".join(
-                f'<a class="lnk" href="{escape(url)}" target="_blank" '
+                f'<a class="lnk kept-action" href="{escape(url)}" target="_blank" '
                 f'rel="noopener" data-testid="kept-{kind}">{label} ↗</a>'
                 for kind, url, label in (("site", c["website"], "Site"),
                                          ("source", c["source"], "Source"))
                 if url.startswith(("http://", "https://")))
+            actions = links or '<span class="kept-muted">—</span>'
             rows.append(
-                f'<li class="kept-row" data-testid="kept-row" '
+                f'<tr class="kept-row" data-testid="kept-row" '
+                f'data-kept-table-row="true" '
                 f'data-company-id="{escape(c["company_id"])}" '
                 f'data-verdict="{escape(verdict)}">'
-                f'<div class="kept-main"><span class="kept-name">{escape(c["name"])}</span>'
-                f'<span class="kept-desc">{escape(c["one_liner"] or facts)}</span></div>'
-                f'<div class="kept-meta"><span>{escape(c["fund"])}'
-                f'{" · " + escape(c["vehicle"]) if c["vehicle"] else ""}</span>'
-                f'<span class="kept-score">{score}</span>'
-                f'<span class="kept-when">{escape(c["decided"])}</span>{links}</div></li>')
-        blocks.append(
-            f'<section class="kept-group" data-testid="kept-group" '
-            f'data-verdict="{escape(verdict)}">'
-            f'<h2>{escape(verdict.capitalize())} '
-            f'<span class="count" data-testid="kept-group-count">{len(items)}</span></h2>'
-            f'<ul>{"".join(rows)}</ul></section>')
-    return "\n".join(blocks)
+                f'<th scope="row" class="kept-company">'
+                f'<span class="kept-name">{escape(c["name"])}</span>'
+                f'<span class="kept-desc">{description}</span></th>'
+                f'<td class="kept-status" data-label="Verdict"><span class="status-pill {status_class}" '
+                f'data-testid="kept-status">{escape(verdict.capitalize())}</span></td>'
+                f'<td class="kept-fund" data-label="Fund / vehicle">{fund}</td>'
+                f'<td class="kept-score" data-testid="kept-score" data-label="Match / fresh">'
+                f'<span aria-hidden="true">{score or "—"}</span>'
+                f'<span class="sr-only">{score or "No scores recorded"}</span></td>'
+                f'<td class="kept-when" data-testid="kept-when" data-label="Saved">{escape(c["decided"])}</td>'
+                f'<td class="kept-actions" data-label="Links">{actions}</td>'
+                f'</tr>')
+
+    return (
+        '<div class="table-shell" data-testid="kept-table-shell" role="region" '
+        'aria-label="Saved companies table" tabindex="0">'
+        '<table class="kept-table" data-testid="kept-table">'
+        '<caption class="sr-only" data-testid="kept-table-caption">'
+        'Companies saved to Kept, ordered with Worth contacting first.</caption>'
+        '<thead><tr>'
+        '<th scope="col">Company</th>'
+        '<th scope="col">Verdict</th>'
+        '<th scope="col">Fund / vehicle</th>'
+        '<th scope="col">Match / fresh</th>'
+        '<th scope="col">Saved</th>'
+        '<th scope="col"><span class="sr-only">Links</span></th>'
+        '</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table></div>'
+    )
 
 
 # ------------------------------------------------------------- the dashboard

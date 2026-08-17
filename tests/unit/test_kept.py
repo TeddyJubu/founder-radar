@@ -160,6 +160,24 @@ def test_empty_kept_renders_guidance(db):
     assert "/help" in intro
 
 
+def test_kept_page_renders_a_semantic_table(db):
+    ids = seed_companies(db, count=2, shortlist=2)
+    set_verdict(db.conn, ids[0], "worth contacting")
+    set_verdict(db.conn, ids[1], "unsure")
+
+    html = render_kept_rows(db.conn)
+
+    assert '<table class="kept-table" data-testid="kept-table">' in html
+    assert 'data-testid="kept-table-caption"' in html
+    assert '<thead><tr>' in html
+    assert '<tbody>' in html
+    assert html.count('<th scope="col">') == 6
+    assert html.count('<th scope="row" class="kept-company">') == 2
+    assert 'data-kept-table-row="true"' in html
+    assert 'data-verdict="worth contacting"' in html
+    assert 'data-verdict="unsure"' in html
+
+
 def test_set_verdict_returns_kept_count(db):
     ids = seed_companies(db, count=2, shortlist=2)
     assert set_verdict(db.conn, ids[0], "worth contacting") == 1

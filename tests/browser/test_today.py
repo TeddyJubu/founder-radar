@@ -668,6 +668,25 @@ def test_k1_a_kept_company_appears_on_the_kept_page(page, server, api):
     assert name in row.inner_text()
 
 
+def test_k1b_kept_page_uses_an_accessible_table(page, server, api):
+    company_id = api["companies"][0]["company_id"]
+    assert _post(server, {"company_id": company_id,
+                          "verdict": "worth contacting"})[0] == 200
+
+    page.set_viewport_size({"width": 393, "height": 844})
+    page.goto(server + "/kept", wait_until="networkidle")
+    page.wait_for_selector(tid("kept-table"))
+
+    table = page.locator(tid("kept-table"))
+    assert table.locator("caption").count() == 1
+    assert table.locator("thead th").all_text_contents() == [
+        "Company", "Verdict", "Fund / vehicle", "Match / fresh", "Saved", "Links"
+    ]
+    assert table.locator('tbody th[scope="row"]').count() >= 1
+    assert page.locator(tid("kept-table-shell")).get_attribute("role") == "region"
+    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+
+
 def test_k2_not_for_me_is_not_a_kept_company(page, server, api):
     """Saying no is the point of saying no — it must not come back as a pick."""
     company_id = api["companies"][1]["company_id"]
