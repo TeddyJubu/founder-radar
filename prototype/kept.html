@@ -76,7 +76,7 @@ h1 { font-size: var(--title1); margin: 0; letter-spacing: -0.02em; }
 .kept-desc {
   display: block; margin-top: 2px; color: var(--label-2); font-size: var(--subhead);
 }
-.kept-status, .kept-when, .kept-actions { white-space: nowrap; }
+.kept-status, .kept-when { white-space: nowrap; }
 .kept-fund { color: var(--label-2); overflow-wrap: anywhere; }
 .kept-score {
   color: var(--label); font-weight: 600; font-variant-numeric: tabular-nums;
@@ -90,7 +90,10 @@ h1 { font-size: var(--title1); margin: 0; letter-spacing: -0.02em; }
 }
 .status-contact { color: var(--green); }
 .status-unsure { color: var(--orange); }
-.kept-actions { display: flex; align-items: center; gap: var(--s3); }
+.kept-actions {
+  display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+}
+.kept-action { white-space: nowrap; }
 .kept-muted { color: var(--label-3); }
 .lnk { color: var(--blue); text-decoration: none; }
 .lnk:hover { text-decoration: underline; }
