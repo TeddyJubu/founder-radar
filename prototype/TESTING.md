@@ -121,6 +121,10 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Eligibility diagnostics | `eligibility-diagnostics` | `scored`, `shown`, `excluded` counts | aggregate first-blocking-reason counts; no company rows or scraped values |
 | Eligibility summary | `eligibility-summary` | | explains the aggregate scope and privacy boundary |
 | Eligibility reason | `eligibility-reason` | `data-reason` | one row per non-zero exclusion reason |
+| Kept table | `kept-table` | | semantic table of saved companies |
+| Kept table region | `kept-table-shell` | `role="region"` | owns narrow-screen row layout |
+| Kept row | `kept-row` | `data-company-id`, `data-verdict` | one saved company; a `<tr>` on `/kept` |
+| Kept status | `kept-status` | | `worth contacting` or `unsure` |
 
 **`data-value` carries the unrounded number.** Compare *that* against SQLite —
 `score-value` text is rounded for display and will differ by up to 0.5.
