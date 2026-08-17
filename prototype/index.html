@@ -70,7 +70,59 @@ h1 {
 
 /* Room for the sticky verdict bar: the explanation is the point of the
    card and must never sit behind it. */
-main { display: flex; align-items: flex-start; padding-bottom: var(--s5); }
+main {
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding-bottom: var(--s5);
+}
+
+/* Queue diagnostics are aggregate-only: useful for correcting the pipeline
+   without turning the Today page into a second company directory. */
+.diagnostics {
+  width: 100%; box-sizing: border-box;
+  margin-bottom: var(--s4); padding: var(--s4);
+  border: 0.5px solid color-mix(in srgb, var(--blue) 22%, var(--separator));
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--blue) 5%, var(--bg-3));
+  animation: rise .32s var(--spring) both;
+}
+.diagnostics-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s3);
+}
+.diagnostics-kicker {
+  margin: 0 0 3px; color: var(--blue);
+  font-size: var(--caption); line-height: var(--caption-lh);
+  font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+}
+.diagnostics h2 {
+  margin: 0; font-size: var(--headline); line-height: var(--headline-lh);
+  font-weight: 600; letter-spacing: -.15px;
+}
+.diagnostics-total {
+  flex: none; color: var(--label-2);
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.diagnostics-summary {
+  margin: var(--s2) 0 0; color: var(--label-2);
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+}
+.diagnostics-reasons {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 6px var(--s3); margin: var(--s3) 0 0; padding: 0;
+  list-style: none;
+}
+.diagnostic-reason {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s2); padding-top: 6px;
+  border-top: 0.5px solid var(--separator);
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+}
+.diagnostic-label { color: var(--label-2); }
+.diagnostic-count {
+  color: var(--label); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 
 .card {
   width: 100%;
@@ -806,6 +858,49 @@ function renderKeptBadge(n) {
   el.hidden = count === 0;
 }
 
+function fmtCount(n) {
+  return Math.max(0, Number(n) || 0).toLocaleString("en-GB");
+}
+
+function renderDiagnostics() {
+  const d = data?.eligibility_diagnostics;
+  if (!d) return "";
+
+  const scored = Math.max(0, Number(d.scored_companies) || 0);
+  const shown = Math.max(0, Number(d.shown) || 0);
+  const excluded = Math.max(0, Number(d.excluded) || 0);
+  const eligible = Math.max(0, Number(d.eligible_before_review) || 0);
+  const reasons = Array.isArray(d.reasons)
+    ? d.reasons.filter(r => r && Number(r.count) > 0) : [];
+  const reasonRows = reasons.map(r => `
+    <li class="diagnostic-reason" data-testid="eligibility-reason"
+        data-reason="${esc(r.key)}">
+      <span class="diagnostic-label">${esc(r.label)}</span>
+      <span class="diagnostic-count">${fmtCount(r.count)}</span>
+    </li>`).join("");
+  const clear = `<p class="diagnostics-summary" data-testid="eligibility-clear">
+    Every scored company that cleared the gates is in the queue.
+  </p>`;
+
+  return `<section class="diagnostics" data-testid="eligibility-diagnostics"
+                   aria-labelledby="eligibility-title">
+    <div class="diagnostics-head">
+      <div>
+        <p class="diagnostics-kicker">Queue diagnostics</p>
+        <h2 id="eligibility-title">Why scored companies are not in Today</h2>
+      </div>
+      <span class="diagnostics-total" data-testid="eligibility-excluded">
+        ${fmtCount(excluded)} excluded
+      </span>
+    </div>
+    <p class="diagnostics-summary" data-testid="eligibility-summary">
+      ${fmtCount(shown)} shown from ${fmtCount(scored)} scored; ${fmtCount(eligible)} cleared the gates before review state and the display limit.
+      Counts use one first blocking reason per company. Names and source content stay private.
+    </p>
+    ${reasonRows ? `<ul class="diagnostics-reasons">${reasonRows}</ul>` : clear}
+  </section>`;
+}
+
 function renderDone() {
   const main = $("#main"), footer = $("#footer");
   const pending = data?.companies || [];
@@ -814,7 +909,7 @@ function renderDone() {
   const keptLine = kept
     ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. The sheet is optional sync, not the primary list.</p>`
     : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
-  main.innerHTML = `<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
+  main.innerHTML = `${renderDiagnostics()}<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
     <h2>You've reviewed today's companies.</h2>
     <p>${reviewed} ${reviewed === 1 ? "company" : "companies"} reviewed today. Verdicts saved for the next tuning sweep.</p>
     ${keptLine}
@@ -834,7 +929,7 @@ function render() {
     if (Number(data.totals?.reviewed_today) > 0) {
       renderDone(); return;
     }
-    main.innerHTML = `<div class="empty" data-testid="empty-state"><h2>Nothing to review</h2>
+    main.innerHTML = `${renderDiagnostics()}<div class="empty" data-testid="empty-state"><h2>Nothing to review</h2>
       <p style="color:var(--label-2)">No company cleared the gates in the last run.</p></div>`;
     footer.hidden = true; renderDots(); return;
   }
@@ -891,7 +986,7 @@ function render() {
   // reordering can never silently assert Fresh against Match.
   const matchTitle = "Match — how strongly this company fits this fund's criteria. Unknown fields are skipped, never guessed.";
   const freshTitle = "Fresh — how likely it is the fund hasn't already seen this (age, tracked press, disclosed funding, discovery route). Unknown funding stays mid, not perfect.";
-  main.innerHTML = `
+  main.innerHTML = `${renderDiagnostics()}
     <article class="card ${thin ? "thin" : ""}" data-testid="card"
              data-company-id="${esc(c.company_id)}" data-tier="${esc(c.tier)}"
              data-coverage="${esc(c.coverage)}" data-thin="${thin}">

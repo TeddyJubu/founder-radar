@@ -58,6 +58,9 @@ def test_today_excludes_a_company_after_a_decision_until_review_again(db):
     assert ids[0] not in {row["company_id"] for row in payload["companies"]}
     assert payload["totals"]["reviewed_today"] == 1
     assert payload["totals"]["remaining"] == 2
+    reasons = {row["key"]: row["count"]
+               for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert reasons["reviewed_today"] == 1
     assert db.scalar(
         "SELECT value FROM user_field WHERE company_id = ? AND field = 'verdict'",
         (ids[0],),
@@ -85,6 +88,9 @@ def test_today_does_not_surface_age_unverified_companies(db, config):
         (cid,),
     ) > 0
     assert cid not in {row["company_id"] for row in payload["companies"]}
+    reasons = {row["key"]: row["count"]
+               for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert reasons["age_unknown"] == 1
 
 
 def test_today_exposes_a_direct_source_url_for_each_recommendation(db):
@@ -137,7 +143,11 @@ def test_today_does_not_surface_a_company_without_provenance(db, config):
     cid = store_company(db, company)
     score_company(db, cid, config)
 
-    assert cid not in {row["company_id"] for row in build_today(db.conn)["companies"]}
+    payload = build_today(db.conn)
+    assert cid not in {row["company_id"] for row in payload["companies"]}
+    reasons = {row["key"]: row["count"]
+               for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert reasons["missing_provenance"] == 1
 
 
 def test_empty_kept_renders_guidance(db):

@@ -59,6 +59,20 @@ def test_a3_top_level_keys(api):
     assert {"date", "companies", "totals", "run"} <= set(api)
 
 
+def test_a3b_eligibility_diagnostics_are_reconcilable_aggregates(api):
+    diagnostics = api["eligibility_diagnostics"]
+    assert {"scored_companies", "reviewable_companies", "eligible_before_review",
+            "display_limit", "shown", "excluded", "reasons"} <= set(diagnostics)
+    assert diagnostics["shown"] == len(api["companies"])
+    assert diagnostics["excluded"] == (
+        diagnostics["scored_companies"] - diagnostics["shown"]
+    )
+    assert sum(row["count"] for row in diagnostics["reasons"]) == diagnostics["excluded"]
+    for row in diagnostics["reasons"]:
+        assert set(row) == {"key", "label", "count"}
+        assert row["key"] and row["label"] and isinstance(row["count"], int)
+
+
 def test_a4_company_keys(api):
     required = {"company_id", "name", "fit", "edge", "coverage", "priority",
                 "explanation", "flags", "signals", "also_fits", "fund_scores",
@@ -183,6 +197,17 @@ def test_b15_four_fund_match_scores_are_visible(today, api):
         if score["fit"] is not None
     }
     assert displayed == expected
+
+
+def test_b16_eligibility_diagnostics_are_visible_without_company_rows(today, api):
+    panel = today.locator(tid("eligibility-diagnostics"))
+    assert panel.count() == 1
+    assert "scored" in panel.locator(tid("eligibility-summary")).inner_text()
+    assert panel.locator(tid("eligibility-reason")).count() == len(
+        api["eligibility_diagnostics"]["reasons"]
+    )
+    for company in api["companies"]:
+        assert company["name"] not in panel.inner_text()
 
 
 def test_b8_b9_progress_dots(today, api):
