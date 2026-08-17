@@ -45,8 +45,9 @@ is rendered by it; the prototype reads the same database.
 - The **Kept** badge on Today is `COUNT` of those two verdicts.
 - **Dashboard** shows first-seen, incorporation, signal, and decision dates;
   use its month arrows to move through the history without changing data.
-- Sheet column **Z (Verdict)** is an **optional mirror** after sync — not the
-  primary list you have to open in Excel.
+- Sheet column **Z (Verdict)** is updated when a web decision is saved, and a
+  full `sync-sheet` run backfills any missed write. SQLite remains the primary
+  record; the Sheet is the durable working mirror.
 
 Persistence detail: daily sheet sync used to treat blank Z cells as “cleared”
 and delete verdicts made in the web UI. That is fixed — blanks only delete when

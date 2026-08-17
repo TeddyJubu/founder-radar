@@ -912,7 +912,7 @@ function renderDone() {
   const kept = Number(data.totals?.kept) || 0;
   const reviewed = Number(data.totals?.reviewed_today) || pending.length;
   const keptLine = kept
-    ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. The sheet is optional sync, not the primary list.</p>`
+    ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. Decisions are mirrored to the Google Sheet.</p>`
     : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
   main.innerHTML = `${renderDiagnostics()}<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
     <h2>You've reviewed today's companies.</h2>
@@ -1074,15 +1074,19 @@ async function decide(verdict) {
     return;
   }
   let kept = data.totals?.kept;
+  let sheetSync = "unknown";
   try {
     const body = await res.json();
     if (typeof body.kept_count === "number") kept = body.kept_count;
+    if (typeof body.sheet_sync === "string") sheetSync = body.sheet_sync;
   } catch { /* older servers still return {ok:true} only */ }
   c.verdict = verdict;
   if (data.totals) data.totals.kept = kept;
   renderKeptBadge(kept);
   if (verdict === "worth contacting" || verdict === "unsure") {
-    toast(`${c.name} — saved to Kept`);
+    const sheetNote = ["synced", "already_synced"].includes(sheetSync)
+      ? " · Sheet synced" : " · Sheet sync pending";
+    toast(`${c.name} — saved to Kept${sheetNote}`);
   } else {
     toast(`${c.name} — ${verdict}`);
   }

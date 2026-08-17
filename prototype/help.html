@@ -91,9 +91,10 @@ a { color: var(--blue); }
   <h2>Where Kept is stored</h2>
   <ul>
     <li><strong>Primary:</strong> this app’s SQLite database, table <code>user_field</code>.</li>
-    <li><strong>Optional mirror:</strong> Google Sheet Companies tab, column Z (Verdict).
-        On sheet sync, picks made here are written out, and edits typed in the sheet are
-        folded back in. You do not need Excel open to track your list.</li>
+    <li><strong>Google Sheet mirror:</strong> the Companies tab, column Z (Verdict), is
+        updated as soon as a decision is saved here. A full <code>sync-sheet</code> run
+        also backfills any missed write and folds sheet edits back into the app. You do
+        not need Excel open to track your list.</li>
     <li><strong>Also feeds:</strong> <code>founder-radar tune</code>, which sweeps thresholds
         against your verdicts.</li>
   </ul>
