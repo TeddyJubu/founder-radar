@@ -160,9 +160,9 @@ PASS 3  (1 per founder) 7. Officer appointments → prior_appointments (repeat f
 
 A naive reading gives "300 companies × 2 calls = 600 = one window". That is wrong: full enrichment is **4–8 calls per company** (name lookup, filing history, officers, PSC, plus one per founder). 300 companies would be ~1,800 requests — three full rate-limit windows, with nothing left for the sweep, retries or `sources --test`. Companies House **bans an application** for repeated breaches rather than merely throttling it, so this is the most likely way a first run bricks the key.
 
-**`max_enrichment_requests_per_run` is a request budget, default 500**, decremented by the limiter on every call. When it runs out, enrichment stops cleanly and the remaining companies stay queued with `enriched_at IS NULL` for tomorrow.
+**`max_enrichment_requests_per_run` is a request budget, default 500**, decremented by the limiter on every call. Roughly half is reserved for officers/PSC hydration after filing-history checks so an ongoing registry backlog cannot starve already-checked companies. When it runs out, enrichment stops cleanly and the remaining companies stay queued with `enriched_at IS NULL` for tomorrow.
 
-Enrichment is ordered by expected value: companies with an existing signal (spinout, grant, press) first, then newest incorporations. Pass 1 runs for as many companies as the budget allows before Pass 2 starts for any — a cheap SH01 check across 200 companies is worth more than full hydration of 40.
+Enrichment is ordered by expected value: companies with an existing signal (spinout, grant, press) first, then newest incorporations. Pass 1 checks a bounded cohort before Pass 2, while already-checked rows move directly into hydration; this keeps a large new-incorporation backlog from starving the qualifying evidence pass.
 
 Typical daily cost: sweep 3 + pass 1 ×150 + pass 2 ×2×60 + pass 3 ×~80 ≈ **~350 requests**, comfortably inside one window.
 

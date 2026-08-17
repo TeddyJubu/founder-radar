@@ -329,7 +329,7 @@ age evidence; the row can appear after enrichment verifies `incorporated_on`.
 
 **Privacy filter at ingest**, in the adapter, before the database: drop `date_of_birth`, `address`, `country_of_residence` and `nationality` from every officer and PSC record. Do not merely avoid displaying them.
 
-**Rate-limit budget** is counted in **requests, not companies** — full enrichment is 4–8 calls per company, not 2. `settings.max_enrichment_requests_per_run` (default 500) is decremented by the limiter on every call; when it runs out, enrichment stops cleanly and the rest stay queued with `enriched_at IS NULL`. See `04-sources.md` §3.4a for the pass ordering.
+**Rate-limit budget** is counted in **requests, not companies** — full enrichment is 4–8 calls per company, not 2. `settings.max_enrichment_requests_per_run` (default 500) is decremented by the limiter on every call. Roughly half is reserved for officers/PSC hydration after filing-history checks so a growing queue cannot starve companies already ready for hydration. When it runs out, enrichment stops cleanly and the rest stay queued with `enriched_at IS NULL`. See `04-sources.md` §3.4a for the pass ordering.
 
 **Test:** `test_enrichment_respects_budget` — 500 queued companies with a 500-request budget consumes at most 500 requests, never exceeds 600 in any rolling 5-minute window, and leaves the remainder queued.
 
