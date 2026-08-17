@@ -84,6 +84,10 @@ SOURCE_TYPE = "registry"
 #: already checked. Pass 1 can complete while pass 2 never starts, and
 #: `enriched_at` alone cannot express that.
 FILINGS_CHECKED_PREFIX = "ch_filings_checked:"
+#: Pass 3 can also be deferred when the request budget ends after officers/PSC.
+#: Keep that state separate from `enriched_at`, so repeat-founder evidence is
+#: not silently lost when a company was only partially hydrated.
+APPOINTMENTS_COMPLETE_PREFIX = "ch_appointments_complete:"
 
 
 # ------------------------------------------------------------------ budget
@@ -354,6 +358,10 @@ def _mark_filings_checked(db: Any, company_id: str) -> None:
     db.set_meta(FILINGS_CHECKED_PREFIX + company_id, now_iso())
 
 
+def _mark_appointments_complete(db: Any, company_id: str) -> None:
+    db.set_meta(APPOINTMENTS_COMPLETE_PREFIX + company_id, now_iso())
+
+
 def enrichment_queue(db: Any, limit: int | None = None) -> list[dict]:
     """Companies waiting for enrichment, ordered by expected value.
 
@@ -365,14 +373,22 @@ def enrichment_queue(db: Any, limit: int | None = None) -> list[dict]:
                EXISTS(SELECT 1 FROM signal s
                       WHERE s.company_id = c.id AND s.kind <> 'incorporation') AS has_signal
         FROM company c
-        WHERE c.enriched_at IS NULL
-          AND c.companies_house_no IS NOT NULL
+        WHERE c.companies_house_no IS NOT NULL
           AND c.merged_into IS NULL
+          AND (
+                c.enriched_at IS NULL
+                OR (c.officer_count > 0 AND NOT EXISTS (
+                    SELECT 1 FROM _meta m
+                    WHERE m.key = ? || c.id
+                ))
+              )
         ORDER BY has_signal DESC, c.incorporated_on DESC, c.id
     """
+    # The marker prefix is a bound value rather than interpolated company data.
+    params: tuple[Any, ...] = (APPOINTMENTS_COMPLETE_PREFIX,)
     if limit is not None:
         sql += f" LIMIT {int(limit)}"
-    return [dict(r) for r in db.query(sql)]
+    return [dict(r) for r in db.query(sql, params)]
 
 
 def enrich_companies(
@@ -387,11 +403,11 @@ def enrich_companies(
 ) -> BackfillResult:
     """Passes 1→3 over the queue, stopping the moment the budget is gone.
 
-    Pass 1 gets at most half of a run's request budget when unchecked rows are
-    waiting. The other half is reserved for hydrating companies whose filing
-    history was already checked. Without that reservation, a large backlog can
-    spend every run on new SH01 checks and starve the officers/PSC pass, which
-    means registry companies never earn a qualifier and never reach scoring.
+    Pass 1 and pass 2 each get at most roughly one third of a run's request
+    budget when work is waiting. The final third is reserved for officer
+    appointments, which is the evidence that can prove a repeat founder. A
+    large backlog must make progress through all three passes or registry
+    companies never earn a qualifier and never reach scoring.
     """
     result = result or BackfillResult()
     queue = enrichment_queue(db, max_companies)
@@ -401,7 +417,7 @@ def enrich_companies(
     # A bounded pass-1 cohort makes the queue converge even when new registry
     # rows arrive every day. Already-checked rows cost no requests and are
     # always carried into pass 2 immediately.
-    pass1_limit = max(1, budget.limit // 2)
+    pass1_limit = max(1, budget.limit // 3)
     pass1_spent = 0
     for row in queue:
         if _filings_checked(db, row["id"]):
@@ -425,10 +441,13 @@ def enrich_companies(
 
     # ---- pass 2: officers + PSC (2 requests each)
     hydrated: list[tuple[dict, list[Founder]]] = []
+    pass2_limit = max(2, budget.limit // 3)
+    pass2_spent = 0
     for row in pass1_ok:
-        if not budget.can_spend(2):
+        if pass2_spent + 2 > pass2_limit or not budget.can_spend(2):
             break
         budget.spend(2)
+        pass2_spent += 2
         result.enrich_requests += 2
         number = row["companies_house_no"]
         officers_raw = fetch_officers(http, number, api_key=api_key, base_url=base_url)
@@ -448,6 +467,7 @@ def enrich_companies(
                 (stamp, stamp, row["id"]),
             )
             result.dropped_corporate_only += 1
+            _mark_appointments_complete(db, row["id"])
             continue
 
         founders = merge_founders(officers, pscs, source_url=source_url)
@@ -461,8 +481,16 @@ def enrich_companies(
     for row, founders in hydrated:
         source_url = CH_PROFILE_URL.format(row["companies_house_no"])
         enriched: list[Founder] = []
+        appointments_complete = True
         for f in founders:
-            if f.officer_id and budget.spend(1):
+            if not f.officer_id:
+                enriched.append(f)
+                continue
+            if not budget.spend(1):
+                appointments_complete = False
+                enriched.append(f)
+                continue
+            if f.officer_id:
                 result.enrich_requests += 1
                 raw = fetch_appointments(http, f.officer_id, api_key=api_key,
                                          base_url=base_url)
@@ -472,11 +500,20 @@ def enrich_companies(
 
         result.founders += store_founders(db, row["id"], enriched, source_url=source_url)
         stamp = now_iso()
-        db.execute(
-            "UPDATE company SET enriched_at = ?, updated_at = ? WHERE id = ?",
-            (stamp, stamp, row["id"]),
-        )
-        result.enriched += 1
+        if appointments_complete:
+            db.execute(
+                "UPDATE company SET enriched_at = ?, updated_at = ? WHERE id = ?",
+                (stamp, stamp, row["id"]),
+            )
+            _mark_appointments_complete(db, row["id"])
+            result.enriched += 1
+        else:
+            # Officers/PSC may have been stored, but the row is not complete
+            # until every officer appointment request has been attempted.
+            db.execute(
+                "UPDATE company SET enriched_at = NULL, updated_at = ? WHERE id = ?",
+                (stamp, row["id"]),
+            )
 
     result.budget_limit = budget.limit
     result.budget_spent = budget.spent
@@ -487,8 +524,16 @@ def enrich_companies(
 def _queue_size(db: Any) -> int:
     return int(db.scalar(
         """SELECT COUNT(*) FROM company
-           WHERE enriched_at IS NULL AND companies_house_no IS NOT NULL
-             AND merged_into IS NULL"""
+           WHERE companies_house_no IS NOT NULL
+             AND merged_into IS NULL
+             AND (
+                   enriched_at IS NULL
+                   OR (officer_count > 0 AND NOT EXISTS (
+                       SELECT 1 FROM _meta m
+                       WHERE m.key = ? || company.id
+                   ))
+                 )""",
+        (APPOINTMENTS_COMPLETE_PREFIX,),
     ) or 0)
 
 
