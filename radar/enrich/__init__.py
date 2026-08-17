@@ -387,21 +387,31 @@ def enrich_companies(
 ) -> BackfillResult:
     """Passes 1→3 over the queue, stopping the moment the budget is gone.
 
-    Pass 1 runs for as many companies as the budget allows **before** pass 2
-    starts for any — a cheap SH01 check across 200 companies is worth more than
-    full hydration of 40.
+    Pass 1 gets at most half of a run's request budget when unchecked rows are
+    waiting. The other half is reserved for hydrating companies whose filing
+    history was already checked. Without that reservation, a large backlog can
+    spend every run on new SH01 checks and starve the officers/PSC pass, which
+    means registry companies never earn a qualifier and never reach scoring.
     """
     result = result or BackfillResult()
     queue = enrichment_queue(db, max_companies)
 
     # ---- pass 1: filing history → SH01 (1 request each)
     pass1_ok: list[dict] = []
+    # A bounded pass-1 cohort makes the queue converge even when new registry
+    # rows arrive every day. Already-checked rows cost no requests and are
+    # always carried into pass 2 immediately.
+    pass1_limit = max(1, budget.limit // 2)
+    pass1_spent = 0
     for row in queue:
         if _filings_checked(db, row["id"]):
             pass1_ok.append(row)
             continue
+        if pass1_spent >= pass1_limit:
+            break
         if not budget.spend(1):
             break
+        pass1_spent += 1
         result.enrich_requests += 1
         raw = fetch_filing_history(http, row["companies_house_no"],
                                    api_key=api_key, base_url=base_url)

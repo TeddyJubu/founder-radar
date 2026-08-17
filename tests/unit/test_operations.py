@@ -647,6 +647,32 @@ def test_enrichment_resumes_where_the_budget_stopped(db):
     assert len(filings_calls) < 12, "pass 1 was re-paid for companies already checked"
 
 
+def test_enrichment_does_not_starve_hydration_behind_new_filing_checks(db):
+    """A large first-run queue must make progress past pass 1.
+
+    In production the first run checked 500 companies' filing histories. On
+    the next run those checked rows were followed by enough unchecked rows to
+    consume the whole budget again, so officers/PSC never ran and no registry
+    company could earn a qualifier. Keep some budget for the already-checked
+    cohort so the Today queue can make progress while the backlog drains.
+    """
+    from radar.enrich import RequestBudget, enrich_companies
+    from radar.store.db import now_iso
+
+    _queue(db, 10)
+    first = db.query(
+        "SELECT id FROM company WHERE companies_house_no IS NOT NULL "
+        "ORDER BY incorporated_on DESC, id LIMIT 1"
+    )[0]
+    db.set_meta("ch_filings_checked:" + first["id"], now_iso())
+
+    http = CountingCH()
+    result = enrich_companies(db, http, api_key="k", budget=RequestBudget(limit=6))
+
+    assert result.enriched >= 1
+    assert any("/officers" in url for url in http.requests)
+
+
 # --------------------------------------------------------- §8 the CI greps
 
 
