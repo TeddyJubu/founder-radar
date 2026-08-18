@@ -88,3 +88,18 @@ def test_registry_siblings_separate_on_age(cfg):
     older = discovery_edge(C(**common, age_months=14), cfg)
     assert younger > older
     assert younger - older >= 2.0
+
+
+def test_route_edge_bands_rebalanced(cfg):
+    """The confirmed route bands reward selective discovery sources."""
+    common = dict(news_mention_count=0, funding=None, age_months=6)
+
+    def edge(route: str) -> float:
+        return discovery_edge(C(**common, discovery_route=route), cfg)
+
+    assert edge("spinout") > edge("accelerator") > edge("grant") > edge("registry") > edge("news")
+    assert edge("registry") < 100.0
+    # A registry find with press is less obscure than a registry-only find.
+    with_press = discovery_edge(
+        C(**{**common, "discovery_route": "registry", "news_mention_count": 1}), cfg)
+    assert with_press < edge("registry")

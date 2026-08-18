@@ -393,14 +393,14 @@ Three policies, set per attribute in the `Scoring Weights` tab, column `Unknown 
 | **Company age** | 30 | ≤6 months → 1.0 · 7–18 → 0.8 · 19–30 → 0.5 · 31–36 → 0.2 · >36 → 0.0 |
 | **Press coverage in tracked UK sources** | 30 | 0 articles → 1.0 · 1 → 0.7 · 2–4 → 0.4 · ≥5 → 0.0 |
 | **Disclosed funding** | 20 | known none → 1.0 · **unknown → 0.5** · <£500k → 0.6 · £500k–£1.5m → 0.3 · >£1.5m → 0.0 |
-| **Discovery route** | 20 | register-first, no press → 1.0 · spinout/accelerator page → 0.6 · news article → 0.2 |
+| **Discovery route** | 20 | spinout → 1.0 · accelerator → 0.9 · grant → 0.8 · register → 0.7 · news → 0.5 |
 
 Four deliberate corrections from the first draft of this model:
 
 1. **There is no "VC portfolio presence" component.** Being on a tracked portfolio is a *hard gate* (§1) evaluated before scoring, so every company that reaches Discovery Edge would score identically on it — a constant dressed as a variable. Its weight is redistributed.
 2. **"Press coverage" is named honestly.** It measures articles found *in our tracked sources*, not global fame. A company covered only by an outlet we don't read scores as obscure. That is a real limitation, and naming it stops it being mistaken for something stronger.
 3. **Unknown funding scores 0.5, not 1.0.** Collapsing `NULL` into "known zero" would violate the one invariant this whole system holds to.
-4. **Discovery route rewards the register.** A company found by sweeping Companies House with no press attached is, by construction, the least-visible thing the system can produce.
+4. **Discovery route rewards source vetting, not one data-collection mechanism** (rebalanced 18 Aug 2026). The more selective the discovery source, the higher the band: spinout 1.0 → news 0.5. A registry find keeps a middle band — still invisible, but no longer the headline edge.
 
 Scored with the same machinery as Fund Fit — same `Component` type, same normalisation, same explanation generator.
 
@@ -567,19 +567,19 @@ NORTHSTAR — vehicle spinout_inspire
   COVERAGE  = 16 / 16                   = 1.00
 
   DISCOVERY EDGE
-    age 29m                  0.5 × 30 = 15.0
+    age 29m (continuous curve) 0.38 × 30 = 11.5
     2 tracked articles       0.4 × 30 = 12.0
     £450k disclosed          0.6 × 20 = 12.0
-    route: spinout page      0.6 × 20 = 12.0
+    route: spinout (1.0)     1.0 × 20 = 20.0
                                        ───────
-                                          51.0
+                                          55.5
 
-  PRIORITY = 0.60 × 92.2 + 0.40 × 51.0 = 75.7
-  TIER     : fit 92.2 ≥ 70 ✓ · edge 51.0 ≥ 55 ✗
-           → WATCHLIST, "good fit but likely already on their radar"
+  PRIORITY = 0.60 × 92.2 + 0.40 × 55.5 = 77.5
+  TIER     : fit 92.2 ≥ 70 ✓ · edge 55.5 ≥ 55 ✓
+           → SHORTLIST
 ```
 
-**Read that last line carefully — it is the point of the whole redesign.** METzero is a near-perfect fit for Northstar. Version 1 would have put it top of the shortlist. But it already has two press articles and a disclosed round, so Northstar has very likely seen it, and sending it adds little. The system says so, in writing, and puts a less obvious company above it.
+**Read the route line carefully — it is the discovery rebalance (18 Aug 2026).** METzero is a near-perfect fit for Northstar, and it arrived through a spinout source — a highly selective discovery route — so it clears the edge floor. A company found only through a generic news article would score 0.5 on this component and stay on watchlist: the system still says, in writing, when a high-fit company has probably already been seen.
 
 ```
 ANTICUS   both vehicles: HARD GATE Yorkshire → North East      FAIL

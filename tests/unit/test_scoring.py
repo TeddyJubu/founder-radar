@@ -70,10 +70,10 @@ def test_worked_example_metzero(cfg):
     assert s["northstar"].vehicle_key    == "spinout_inspire"
     assert s["northstar"].fund_fit_pct   == pytest.approx(92.2, abs=0.1)
     assert s["northstar"].coverage       == 1.00
-    assert s["northstar"].discovery_edge == pytest.approx(47.5, abs=0.1)
-    assert s["northstar"].priority       == pytest.approx(74.3, abs=0.1)
-    assert s["northstar"].tier           == "watchlist"      # edge 47.5 < 55
-    assert "already on their radar"      in s["northstar"].explanation
+    assert s["northstar"].discovery_edge == pytest.approx(55.5, abs=0.1)
+    assert s["northstar"].priority       == pytest.approx(77.5, abs=0.1)
+    assert s["northstar"].tier           == "shortlist"      # edge 55.5 >= 55
+    assert "already on their radar"      not in s["northstar"].explanation
     assert s["anticus"].reject_reason    == "no_eligible_vehicle"
     assert s["outward"].fund_fit_pct     == pytest.approx(15.0, abs=0.1)
     assert s["outward"].tier             == "reject"
