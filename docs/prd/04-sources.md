@@ -32,7 +32,7 @@ Legend — **Access:** `API` · `JSON` (WordPress/CMS endpoint) · `RSS` · `HTM
 | 2 | **Companies House Officers + PSC** | B | API | `/company/{n}/officers`, `/persons-with-significant-control` | daily | — | Turns company numbers into *founders*. `links.officer.appointments` reveals repeat founders. |
 | 3 | **Companies House Filing History** | B | API | `/company/{n}/filing-history` | daily | — | Detects `SH01` — a share allotment on a young company is a pre-seed round on the public record. |
 | 4 | **Oxford University Innovation** | A | HTML | `innovation.ox.ac.uk/investing/our-portfolio-companies` | weekly | 3–5 | The only source verified to publish a literal **incorporation date** per company, plus website and department. |
-| 5 | **Northern Accelerator** | A | JSON | `northernaccelerator.org/wp-json/wp/v2/posts` | daily | 2–4 | Covers Durham, Newcastle, Northumbria, Sunderland, York spinouts. **Direct match to Northstar's mandate.** No competing source covers it. |
+| 5 | **Northern Accelerator** | A | JSON/RSS | `northernaccelerator.org/wp-json/wp/v2/posts` → `/feed/` fallback | daily | 2–4 | Covers Durham, Newcastle, Northumbria, Sunderland, York spinouts. **Direct match to Northstar's mandate.** No competing source covers it. |
 | 6 | **Conception X** | A | HTML | `conceptionx.org/portfolio` | weekly | ~3 | PhD deeptech ventures **at or before incorporation** — structurally the youngest cohort in the entire list. Cohort codes CX18–CX26. |
 | 7 | **UKTN** | A | JSON | `uktech.news/wp-json/wp/v2/posts/latest` | daily | 25–50 | Highest-volume UK-only funding coverage. Slugs carry the publish date. |
 | 8 | **BusinessCloud** | A | RSS | `businesscloud.co.uk/feed/` | daily | 15–30 | **Full article text in the feed.** Genuine North of England coverage. Permissive robots. |
@@ -189,6 +189,12 @@ Northern Accelerator, Cambridge Enterprise, Zinc VC, Startups Magazine, UKTN, Ca
 ```python
 GET {base}/wp-json/wp/v2/posts?per_page=50&page=1&_embed
 ```
+
+Northern Accelerator keeps the JSON route as its primary path because it carries
+the richest post shape. If the site returns a WAF-style 401/403/429/451, the
+adapter falls back to the official `https://northernaccelerator.org/feed/`
+route, which carries `content:encoded`; if both routes are blocked, the source
+is recorded as degraded rather than being mistaken for a quiet day.
 
 Returns `id`, `date` (ISO), `link`, `title.rendered`, `content.rendered`, `excerpt.rendered`. Map `date` → `published_at`, `id` → `external_id`, strip HTML from `content.rendered` → `body_text`.
 
