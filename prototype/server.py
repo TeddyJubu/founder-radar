@@ -926,7 +926,15 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
     # fits", because the decision Aryan is making is "who do I send this to",
     # and four rows for one company is the version-1 complaint about scanning.
     rows = conn.execute(
-        """SELECT s.id sid, s.company_id, s.fund_key, s.vehicle_key, s.tier,
+        """WITH latest_scores AS (
+              SELECT s.*,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY s.company_id, s.fund_key
+                       ORDER BY s.scored_at DESC, s.id DESC
+                     ) AS score_rank
+                FROM score s
+             )
+             SELECT s.id sid, s.company_id, s.fund_key, s.vehicle_key, s.tier,
                   s.fund_fit_pct, s.discovery_edge, s.coverage, s.priority,
                   s.explanation, s.flags,
                   c.canonical_name, c.domain, c.website_url, c.hq_city,
@@ -934,14 +942,16 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                   c.one_liner, c.discovery_route, c.companies_house_no,
                   c.hq_postcode, c.country_iso2, c.total_funding_gbp,
                   c.on_vc_portfolio
-             FROM score s
+             FROM latest_scores s
              JOIN company c ON c.id = s.company_id
-             JOIN (SELECT company_id, MAX(priority) best
-                     FROM score s2 JOIN company c2 ON c2.id = s2.company_id
-                    WHERE s2.tier IN (?, ?) AND c2.incorporated_on IS NOT NULL
+             JOIN (SELECT s2.company_id, MAX(s2.priority) best
+                     FROM latest_scores s2
+                     JOIN company c2 ON c2.id = s2.company_id
+                    WHERE s2.score_rank = 1
+                      AND s2.tier IN (?, ?) AND c2.incorporated_on IS NOT NULL
                     GROUP BY s2.company_id) t
                ON t.company_id = s.company_id AND t.best = s.priority
-            WHERE s.tier IN (?, ?) AND c.merged_into IS NULL
+            WHERE s.score_rank = 1 AND s.tier IN (?, ?) AND c.merged_into IS NULL
               AND c.incorporated_on IS NOT NULL
               AND NOT EXISTS (
                     SELECT 1 FROM daily_review dr

@@ -134,6 +134,33 @@ def test_today_exposes_match_scores_for_all_four_funds(db):
     assert all("coverage" in score and "tier" in score for score in scores)
 
 
+def test_today_uses_latest_score_history_before_picking_primary_route(db):
+    """Historical config rows cannot outrank the current score on Today."""
+    company_id = seed_companies(db, count=1, shortlist=1)[0]
+    old_stamp = "2026-08-01T00:00:00Z"
+    new_stamp = "2026-08-02T00:00:00Z"
+    db.execute(
+        "UPDATE score SET priority = ?, discovery_edge = ?, scored_at = ?, "
+        "config_hash = ? WHERE company_id = ?",
+        (100.0, 90.0, old_stamp, "old-config", company_id),
+    )
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, reject_reason, explanation,
+              flags, config_hash, scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (company_id, "dsw", None, 40.0, 0.8, 30.0, 50.0, "watchlist", None,
+         "Current config score.", None, "new-config", "1", new_stamp),
+    )
+
+    row = build_today(db.conn)["companies"][0]
+
+    assert row["fund"] == "dsw"
+    assert row["priority"] == 50.0
+    assert row["edge"] == 30.0
+
+
 def test_today_does_not_surface_a_company_without_provenance(db, config):
     from radar.pipeline import score_company
     from tests.factories import C, store_company
