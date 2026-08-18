@@ -188,6 +188,21 @@ def test_innovate_uk_discovers_the_dated_download_link():
         innovate_uk.ADAPTER.discover("<p>This publication has been withdrawn.</p>")
 
 
+def test_innovate_uk_discovers_the_current_2016_to_present_filename():
+    """UKRI renamed the workbook from the old camel-case slug to a hyphenated one."""
+    page = (
+        '<a href="https://www.ukri.org/wp-content/uploads/2026/08/'
+        'IUK-20260804-Innovate-UK-funded-projects-between-2004-and-financial-year-2015-16.xlsx">'
+        'older workbook</a>'
+        '<a href="https://www.ukri.org/wp-content/uploads/2026/08/'
+        'IUK-20260804-Innovate-UK-funded-projects-from-financial-year-2016-17-to-present.xlsx">'
+        'current workbook</a>'
+    )
+    assert innovate_uk.ADAPTER.discover(page).endswith(
+        "Innovate-UK-funded-projects-from-financial-year-2016-17-to-present.xlsx"
+    )
+
+
 # ------------------------------------------------------- where it has to land
 
 

@@ -40,7 +40,8 @@ import re
 import zipfile
 from datetime import date, timedelta
 from typing import Iterable, Iterator
-from urllib.parse import urlsplit
+from html import unescape
+from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree as ET
 
 from radar.sources._common import (
@@ -59,10 +60,16 @@ from radar.sources.base import FetchContext, RawItem
 
 BASE = "https://www.ukri.org"
 PUBLICATION = f"{BASE}/publications/innovate-uk-funded-projects-since-2004/"
-#: The current workbook, whose filename changes with every release.
+#: The current workbook, whose filename changes with every release. The
+#: publication changed from the old camel-case slug to a hyphenated filename
+#: in August 2026, so discover every workbook link and select the one marked
+#: "2016 ... present" rather than pinning a spelling.
 FILE_RE = re.compile(
-    r"https://www\.ukri\.org/wp-content/uploads/[^\"'\s>]*"
-    r"FundedProjectsFromFinancialYear[^\"'\s>]*\.xlsx",
+    r"https://www\.ukri\.org/wp-content/uploads/[^\"'\s>]+\.xlsx(?:\?[^\"'\s>]*)?",
+    re.I,
+)
+HREF_XLSX_RE = re.compile(
+    r"href\s*=\s*[\"']([^\"']+\.xlsx(?:\?[^\"']*)?)[\"']",
     re.I,
 )
 #: A monthly source with no `since` must not hand the pipeline ten years of awards.
@@ -100,10 +107,27 @@ class InnovateUkAdapter:
 
     def discover(self, html: str) -> str:
         """The dated download link, from the page that always exists."""
-        match = FILE_RE.search(html)
-        if match is None:
+        links = [
+            urljoin(PUBLICATION, unescape(match.group(1)))
+            for match in HREF_XLSX_RE.finditer(html)
+        ]
+        # Keep support for a captured/malformed fragment without an href
+        # wrapper; the old test fixture and a few CMS caches contain this form.
+        links.extend(match.group(0) for match in FILE_RE.finditer(html))
+        links = list(dict.fromkeys(links))
+
+        current = [
+            link for link in links
+            if self._is_current_workbook(link)
+        ]
+        if not current:
             raise LayoutChanged(self.key, f"no funded-projects .xlsx link on {PUBLICATION}")
-        return match.group(0)
+        return current[0]
+
+    @staticmethod
+    def _is_current_workbook(url: str) -> bool:
+        filename = urlsplit(url).path.rsplit("/", 1)[-1].lower()
+        return "2016" in filename and "present" in filename
 
     def parse(self, payload: bytes | str, *, since: date | None = None) -> list[RawItem]:
         blob = payload.encode("utf-8", "replace") if isinstance(payload, str) else payload
