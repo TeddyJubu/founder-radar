@@ -1,0 +1,12 @@
+{
+  "name": "UK Founder Radar",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "today-server",
+      "command": "bash .cursor/start-today.sh"
+    }
+  ],
+  "ports": [8788]
+}
