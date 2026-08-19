@@ -80,18 +80,27 @@ jobs:
             "$VPS_USER@$VPS_HOST" \
             "APP_DIR='$app_dir' RESCORE_ALL='$RESCORE_ALL' bash -se" <<'REMOTE'
           set -euo pipefail
-          cd "${APP_DIR:-/opt/founder-radar/app}"
+          app_dir="${APP_DIR:-/opt/founder-radar/app}"
+          # The CLI reads .env and RADAR_DB relative to the working directory,
+          # and deploy/install.sh keeps both one level up from the checkout
+          # (ROOT/app). Run git + install from the checkout, but run the CLI
+          # from ROOT so doctor/rescore hit the real database, not a shadow
+          # ./data/radar.db under the checkout (see deploy/install.sh).
+          root_dir="$(dirname "$app_dir")"
+          cd "$app_dir"
           echo "== before: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
           git fetch --all --prune
           git checkout main
           git pull --ff-only origin main
           # Idempotent: reinstalls the venv and restarts the systemd units.
           sudo bash deploy/install.sh
-          sudo -u radar founder-radar doctor || true
+          cd "$root_dir"
+          sudo -u radar founder-radar doctor || echo "doctor reported issues (see output above)"
           if [ "${RESCORE_ALL:-false}" = "true" ]; then
             echo "== rescoring all companies under the current config"
-            sudo -u radar founder-radar rescore --all || true
+            sudo -u radar founder-radar rescore --all
           fi
+          cd "$app_dir"
           echo "== after:  $(git rev-parse --short HEAD)"
           REMOTE
           echo "Deploy finished. Verify /api/today on the host."
