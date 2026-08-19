@@ -321,11 +321,26 @@ context-less names on its own. The admitting set lives in the sheet
   each still admit, so the fix tightens noise without closing the high-edge
   Track B play (SH01 + prior directorships) the client asked for on Jul 9.
 
-### J26 — "It's still the same" after fixes (18–20 Aug) — 🔧 deploy
+### J26 — "It's still the same" after fixes (18–20 Aug) — 🔧 deploy (mechanism added)
 Restatement of I23: correct code was not reaching the deployed box (branch/
 deploy divergence, GitHub Actions failing — confirmed in-thread 20 Aug). No new
-product logic; the guard is the §4.1–§4.2 live deploy checks plus a green CI on
-one branch. Resolving this is a deploy/ops action, not a code change.
+product logic. The root cause was a manual, drift-prone deploy ritual (`ssh` →
+`git pull` → `install.sh`).
+
+Fix (mechanism): `.github/workflows/deploy.yml` — a one-click, repeatable deploy
+from a clean checkout of `main`. It is `workflow_dispatch` only (never runs on
+its own, never leaves a spurious red mark) and does exactly what the ritual did,
+in order: `git pull --ff-only origin main` → `sudo bash deploy/install.sh` →
+`founder-radar doctor` → optional `rescore --all`. Trigger it from the Actions
+tab or `gh workflow run Deploy -f rescore_all=true`.
+
+Still requires (one-time, owner action, outside the repo): add the VPS secrets
+`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (optional `VPS_PORT`) under Settings →
+Secrets and variables → Actions. The production layout is fixed at
+`/opt/founder-radar` (what install.sh and the systemd units assume). Until the
+secrets exist the workflow fails fast with a clear message; once they exist,
+every future deploy is one action and the §4.1–§4.2 live checks confirm the
+deployed commit matches `main`.
 
 ---
 
