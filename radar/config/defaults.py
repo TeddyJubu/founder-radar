@@ -381,8 +381,10 @@ DISCOVERY_EDGE: dict[str, Any] = {
     # known none → 1.0 · <£500k → 0.6 · £500k-£1.5m → 0.3 · >£1.5m → 0.0
     "funding_bands": [[0, 1.0], [499_999.99, 0.6], [1_500_000, 0.3]],
     "funding_unknown": 0.5,
-    "route_scores": {"registry": 1.0, "spinout": 0.6, "accelerator": 0.6,
-                     "grant": 0.6, "news": 0.2, "portfolio": 0.2},
+    # Discovery rebalance (18 Aug 2026): source selectivity, not the
+    # collection mechanism, determines the route premium.
+    "route_scores": {"spinout": 1.0, "accelerator": 0.9, "grant": 0.8,
+                     "registry": 0.7, "news": 0.5, "portfolio": 0.2},
     "route_unknown": 0.5,
     "route_registry_with_press": 0.6,
 }

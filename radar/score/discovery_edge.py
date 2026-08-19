@@ -9,7 +9,7 @@ already seen the company?
 | company age    | 30     | continuous curve 0→36 months (younger = fresher)     |
 | press coverage | 30     | 0 → 1.0 · 1 → 0.7 · 2-4 → 0.4 · ≥5 → 0.0             |
 | funding        | 20     | known none → 1.0 · **unknown → 0.5** · <£500k → 0.6  |
-| route          | 20     | register-first → 1.0 · spinout page → 0.6 · news 0.2 |
+| route          | 20     | spinout 1.0 · accelerator 0.9 · grant 0.8 · registry 0.7 · news 0.5 |
 
 Four things this model deliberately does **not** do:
 
@@ -20,9 +20,10 @@ Four things this model deliberately does **not** do:
    tracked sources*, not global fame.
 3. **Unknown funding scores 0.5, not 1.0.** Collapsing NULL into "known zero"
    would violate the one invariant this whole system holds to.
-4. **Route rewards the register.** A company found by sweeping Companies House
-   with no press attached is, by construction, the least-visible thing the
-   system can produce.
+4. **Route rewards source vetting, not one data-collection mechanism.** The
+   more selective the discovery source, the higher the band (spinout 1.0 →
+   news 0.5). A registry find keeps a middle band — still invisible, but no
+   longer the headline edge.
 
 Age used to be four coarse step bands (≤6 / ≤18 / ≤30 / ≤36). Every young
 registry company landed on the same sub-score, so the Fresh tile looked
@@ -71,8 +72,10 @@ _FALLBACK = {
     "press_unknown": 0.5,
     "funding_bands": [[0, 1.0], [499_999.99, 0.6], [1_500_000, 0.3]],
     "funding_unknown": 0.5,
-    "route_scores": {"registry": 1.0, "spinout": 0.6, "accelerator": 0.6,
-                     "grant": 0.6, "news": 0.2, "portfolio": 0.2},
+    # Discovery rebalance (18 Aug 2026): source selectivity, not the
+    # collection mechanism, determines the route premium.
+    "route_scores": {"spinout": 1.0, "accelerator": 0.9, "grant": 0.8,
+                     "registry": 0.7, "news": 0.5, "portfolio": 0.2},
     "route_unknown": 0.5,
     "route_registry_with_press": 0.6,
 }
@@ -180,9 +183,8 @@ def _route(route: str | None, press: int | None, settings: dict) -> tuple[float,
     if route is None:
         return float(settings["route_unknown"]), "route unknown"
     key = str(route).strip().lower()
-    # ponytail: §7 says "register-first, **no press** → 1.0". A register find
-    # that also has press is no longer register-first, so it drops to the
-    # middle band rather than keeping the top one.
+    # A registry find that also has press is less obscure than a registry-only
+    # find, so it drops to the configured middle band rather than keeping 0.7.
     if key == "registry" and (press or 0) > 0:
         return float(settings["route_registry_with_press"]), "found on the register, but has press"
     sub = settings["route_scores"].get(key)

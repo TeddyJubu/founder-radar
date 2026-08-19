@@ -88,3 +88,28 @@ def test_registry_siblings_separate_on_age(cfg):
     older = discovery_edge(C(**common, age_months=14), cfg)
     assert younger > older
     assert younger - older >= 2.0
+
+
+@pytest.mark.parametrize(
+    ("route", "expected"),
+    [("spinout", 1.0), ("accelerator", 0.9), ("grant", 0.8),
+     ("registry", 0.7), ("news", 0.5)],
+)
+def test_route_edge_bands_match_spec(cfg, route, expected):
+    """The configured route bands are exact, not only correctly ordered."""
+    company = C(news_mention_count=0, funding=None, age_months=6,
+                discovery_route=route)
+
+    component = discovery_edge_component(company, "route", cfg)
+
+    assert component.sub_score == expected
+
+
+def test_registry_with_press_uses_its_configured_band(cfg):
+    """Press makes a registry find less obscure than the registry-only band."""
+    company = C(news_mention_count=1, funding=None, age_months=6,
+                discovery_route="registry")
+
+    component = discovery_edge_component(company, "route", cfg)
+
+    assert component.sub_score == 0.6
