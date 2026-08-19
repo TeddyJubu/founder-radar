@@ -864,6 +864,38 @@ def _age_phrase(incorporated_on: str | None, today: date) -> tuple[str, str | No
     return f"incorporated {months // 12} years ago", exact
 
 
+def _is_ch_verification_signal(signal: dict) -> bool:
+    """Recognise the explicit Companies House provenance signal.
+
+    The enrichment contract calls the row ``verification`` and records its
+    source as ``companies_house``. ``ch_verified`` is accepted as the legacy
+    name used by the rollout notes, but a generic verification row is not
+    enough to claim a Companies House match.
+    """
+    kind = str(signal.get("kind") or "")
+    source = str(signal.get("source_key") or "")
+    return (kind == "verification" and source == "companies_house") or (
+        kind == "ch_verified" and source in {"", "companies_house"}
+    )
+
+
+def _ch_verification_payload(
+    signal: dict | None,
+    incorporated_on: str | None,
+    today: date,
+) -> dict | None:
+    """Return the stable, display-ready badge data for one verified company."""
+    if signal is None:
+        return None
+    raw_date = str(incorporated_on or signal.get("occurred_on") or "")[:10] or None
+    _, display_date = _age_phrase(raw_date, today)
+    return {
+        "incorporated_on": raw_date,
+        "incorporated_on_display": display_date,
+        "source_url": signal.get("source_url") or "",
+    }
+
+
 def _fund_score_payload(
     conn: sqlite3.Connection,
     company_id: str,
@@ -989,8 +1021,33 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
         signals = [dict(s) for s in conn.execute(
             """SELECT kind, headline, source_url, occurred_on, source_key
                  FROM signal WHERE company_id = ?
-                ORDER BY COALESCE(occurred_on, first_seen) DESC LIMIT 5""",
+                 ORDER BY CASE WHEN
+                       (kind = 'verification' AND source_key = 'companies_house')
+                       OR (kind = 'ch_verified' AND
+                           source_key IN ('', 'companies_house')) THEN 0 ELSE 1 END,
+                         COALESCE(occurred_on, first_seen) DESC LIMIT 5""",
             (r["company_id"],))]
+        verified_signal = next(
+            (signal for signal in signals if _is_ch_verification_signal(signal)),
+            None,
+        )
+        if verified_signal is None:
+            # Keep the badge contract true even when five newer ordinary signals
+            # would otherwise push the verification row out of the API slice.
+            row = conn.execute(
+                """SELECT kind, headline, source_url, occurred_on, source_key
+                 FROM signal WHERE company_id = ?
+                   AND ((kind = 'verification' AND source_key = 'companies_house')
+                            OR (kind = 'ch_verified' AND
+                                source_key IN ('', 'companies_house')))
+                    ORDER BY COALESCE(occurred_on, first_seen) DESC LIMIT 1""",
+                (r["company_id"],),
+            ).fetchone()
+            if row is not None:
+                verified_signal = dict(row)
+                signals.insert(0, verified_signal)
+        ch_verified = _ch_verification_payload(
+            verified_signal, r["incorporated_on"], today)
 
         # Where we met the company. `signal` only gets a row when the adapter
         # emitted a `kind_hint` we recognise, but `resolve_item` writes a
@@ -1037,6 +1094,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "source_key": source["source_key"],
             "age_phrase": phrase,
             "age_exact": exact,
+            "ch_verified": ch_verified,
             "fund": r["fund_key"],
             "fund_name": vehicle.get("fund"),
             "vehicle": vehicle.get("name") or r["vehicle_key"],

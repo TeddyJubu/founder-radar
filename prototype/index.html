@@ -164,6 +164,15 @@ h2 {
 .meta a { color: var(--blue); text-decoration: none; }
 .meta a:hover { text-decoration: underline; }
 .age { color: var(--label); font-weight: 500; }
+.ch-verified {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px;
+  width: fit-content; margin-top: var(--s3); padding: 5px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  color: var(--green); border: 0.5px solid color-mix(in srgb, var(--green) 28%, transparent);
+  font-size: var(--footnote); line-height: var(--footnote-lh); font-weight: 590;
+}
+.ch-verified-date { color: var(--label-2); font-weight: 500; }
 
 /* Match is the primary number (fund criteria strength). Fresh is secondary —
    younger / less covered / register-first. Testids stay score-fit / score-edge
@@ -906,6 +915,19 @@ function renderDiagnostics() {
   </section>`;
 }
 
+function renderCompaniesHouseVerification(c) {
+  const verified = c.ch_verified;
+  if (!verified) return "";
+  const date = verified.incorporated_on_display || verified.incorporated_on || "";
+  const dateText = date
+    ? `<span class="ch-verified-date" data-testid="ch-verified-date">Incorporated ${esc(date)}</span>`
+    : `<span class="ch-verified-date" data-testid="ch-verified-date">incorporation date unavailable</span>`;
+  return `<div class="ch-verified" data-testid="ch-verified"
+                 data-incorporated-on="${esc(verified.incorporated_on || "")}">
+            <span>Verified on Companies House</span>${dateText}
+          </div>`;
+}
+
 function renderDone() {
   const main = $("#main"), footer = $("#footer");
   const pending = data?.companies || [];
@@ -999,6 +1021,7 @@ function render() {
         <div class="ident">
           <h2 data-testid="company-name">${esc(c.name)}</h2>
           <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
+          ${renderCompaniesHouseVerification(c)}
         </div>
         <div class="scores" data-testid="scores">
           <div class="score-row">
