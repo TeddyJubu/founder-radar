@@ -17,10 +17,10 @@ name: Deploy
 #   VPS_SSH_KEY  - a private SSH key whose public half is in the VPS authorized_keys
 # Optional:
 #   VPS_PORT     - SSH port (default 22)
-#   VPS_APP_DIR  - checkout path on the VPS (default /opt/founder-radar/app).
-#                  Must be the "<ROOT>/app" checkout: its parent directory is
-#                  taken as ROOT (where .env and data/ live), and passed to
-#                  deploy/install.sh so every path agrees.
+#
+# The production layout is fixed at /opt/founder-radar (ROOT) with the checkout
+# at /opt/founder-radar/app — this is what deploy/install.sh and every systemd
+# unit assume, so it is not configurable here.
 
 on:
   workflow_dispatch:
@@ -53,8 +53,8 @@ jobs:
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "Add VPS_HOST, VPS_USER and VPS_SSH_KEY (and optionally VPS_PORT," \
-                 "VPS_APP_DIR) under Settings -> Secrets and variables -> Actions."
+            echo "Add VPS_HOST, VPS_USER and VPS_SSH_KEY (and optionally VPS_PORT)" \
+                 "under Settings -> Secrets and variables -> Actions."
             exit 1
           fi
 
@@ -64,7 +64,6 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
-          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
           RESCORE_ALL: ${{ inputs.rescore_all }}
         run: |
           set -euo pipefail
@@ -72,23 +71,21 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           port="${VPS_PORT:-22}"
-          app_dir="${VPS_APP_DIR:-/opt/founder-radar/app}"
 
           # Pin the host key on first contact, then require it thereafter.
           ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # Values are expanded here and passed to the remote shell as a command
-          # prefix, so the remote heredoc stays literal (no local expansion).
+          # RESCORE_ALL is expanded here and passed to the remote shell as a
+          # command prefix, so the remote heredoc stays literal (no local
+          # expansion). The production paths are fixed in the remote script.
           ssh -i ~/.ssh/id_deploy -p "$port" -o StrictHostKeyChecking=accept-new \
             "$VPS_USER@$VPS_HOST" \
-            "APP_DIR='$app_dir' RESCORE_ALL='$RESCORE_ALL' bash -se" <<'REMOTE'
+            "RESCORE_ALL='$RESCORE_ALL' bash -se" <<'REMOTE'
           set -euo pipefail
-          app_dir="${APP_DIR:-/opt/founder-radar/app}"
-          # The CLI reads .env and RADAR_DB relative to the working directory,
-          # and deploy/install.sh keeps both one level up from the checkout
-          # (ROOT/app). Run the CLI from ROOT so doctor/rescore hit the real
-          # database, not a shadow ./data/radar.db under the checkout.
-          root_dir="$(dirname "$app_dir")"
+          # Fixed production layout (deploy/install.sh + the systemd units all
+          # assume it): ROOT holds .env and data/; the checkout is ROOT/app.
+          root_dir="/opt/founder-radar"
+          app_dir="$root_dir/app"
           # The checkout is owned by the 'radar' service user (install.sh chowns
           # it), so run git AS radar to avoid permission / "dubious ownership"
           # errors. This requires the radar user to be able to fetch origin —
@@ -100,11 +97,10 @@ jobs:
           run_git checkout main
           run_git pull --ff-only origin main
           # Idempotent: reinstalls the venv and restarts the systemd units.
-          # Pass ROOT so install.sh's layout (ROOT, ROOT/app, ROOT/.env,
-          # ROOT/data) matches the checkout we just updated even when
-          # VPS_APP_DIR overrides the default — otherwise install.sh would keep
-          # its hardcoded /opt/founder-radar and touch a different tree.
-          sudo bash -c "ROOT='$root_dir' bash '$app_dir/deploy/install.sh'"
+          sudo bash "$app_dir/deploy/install.sh"
+          # Run the CLI from ROOT so it loads ROOT/.env and the real
+          # ROOT/data/radar.db, not a shadow ./data/radar.db under the checkout
+          # (see deploy/install.sh).
           cd "$root_dir"
           sudo -u radar founder-radar doctor || echo "doctor reported issues (see output above)"
           if [ "${RESCORE_ALL:-false}" = "true" ]; then

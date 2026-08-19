@@ -335,10 +335,12 @@ in order: `git pull --ff-only origin main` → `sudo bash deploy/install.sh` →
 tab or `gh workflow run Deploy -f rescore_all=true`.
 
 Still requires (one-time, owner action, outside the repo): add the VPS secrets
-`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (optional `VPS_PORT`, `VPS_APP_DIR`) under
-Settings → Secrets and variables → Actions. Until those exist the workflow fails
-fast with a clear message; once they exist, every future deploy is one action
-and the §4.1–§4.2 live checks confirm the deployed commit matches `main`.
+`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (optional `VPS_PORT`) under Settings →
+Secrets and variables → Actions. The production layout is fixed at
+`/opt/founder-radar` (what install.sh and the systemd units assume). Until the
+secrets exist the workflow fails fast with a clear message; once they exist,
+every future deploy is one action and the §4.1–§4.2 live checks confirm the
+deployed commit matches `main`.
 
 ---
 
