@@ -17,7 +17,10 @@ name: Deploy
 #   VPS_SSH_KEY  - a private SSH key whose public half is in the VPS authorized_keys
 # Optional:
 #   VPS_PORT     - SSH port (default 22)
-#   VPS_APP_DIR  - checkout path on the VPS (default /opt/founder-radar/app)
+#   VPS_APP_DIR  - checkout path on the VPS (default /opt/founder-radar/app).
+#                  Must be the "<ROOT>/app" checkout: its parent directory is
+#                  taken as ROOT (where .env and data/ live), and passed to
+#                  deploy/install.sh so every path agrees.
 
 on:
   workflow_dispatch:
@@ -93,7 +96,11 @@ jobs:
           git checkout main
           git pull --ff-only origin main
           # Idempotent: reinstalls the venv and restarts the systemd units.
-          sudo bash deploy/install.sh
+          # Pass ROOT so install.sh's layout (ROOT, ROOT/app, ROOT/.env,
+          # ROOT/data) matches the checkout we just updated even when
+          # VPS_APP_DIR overrides the default — otherwise install.sh would keep
+          # its hardcoded /opt/founder-radar and touch a different tree.
+          sudo bash -c "ROOT='$root_dir' bash deploy/install.sh"
           cd "$root_dir"
           sudo -u radar founder-radar doctor || echo "doctor reported issues (see output above)"
           if [ "${RESCORE_ALL:-false}" = "true" ]; then
