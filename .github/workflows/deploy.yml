@@ -86,28 +86,31 @@ jobs:
           app_dir="${APP_DIR:-/opt/founder-radar/app}"
           # The CLI reads .env and RADAR_DB relative to the working directory,
           # and deploy/install.sh keeps both one level up from the checkout
-          # (ROOT/app). Run git + install from the checkout, but run the CLI
-          # from ROOT so doctor/rescore hit the real database, not a shadow
-          # ./data/radar.db under the checkout (see deploy/install.sh).
+          # (ROOT/app). Run the CLI from ROOT so doctor/rescore hit the real
+          # database, not a shadow ./data/radar.db under the checkout.
           root_dir="$(dirname "$app_dir")"
-          cd "$app_dir"
-          echo "== before: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-          git fetch --all --prune
-          git checkout main
-          git pull --ff-only origin main
+          # The checkout is owned by the 'radar' service user (install.sh chowns
+          # it), so run git AS radar to avoid permission / "dubious ownership"
+          # errors. This requires the radar user to be able to fetch origin —
+          # true for a public repo, otherwise configure a deploy key or a
+          # credential helper under the radar user.
+          run_git() { sudo -u radar git -C "$app_dir" "$@"; }
+          echo "== before: $(run_git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+          run_git fetch --all --prune
+          run_git checkout main
+          run_git pull --ff-only origin main
           # Idempotent: reinstalls the venv and restarts the systemd units.
           # Pass ROOT so install.sh's layout (ROOT, ROOT/app, ROOT/.env,
           # ROOT/data) matches the checkout we just updated even when
           # VPS_APP_DIR overrides the default — otherwise install.sh would keep
           # its hardcoded /opt/founder-radar and touch a different tree.
-          sudo bash -c "ROOT='$root_dir' bash deploy/install.sh"
+          sudo bash -c "ROOT='$root_dir' bash '$app_dir/deploy/install.sh'"
           cd "$root_dir"
           sudo -u radar founder-radar doctor || echo "doctor reported issues (see output above)"
           if [ "${RESCORE_ALL:-false}" = "true" ]; then
             echo "== rescoring all companies under the current config"
             sudo -u radar founder-radar rescore --all
           fi
-          cd "$app_dir"
-          echo "== after:  $(git rev-parse --short HEAD)"
+          echo "== after:  $(run_git rev-parse --short HEAD)"
           REMOTE
           echo "Deploy finished. Verify /api/today on the host."
