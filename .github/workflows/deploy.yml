@@ -1,0 +1,97 @@
+name: Deploy
+
+# Manual, repeatable deploy to the production VPS (08-deployment).
+#
+# This exists because the recurring "it's still the same" problem (client
+# issues I23/I24/J26) was branch/deploy divergence: fixes landed on main but
+# the box kept running old code. A one-click deploy from a clean checkout of
+# main removes the human ritual (`ssh`, `git pull`, `install.sh`) that drifted.
+#
+# It is `workflow_dispatch` only, so it never runs on its own and never leaves a
+# spurious red mark on main. Trigger it from the Actions tab or with:
+#   gh workflow run Deploy -f rescore_all=true
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   VPS_HOST     - hostname or IP of the VPS (e.g. srv1821489.hstgr.cloud)
+#   VPS_USER     - SSH user with sudo (deploy/install.sh needs root)
+#   VPS_SSH_KEY  - a private SSH key whose public half is in the VPS authorized_keys
+# Optional:
+#   VPS_PORT     - SSH port (default 22)
+#   VPS_APP_DIR  - checkout path on the VPS (default /opt/founder-radar/app)
+
+on:
+  workflow_dispatch:
+    inputs:
+      rescore_all:
+        description: "Run 'rescore --all' after deploy (applies config/qualifier changes to existing rows)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required secrets are present
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in VPS_HOST VPS_USER VPS_SSH_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required secret $name is not set."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Add VPS_HOST, VPS_USER and VPS_SSH_KEY (and optionally VPS_PORT," \
+                 "VPS_APP_DIR) under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      - name: Deploy main to the VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+          RESCORE_ALL: ${{ inputs.rescore_all }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          port="${VPS_PORT:-22}"
+          app_dir="${VPS_APP_DIR:-/opt/founder-radar/app}"
+
+          # Pin the host key on first contact, then require it thereafter.
+          ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Values are expanded here and passed to the remote shell as a command
+          # prefix, so the remote heredoc stays literal (no local expansion).
+          ssh -i ~/.ssh/id_deploy -p "$port" -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "APP_DIR='$app_dir' RESCORE_ALL='$RESCORE_ALL' bash -se" <<'REMOTE'
+          set -euo pipefail
+          cd "${APP_DIR:-/opt/founder-radar/app}"
+          echo "== before: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+          git fetch --all --prune
+          git checkout main
+          git pull --ff-only origin main
+          # Idempotent: reinstalls the venv and restarts the systemd units.
+          sudo bash deploy/install.sh
+          sudo -u radar founder-radar doctor || true
+          if [ "${RESCORE_ALL:-false}" = "true" ]; then
+            echo "== rescoring all companies under the current config"
+            sudo -u radar founder-radar rescore --all || true
+          fi
+          echo "== after:  $(git rev-parse --short HEAD)"
+          REMOTE
+          echo "Deploy finished. Verify /api/today on the host."
