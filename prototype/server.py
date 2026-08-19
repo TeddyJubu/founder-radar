@@ -1025,9 +1025,19 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             (r["sid"],))]
 
         also = [dict(a) for a in conn.execute(
-            """SELECT fund_key, tier, fund_fit_pct FROM score
-                WHERE company_id = ? AND fund_key != ? AND tier != 'reject'
-                ORDER BY fund_fit_pct DESC""",
+            """WITH latest_fund_scores AS (
+                  SELECT fund_key, tier, fund_fit_pct,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY company_id, fund_key
+                           ORDER BY scored_at DESC, id DESC
+                         ) AS score_rank
+                    FROM score
+                   WHERE company_id = ? AND fund_key != ?
+                )
+                SELECT fund_key, tier, fund_fit_pct
+                  FROM latest_fund_scores
+                 WHERE score_rank = 1 AND tier != 'reject'
+                 ORDER BY fund_fit_pct DESC""",
             (r["company_id"], r["fund_key"]))]
         fund_scores = _fund_score_payload(conn, r["company_id"], config, vehicles)
 

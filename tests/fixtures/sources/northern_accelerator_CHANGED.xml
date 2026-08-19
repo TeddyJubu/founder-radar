@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 200 OK, valid RSS, zero entries: a fallback feed change must be loud. -->
+<rss version="2.0">
+  <channel>
+    <title>Northern Accelerator</title>
+    <link>https://northernaccelerator.org/</link>
+  </channel>
+</rss>

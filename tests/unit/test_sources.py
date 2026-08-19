@@ -166,7 +166,8 @@ def test_northern_accelerator_parses_the_rss_fallback_fixture():
     check_northern_accelerator(items)
 
 
-def test_northern_accelerator_fetch_falls_back_to_rss_after_a_403():
+@pytest.mark.parametrize("status", [401, 403, 429, 451])
+def test_northern_accelerator_fetch_falls_back_to_rss_after_a_block(status):
     """A WAF-blocked JSON route must not erase the source's public feed."""
     class JsonBlockedThenFeed:
         def __init__(self):
@@ -175,7 +176,7 @@ def test_northern_accelerator_fetch_falls_back_to_rss_after_a_403():
         def get(self, url, **kwargs):
             self.calls.append((url, kwargs))
             if url == northern_accelerator.ENDPOINT:
-                return StubResponse(status=403)
+                return StubResponse(status=status)
             return StubResponse(load("northern_accelerator.xml"))
 
     http = JsonBlockedThenFeed()
@@ -185,6 +186,14 @@ def test_northern_accelerator_fetch_falls_back_to_rss_after_a_403():
     assert [url for url, _ in http.calls] == [
         northern_accelerator.ENDPOINT, northern_accelerator.FEED,
     ]
+
+
+def test_northern_accelerator_rss_detects_layout_change():
+    """A valid but empty fallback feed must fail loudly, not look like a quiet week."""
+    with pytest.raises(LayoutChanged) as excinfo:
+        northern_accelerator.ADAPTER.parse_feed(load("northern_accelerator_CHANGED.xml"))
+
+    assert excinfo.value.source_key == "northern_accelerator"
 
 
 def check_cambridge_enterprise(items):
