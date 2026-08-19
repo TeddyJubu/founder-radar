@@ -92,6 +92,7 @@ TODAY_BLOCK_LABELS: tuple[str, ...] = (
     "Also fits", "Your call",
 )
 TODAY_BLOCK_HEIGHT = len(TODAY_BLOCK_LABELS) + 1     # + one blank separator row
+TODAY_VERIFICATION_LABEL = "Verified on Companies House"
 
 # The Settings tab, in the order of 07-interfaces tab 6. Seeded once; after that
 # it is Aryan's, and the pipeline only ever writes column D.
@@ -301,6 +302,17 @@ def _relative_age(months: float | None) -> str:
     if months < 24:
         return f"{int(round(months))} months ago"
     return f"{months / 12:.1f} years ago"
+
+
+def _display_date(value: str | None) -> str:
+    """Render an ISO date as the human-readable date used in Today badges."""
+    if not value:
+        return ""
+    try:
+        parsed = date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return ""
+    return f"{parsed.day} {parsed.strftime('%B %Y')}"
 
 
 # ------------------------------------------------------------ the diff core
@@ -577,6 +589,17 @@ class CompanyView:
     signals: list[str]
     sources: list[str]
     evidence: list[tuple[str, str]]
+    ch_verified: bool = False
+    ch_verified_on: str | None = None
+
+
+def _is_ch_verification_signal(kind: str | None, source_key: str | None) -> bool:
+    """Match the explicit Companies House verification signal contract."""
+    kind = str(kind or "")
+    source_key = str(source_key or "")
+    return (kind == "verification" and source_key == "companies_house") or (
+        kind == "ch_verified" and source_key in {"", "companies_house"}
+    )
 
 
 def _gather(db: Any) -> dict[str, CompanyView]:
@@ -603,7 +626,7 @@ def _gather(db: Any) -> dict[str, CompanyView]:
             views[row["company_id"]].founders.append(row["name"])
 
     for row in db.query(
-        "SELECT company_id, kind, headline, source_url FROM signal "
+        "SELECT company_id, kind, headline, source_url, source_key, occurred_on FROM signal "
         "ORDER BY occurred_on DESC, id DESC"
     ):
         view = views.get(row["company_id"])
@@ -612,6 +635,10 @@ def _gather(db: Any) -> dict[str, CompanyView]:
         if row["kind"] not in view.signals:
             view.signals.append(row["kind"])
         view.evidence.append((row["headline"], row["source_url"]))
+        if _is_ch_verification_signal(row["kind"], row["source_key"]):
+            view.ch_verified = True
+            if view.ch_verified_on is None:
+                view.ch_verified_on = row["occurred_on"]
 
     for row in db.query("SELECT company_id, source_url FROM company_source ORDER BY source_key"):
         if row["company_id"] in views:
@@ -726,12 +753,16 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
     ]
 
     start = 6
-    for index, view in enumerate(shortlisted):
+    next_row = start
+    for view in shortlisted:
         company, best = view.row, view.best
         months = _months_between(company["incorporated_on"], today)
         owner = user.get(company["id"], {})
         also = " · ".join(f"{k} {v:.0f} ({t})" for k, v, t in view.also[:3])
         evidence = " · ".join(headline for headline, _ in view.evidence[:3])
+        labels = TODAY_BLOCK_LABELS
+        verification_date = _display_date(
+            company["incorporated_on"] or view.ch_verified_on)
         block = {
             "Company": (f'{company["canonical_name"]} · {company["domain"] or ""} · '
                         f'{company["hq_city"] or company["hq_region"] or ""} · '
@@ -749,8 +780,14 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
             "Your call": " · ".join(x for x in (owner.get("verdict", ""),
                                                 owner.get("notes", "")) if x),
         }
-        base = start + index * TODAY_BLOCK_HEIGHT
-        for offset, label in enumerate(TODAY_BLOCK_LABELS):
+        if view.ch_verified:
+            labels = ("Company", TODAY_VERIFICATION_LABEL) + TODAY_BLOCK_LABELS[1:]
+            block[TODAY_VERIFICATION_LABEL] = (
+                f"Incorporated {verification_date}" if verification_date
+                else "Incorporation date unavailable"
+            )
+        base = next_row
+        for offset, label in enumerate(labels):
             cells = {"A": label, "B": block[label], "C": "", "D": ""}
             if label == "Company":
                 cells["B"] = hyperlink(company["website_url"], block["Company"])
@@ -758,8 +795,9 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
             elif label == "Evidence":
                 cells["D"] = " | ".join(url for _, url in view.evidence[:3])
             rows.append(Row(f'{company["id"]}:{label}', base + offset, cells))
-        rows.append(Row(f'{company["id"]}:blank', base + len(TODAY_BLOCK_LABELS),
+        rows.append(Row(f'{company["id"]}:blank', base + len(labels),
                         {"A": "", "B": "", "C": "", "D": ""}))
+        next_row = base + len(labels) + 1
     return rows
 
 

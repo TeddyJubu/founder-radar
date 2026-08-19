@@ -154,6 +154,35 @@ def test_today_says_what_each_company_does_before_it_cites_an_article(db, sheet)
     assert labels.index("Evidence") > labels.index("What they do")
 
 
+def test_today_shows_companies_house_verification_only_when_signal_exists(db, sheet):
+    """The Today sheet mirrors the explicit verification signal, not any date."""
+    from radar.store.db import now_iso
+
+    ids = seed_companies(db, count=2, shortlist=2)
+    stamp = now_iso()
+    db.execute("UPDATE company SET incorporated_on = ? WHERE id = ?",
+               ("2026-06-14", ids[0]))
+    db.execute(
+        """INSERT INTO signal
+             (company_id, kind, occurred_on, headline, detail, source_key,
+              source_url, first_seen)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (ids[0], "verification", "2026-06-14",
+         "Company 0002 Ltd verified at Companies House (15021884)", None,
+         "companies_house",
+         "https://find-and-update.company-information.service.gov.uk/company/15021884",
+         stamp),
+    )
+
+    render(db, sheet)
+    labels = sheet.column(TODAY, "A")
+    values = sheet.column(TODAY, "B")
+
+    assert labels.count("Verified on Companies House") == 1
+    row = labels.index("Verified on Companies House")
+    assert values[row] == "Incorporated 14 June 2026"
+
+
 # -------------------------------------------------------------- steady state
 
 

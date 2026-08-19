@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import urllib.request
 
 import pytest
@@ -208,6 +209,42 @@ def test_b16_eligibility_diagnostics_are_visible_without_company_rows(today, api
     )
     for company in api["companies"]:
         assert company["name"] not in panel.inner_text()
+
+
+def test_b17_companies_house_badge_follows_verification_signal(page, server, demo_db, api):
+    """A verified company gets the badge; the next ordinary card gets nothing."""
+    company_id = api["companies"][0]["company_id"]
+    source_url = "https://find-and-update.company-information.service.gov.uk/company/15021884"
+    with sqlite3.connect(demo_db) as conn:
+        incorporated_on = conn.execute(
+            "SELECT incorporated_on FROM company WHERE id = ?", (company_id,)
+        ).fetchone()[0]
+        conn.execute(
+            """INSERT INTO signal
+                 (company_id, kind, occurred_on, headline, detail, source_key,
+                  source_url, first_seen)
+               VALUES (?,?,?,?,?,?,?,datetime('now'))""",
+            (company_id, "verification", incorporated_on,
+             "Company verified at Companies House (15021884)", None,
+             "companies_house", source_url),
+        )
+        conn.commit()
+
+    try:
+        page.goto(server + "/", wait_until="networkidle")
+        page.wait_for_selector(tid("card"))
+        badge = page.locator(tid("ch-verified"))
+        assert badge.count() == 1
+        assert "Verified on Companies House" in badge.inner_text()
+        assert incorporated_on in badge.get_attribute("data-incorporated-on")
+
+        page.keyboard.press("ArrowRight")
+        assert page.locator(tid("ch-verified")).count() == 0
+    finally:
+        with sqlite3.connect(demo_db) as conn:
+            conn.execute("DELETE FROM signal WHERE company_id = ? AND source_url = ?",
+                         (company_id, source_url))
+            conn.commit()
 
 
 def test_b8_b9_progress_dots(today, api):
