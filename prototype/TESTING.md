@@ -87,6 +87,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Meta line | `company-meta` | | domain · city · age |
 | Domain link | `company-domain` | | absent when the company has no domain |
 | Age phrase | `company-age` | `data-exact` | empty when the date is unknown |
+| Companies House verification | `ch-verified` | `data-incorporated-on` | present only when the company has the explicit Companies House verification signal; includes `ch-verified-date` |
 | Scores wrapper | `scores` | | |
 | Fit tile | `score-fit` | `data-value` (**raw**), `data-band` | labelled **Match** in UI; testid unchanged |
 | Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | labelled **Fresh** in UI; testid unchanged |
@@ -141,11 +142,11 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | A2 | `GET /api/today` | 200, valid JSON |
 | A3 | Top-level keys | `date`, `companies`, `totals`, `run`, `eligibility_diagnostics` all present |
 | A3b | Eligibility diagnostics | scored minus shown equals excluded, and reason counts sum to excluded; each reason is aggregate-only |
-| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` has exactly `outward`, `dsw`, `northstar`, `anticus` |
+| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `ch_verified`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` has exactly `outward`, `dsw`, `northstar`, `anticus` |
 | A5 | Tier filter | no company has `tier == "reject"` |
 | A6 | Ordering | `priority` is non-increasing across the array |
 | A7 | Tie-break | where `priority` is equal, `coverage` is non-increasing |
-| A8 | Types | `flags` is an array, `signals` is an array, `fit`/`edge`/`coverage` are numbers |
+| A8 | Types | `flags`/`signals` are arrays, `ch_verified` is null or an object, `fit`/`edge`/`coverage` are numbers |
 | A9 | `GET /api/nonsense` | 404 |
 | A10 | `POST /api/verdict` with `{"verdict":"banana"}` | 400, body contains `error` |
 | A11 | `POST /api/verdict` with no `company_id` | 400 |
@@ -168,6 +169,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B10 | Three buttons | the three `verdict-*` testids each present exactly once |
 | B11 | Bar visible | `verdict-bar` not `hidden` while cards remain |
 | B15 | Four fund matches | exactly four `fund-score` elements; each displayed `data-value` matches the corresponding API `fund_scores[*].fit` |
+| B16 | Companies House badge | `ch-verified` exists only for a card whose API `ch_verified` is non-null; its text includes `Verified on Companies House` and the exact incorporation date |
 
 ### B12 — No placeholder leakage *(high value)*
 

@@ -103,6 +103,36 @@ def test_today_exposes_a_direct_source_url_for_each_recommendation(db):
                for row in payload["companies"])
 
 
+def test_today_exposes_companies_house_verification_only_for_verified_signal(db):
+    """The Today card badge is provenance-driven, not inferred from age alone."""
+    from radar.store.db import now_iso
+
+    ids = seed_companies(db, count=2, shortlist=2)
+    stamp = now_iso()
+    db.execute("UPDATE company SET incorporated_on = ? WHERE id = ?",
+               ("2026-06-14", ids[0]))
+    db.execute(
+        """INSERT INTO signal
+             (company_id, kind, occurred_on, headline, detail, source_key,
+              source_url, first_seen)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (ids[0], "verification", "2026-06-14",
+         "Company 0002 Ltd verified at Companies House (15021884)", None,
+         "companies_house",
+         "https://find-and-update.company-information.service.gov.uk/company/15021884",
+         stamp),
+    )
+
+    companies = {row["company_id"]: row for row in build_today(db.conn)["companies"]}
+
+    assert companies[ids[0]]["ch_verified"] == {
+        "incorporated_on": "2026-06-14",
+        "incorporated_on_display": "14 June 2026",
+        "source_url": "https://find-and-update.company-information.service.gov.uk/company/15021884",
+    }
+    assert companies[ids[1]]["ch_verified"] is None
+
+
 def test_today_exposes_match_scores_for_all_four_funds(db):
     """The primary route is not the only plausible pitch."""
     from radar.store.db import now_iso
