@@ -423,7 +423,12 @@ LISTS: dict[str, Any] = {
     "signal_traction": {"grant_award": "clinical_grant_validation",
                         "competition_win": "community_traction"},
     "assume_values": {},
-    "qualifiers": ["share_issue", "grant", "spinout", "press", "repeat_founder", "website"],
+    # The qualifiers that admit a registry (Track B) company to scoring. A live
+    # `website` is intentionally omitted: almost every registered Ltd has one,
+    # so it is noise, not a venture signal (client feedback, 18 Aug 2026).
+    # Companies House verifies and enriches; a real signal drives discovery.
+    # Add "website" back here to loosen without touching code.
+    "qualifiers": ["share_issue", "grant", "spinout", "press", "repeat_founder"],
 }
 
 # ------------------------------------------------------------------ sources

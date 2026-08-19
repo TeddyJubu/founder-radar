@@ -290,6 +290,45 @@ from ever being committed.
 
 ---
 
+## J. Sourcing balance (raised after this plan was first written)
+
+These complaints arrived on/after 18 Aug 2026, after the A–I list (compiled
+17 Aug) was frozen. They are tracked here so the list stays complete.
+
+### J25 — Over-reliance on Companies House as a discovery source — ✅ NEW
+His clearest steer (18 Aug): *"use startup-focused sources to discover companies
+first, then use Companies House to verify and enrich rather than driving the
+discovery itself."* Symptoms: registered company names with little context, and
+"many of these are simply small businesses rather than venture-backable
+startups".
+
+Fix (this change): a registry (Track B) company is admitted to scoring only by a
+real venture signal — share allotment (SH01), grant, university spinout, press
+in a tracked source, or a repeat founder. A live **website is no longer an
+admitting qualifier**: almost every registered Ltd has one, so it was the exact
+"small business" leak. Companies House keeps its verify/enrich role (the birthday
+gate, officers, filings, the CH-verified badge); it no longer surfaces
+context-less names on its own. The admitting set lives in the sheet
+(`lists["qualifiers"]`), so the bar is tunable without code.
+
+- **NEW** `test_website_alone_does_not_admit_a_registry_company`
+  (tests/unit/test_qualification_gate.py) — a registry company whose only
+  qualifier is a website is not scored, not surfaced, and marked `qualified = 0`;
+  adding a real signal admits it.
+- **NEW** `test_website_still_admits_when_the_sheet_re_enables_it` — proves the
+  bar is sheet-editable (add `website` back to the Lists tab to loosen).
+- `test_any_single_venture_signal_admits_to_scoring` — the five real signals
+  each still admit, so the fix tightens noise without closing the high-edge
+  Track B play (SH01 + prior directorships) the client asked for on Jul 9.
+
+### J26 — "It's still the same" after fixes (18–20 Aug) — 🔧 deploy
+Restatement of I23: correct code was not reaching the deployed box (branch/
+deploy divergence, GitHub Actions failing — confirmed in-thread 20 Aug). No new
+product logic; the guard is the §4.1–§4.2 live deploy checks plus a green CI on
+one branch. Resolving this is a deploy/ops action, not a code change.
+
+---
+
 ## 3. NEW tests — implemented (all in the offline suite, 17 Aug 2026)
 
 All eight guards are implemented, named canonically, and passing
