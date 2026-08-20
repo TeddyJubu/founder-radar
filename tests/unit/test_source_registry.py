@@ -575,6 +575,39 @@ def test_resolve_item_refuses_portfolio_listings(db):
     assert db.scalar("SELECT COUNT(*) FROM company") == 0
 
 
+def test_first_party_investment_announcements_are_denylist_not_leads():
+    """Client A2 inventory: every first-party "we invested / Investing in X"
+    adapter must demote, not discover.
+
+    Third-party news (UKTN, BusinessCloud) still reports raises — those stay
+    discovery and rely on age / funding / portfolio gates. Accelerators and
+    venture builders that announce *formation* (EF, Conception X, Carbon13)
+    stay discovery. This pin is only for closed-cheque announcements.
+    """
+    from radar.sources import bethnal_green, founders_factory, zinc_vc
+
+    zinc = zinc_vc.ADAPTER.parse(load("zinc_vc.json"))
+    zinc_hits = [i for i in zinc if i.structured.get("company_name")]
+    assert zinc_hits
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in zinc_hits)
+    assert all(i.structured.get("on_vc_portfolio") is True for i in zinc_hits)
+
+    ff = founders_factory.ADAPTER.parse(load("founders_factory.html"))
+    ff_hits = [i for i in ff if "investing in" in i.title.lower()]
+    assert ff_hits
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in ff_hits)
+    assert all(i.structured.get("on_vc_portfolio") is True for i in ff_hits)
+    # Non-investment articles must not be swept into the denylist.
+    assert any(i.kind_hint == "news_mention" for i in ff)
+
+    bg = bethnal_green.ADAPTER.parse(load("bethnal_green.html"))
+    exited = [i for i in bg if i.structured.get("exited")]
+    active = [i for i in bg if i.kind_hint == "accelerator_cohort"]
+    assert exited and active
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in exited)
+    assert all(i.structured.get("on_vc_portfolio") is True for i in exited)
+
+
 # --------------------------------------------- client-requested categories
 
 # Client-issues plan §3.8 (A5): Aryan's exact ask — "expand [sources] with
@@ -594,12 +627,14 @@ CATEGORY_KEYS: dict[str, set[str]] = {
     },
     "accelerator cohorts": {
         "northern_accelerator", "conception_x",
-        "founders_factory", "techstars_london", "carbon13", "bethnal_green",
+        "techstars_london", "carbon13", "bethnal_green",
     },
     "innovate_uk / grants": {"innovate_uk", "ukri_gtr", "govuk_search"},
     # Inverted feeds — kept registered and on by default, but they demote
     # already-backed companies rather than discovering leads (client A2).
-    "vc denylist": {"vc_portfolios", "zinc_vc"},
+    # Founders Factory stays enabled for non-investment articles too; its
+    # Investing-in posts share this denylist path.
+    "vc denylist": {"vc_portfolios", "zinc_vc", "founders_factory"},
 }
 
 

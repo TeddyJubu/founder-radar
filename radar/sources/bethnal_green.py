@@ -17,9 +17,9 @@ Two details worth keeping:
   configuration rows — 35 nodes of which 12 are ventures. `conception_x` shipped
   that exact bug: the guard counted cards, the names came back empty, and the
   source reported `ok (0)` for a total failure.
-* An `Exited` tag means the company has already had its outcome. It is kept as
-  a signal rather than dropped here, because the freshness gate owns that
-  decision and an exited venture is still useful as `on_vc_portfolio` evidence.
+* An `Exited` tag means the company has already had its outcome. Those cards
+  are inverted into the denylist (`on_vc_portfolio`), not surfaced as fresh
+  cohort leads — the same rule as Zinc / Founders Factory investment posts.
 """
 
 from __future__ import annotations
@@ -122,6 +122,35 @@ class BethnalGreenAdapter:
         tags = [clean_text(t.text(strip=True))
                 for t in card.css("[class*=tag], [class*=theme]") if t.text(strip=True)]
         exited = any(EXITED in t.lower() for t in tags)
+        themes = sorted({t for t in tags if EXITED not in t.lower()})
+        external_id = slug_of(website or "") or name.lower().replace(" ", "-")
+        one_liner = first_text(card, (".card_text", "p"), exclude=name) or None
+
+        # An Exited tag means the outcome already happened — demote, do not
+        # invent a fresh lead. Active cohort cards stay discovery.
+        if exited:
+            from radar.sources.denylist import listing
+
+            return listing(
+                source_key=self.key,
+                source_url=PORTFOLIO,
+                external_id=external_id,
+                published_at=None,
+                title=name,
+                body_text=blob or None,
+                company_name=name,
+                vc_slug="bethnal_green",
+                vc_name="Bethnal Green Ventures",
+                date_confidence="inferred",
+                extra={
+                    "exited": True,
+                    "company_website": website,
+                    "one_line_description": one_liner,
+                    "age_source": "unknown",
+                    "themes": themes,
+                    "hq_country_iso2": "GB",
+                },
+            )
 
         return RawItem(
             source_key=self.key,
@@ -130,15 +159,14 @@ class BethnalGreenAdapter:
             # plain http, and a provenance link has to be one we control the
             # shape of.
             source_url=PORTFOLIO,
-            external_id=slug_of(website or "") or name.lower().replace(" ", "-"),
+            external_id=external_id,
             published_at=None,          # stamped by `diff` on the run that finds it
             title=name,
             body_text=blob or None,
             structured={
                 "company_name": name,
                 "company_website": website,
-                "one_line_description": first_text(
-                    card, (".card_text", "p"), exclude=name) or None,
+                "one_line_description": one_liner,
                 "accelerator_name": "Bethnal Green Ventures",
                 "stage": "pre_seed",
                 "hq_country_iso2": "GB",
@@ -146,8 +174,7 @@ class BethnalGreenAdapter:
                 # claim about when the company was founded.
                 "date_confidence": "inferred",
                 "age_source": "unknown",
-                "themes": sorted({t for t in tags if EXITED not in t.lower()}),
-                **({"exited": True} if exited else {}),
+                "themes": themes,
             },
             kind_hint="accelerator_cohort",
         )

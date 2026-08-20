@@ -20,13 +20,13 @@ from typing import Iterable
 from radar.sources._common import (
     after,
     clean_text,
-    norm_key,
     require_ok,
     unique_by_id,
     wp_fingerprint,
     wp_posts,
 )
 from radar.sources.base import FetchContext, RawItem
+from radar.sources.denylist import listing
 
 BASE = "https://www.zinc.vc"
 ENDPOINT = f"{BASE}/wp-json/wp/v2/posts"
@@ -77,20 +77,20 @@ class ZincVcAdapter:
 
     def _item(self, post: dict) -> RawItem:
         body = post["body"] or post["excerpt"]
-        structured: dict = {"date_confidence": "exact"}
         name = self.company_from_title(post["title"])
-        kind_hint = "news"
         if name:
-            # Same shape as `vc_portfolios.parse` so `apply_denylist` can
-            # demote without creating a company.
-            structured.update({
-                "company_name": name,
-                "on_vc_portfolio": True,
-                "vc_slug": "zinc",
-                "vc_name": "Zinc",
-                "norm_key": norm_key(name),
-            })
-            kind_hint = "vc_portfolio_listing"
+            return listing(
+                source_key=self.key,
+                source_url=post["link"],
+                external_id=post["id"],
+                published_at=post["date"],
+                title=post["title"],
+                body_text=body or None,
+                company_name=name,
+                vc_slug="zinc",
+                vc_name="Zinc",
+                date_confidence="exact",
+            )
         return RawItem(
             source_key=self.key,
             source_url=post["link"],
@@ -98,8 +98,8 @@ class ZincVcAdapter:
             published_at=post["date"],
             title=post["title"],
             body_text=body or None,
-            structured=structured,
-            kind_hint=kind_hint,
+            structured={"date_confidence": "exact"},
+            kind_hint="news",
         )
 
 

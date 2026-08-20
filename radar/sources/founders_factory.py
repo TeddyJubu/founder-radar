@@ -1,12 +1,14 @@
 """Founders Factory — HTML articles (04-sources Tier 2).
 
-A venture studio: its "Investing in X" posts announce companies at or before
-incorporation, which is as early as a public signal gets. London-based, so
-these route to Outward's UK-wide vehicle and are a hard reject for DSW's SEIS
-fund.
+A venture studio. Its **"Investing in X"** posts used to be treated as early
+discovery ("at or before incorporation"). The client rejected that pattern for
+Zinc, and the same rule applies here: a company Founders Factory has already
+backed is not a scout lead. Those titles are inverted into the denylist.
 
-Two things make this the most fragile adapter in the ledger, and both are
-worth stating rather than discovering later:
+Non-investment articles (trends, awards write-ups) stay as ordinary news —
+they do not name a closed cheque in the title, so they are not demoted.
+
+Two layout details worth keeping:
 
 * **The class names are styled-components hashes** —
   `NewsSection__NewsArticleBox-sc-13vxttl-0`. The `-sc-13vxttl-0` suffix is
@@ -14,13 +16,12 @@ worth stating rather than discovering later:
   exact-match selector would break on a deploy that changed nothing visible.
   The adapter matches on the *stable* half with `[class*="NewsArticleBox"]`.
 * **The dates are relative** — "a month ago", not a date. There is nothing to
-  parse, so `published_at` is None and `date_confidence` is `unknown`. Unknown
-  passes the freshness gate and sets a flag, which is the correct handling of
-  an absent fact; it is not a licence to guess a date from the crawl day.
+  parse, so `published_at` is None and `date_confidence` is `unknown`.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 from radar.sources._common import (
@@ -36,6 +37,7 @@ from radar.sources._common import (
     unique_by_id,
 )
 from radar.sources.base import FetchContext, RawItem
+from radar.sources.denylist import listing
 
 BASE = "https://foundersfactory.com"
 ARTICLES = f"{BASE}/articles/"
@@ -43,8 +45,12 @@ ARTICLES = f"{BASE}/articles/"
 CARD_SELECTORS = ('[class*="NewsArticleBox"]', "article", ".article-card")
 TITLE_SELECTORS = ("h2", "h3", "h4")
 
-INVESTMENT_WORDS = ("investing in", "investment in", "we've invested",
-                    "we have invested", "backs", "raises", "funding")
+#: "Investing in Halden Robotics" / "Investment in Marrow Bio"
+INVESTMENT_TITLE = re.compile(
+    r"(?:investing|investment)\s+in\s+(?P<name>.+?)"
+    r"(?:\s*[—–\-|:].*)?$",
+    re.I,
+)
 
 
 class FoundersFactoryAdapter:
@@ -79,6 +85,16 @@ class FoundersFactoryAdapter:
         items = [self._item(card) for card in cards]
         return [item for item in items if item is not None]
 
+    @staticmethod
+    def company_from_title(title: str) -> str | None:
+        match = INVESTMENT_TITLE.search(clean_text(title))
+        if not match:
+            return None
+        name = match.group("name").strip(" .,’'\"")
+        if not name or len(name) > 60 or len(name.split()) > 5:
+            return None
+        return name
+
     def _item(self, card) -> RawItem | None:
         title = first_text(card, TITLE_SELECTORS)
         link = card.css_first("a[href]")
@@ -93,11 +109,28 @@ class FoundersFactoryAdapter:
         if blob.startswith(".css-") or "{box-sizing:" in blob[:200]:
             blob = ""
 
+        source_url = absolute_url(BASE, href) or ARTICLES
+        external_id = slug_of(href) or title.lower().replace(" ", "-")
+        name = self.company_from_title(title)
+        if name:
+            return listing(
+                source_key=self.key,
+                source_url=source_url,
+                external_id=external_id,
+                published_at=None,
+                title=title,
+                body_text=blob or None,
+                company_name=name,
+                vc_slug="founders_factory",
+                vc_name="Founders Factory",
+                date_confidence="unknown",
+                extra={"age_source": "unknown"},
+            )
+
         return RawItem(
             source_key=self.key,
-            source_url=absolute_url(BASE, href) or ARTICLES,
-            external_id=slug_of(href) or title.lower().replace(" ", "-"),
-            # Relative timestamps only. None is the honest answer.
+            source_url=source_url,
+            external_id=external_id,
             published_at=None,
             title=title,
             body_text=blob or None,
@@ -109,9 +142,7 @@ class FoundersFactoryAdapter:
                 "hq_city": "London",
                 "hq_region": "london",
             },
-            kind_hint=("funding_round"
-                       if any(w in f"{title} {blob}".lower() for w in INVESTMENT_WORDS)
-                       else "news_mention"),
+            kind_hint="news_mention",
         )
 
 

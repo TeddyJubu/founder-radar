@@ -322,14 +322,18 @@ def check_bethnal_green(items):
     assert all(i.structured["bootstrap"] is True for i in items)
     assert all(i.structured["date_confidence"] == "inferred" for i in items)
     assert all(i.structured["age_source"] == "unknown" for i in items)
-    assert all(i.structured["stage"] == "pre_seed" for i in items)
+    active = [i for i in items if i.kind_hint == "accelerator_cohort"]
+    exited = [i for i in items if i.kind_hint == "vc_portfolio_listing"]
+    assert active, "active cohort cards stay discovery"
+    assert exited, "exited ventures must be denylist listings"
+    assert all(i.structured["stage"] == "pre_seed" for i in active)
+    assert all(i.structured["on_vc_portfolio"] is True for i in exited)
+    assert all(i.structured.get("exited") is True for i in exited)
     # The provenance link is the portfolio page, not the venture's own site:
     # a third of those are still plain http (see `oxford_innovation`).
     assert all(i.source_url == "https://bethnalgreenventures.com/portfolio"
                for i in items)
     assert all(i.structured["company_website"] for i in items)
-    # An exited venture is flagged, not dropped — the gates own that decision.
-    assert any(i.structured.get("exited") for i in items)
     assert any("Healthy Lives" in i.structured["themes"] for i in items)
 
 
@@ -371,14 +375,21 @@ def check_sheffield(items):
 def check_founders_factory(items):
     """Relative timestamps only, so the date is unknown and says so.
 
-    Guessing the crawl day would invent a fact the freshness gate would then
-    trust. Unknown passes and flags, which is the whole `None` is not `0` rule
-    applied to a date.
+    "Investing in X" titles are denylist evidence (same rule as Zinc). Other
+    articles stay as ordinary news mentions.
     """
     assert all(i.published_at is None for i in items)
     assert all(i.structured["date_confidence"] == "unknown" for i in items)
     assert all(i.structured["age_source"] == "unknown" for i in items)
-    assert any(i.kind_hint == "funding_round" for i in items)
+    investments = [i for i in items if i.kind_hint == "vc_portfolio_listing"]
+    news = [i for i in items if i.kind_hint == "news_mention"]
+    assert investments, "Investing-in posts must be denylist listings"
+    assert news, "non-investment articles stay as news"
+    assert {i.structured["company_name"] for i in investments} >= {
+        "Halden Robotics", "Marrow Bio",
+    }
+    assert all(i.structured["on_vc_portfolio"] is True for i in investments)
+    assert all("stage" not in i.structured for i in investments)
     # The first card inlines a <style> block; CSS must not reach stage ③.
     assert all("box-sizing" not in (i.body_text or "") for i in items)
     assert all(not (i.body_text or "").startswith(".css-") for i in items)

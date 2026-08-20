@@ -72,6 +72,13 @@ His most repeated complaint (initial feedback, Aug 12, Aug 14).
   `test_pipeline_routes_portfolio_listings_through_the_denylist`,
   `test_resolve_item_refuses_portfolio_listings`). A company Zinc has already
   backed can no longer enter the shortlist via that feed.
+- **Same rule for similar first-party feeds** — Founders Factory
+  "Investing in X" posts and Bethnal Green **Exited** portfolio cards share
+  the denylist path
+  (`test_first_party_investment_announcements_are_denylist_not_leads`).
+  Third-party news (UKTN / BusinessCloud) and formation-stage builders
+  (EF, Conception X, Carbon13) stay discovery; age / funding / portfolio
+  gates still apply there.
 
 ### A3 — US / Dubai companies surfacing despite UK-only target — ✅ NEW
 - `test_freshness_gates` — `country=US` rejected by `min_uk_presence`.
@@ -101,8 +108,8 @@ The requested categories all exist as adapters:
 | Category | Adapters |
 |---|---|
 | University spinouts | cambridge_enterprise, oxford_innovation, ucl_ventures, edinburgh_innovations, sheffield, converge, entrepreneur_first |
-| Accelerators / cohorts | northern_accelerator, conception_x, founders_factory, techstars_london, carbon13, bethnal_green |
-| VC denylist (inverted) | vc_portfolios, zinc_vc |
+| Accelerators / cohorts | northern_accelerator, conception_x, techstars_london, carbon13, bethnal_green (active) |
+| VC denylist (inverted) | vc_portfolios, zinc_vc, founders_factory (Investing-in), bethnal_green (Exited) |
 | Innovate UK / grants | innovate_uk, ukri_gtr, govuk_search |
 
 - `test_phase8_sources.py` — grant adapters parse committed fixtures, detect

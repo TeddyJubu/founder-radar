@@ -1,18 +1,60 @@
 """Inverted portfolio feeds — demote companies funds have already seen.
 
-Adapters that read VC portfolio pages or investment announcements emit
-`kind_hint="vc_portfolio_listing"`. The pipeline routes those items here
+Adapters that read VC portfolio pages or first-party investment announcements
+emit `kind_hint="vc_portfolio_listing"`. The pipeline routes those items here
 instead of through resolve, so a listing can never become a lead. That is
 precisely the version-1 behaviour the client rejected.
 """
 
 from __future__ import annotations
 
-from typing import Sequence
+from datetime import date, datetime
+from typing import Any, Sequence
 
 from radar.resolve.normalise import norm_key
 from radar.sources.base import RawItem
 from radar.store.db import now_iso
+
+
+def listing(
+    *,
+    source_key: str,
+    source_url: str,
+    external_id: str | int | None,
+    title: str,
+    company_name: str,
+    vc_slug: str,
+    vc_name: str,
+    published_at: date | datetime | None = None,
+    body_text: str | None = None,
+    date_confidence: str = "exact",
+    extra: dict[str, Any] | None = None,
+) -> RawItem:
+    """Build a denylist `RawItem` for one already-backed company.
+
+    Shared by inverted investment-announcement adapters so the pipeline sees
+    one shape: `on_vc_portfolio=True` + `kind_hint=vc_portfolio_listing`.
+    """
+    structured: dict[str, Any] = {
+        "company_name": company_name,
+        "on_vc_portfolio": True,
+        "vc_slug": vc_slug,
+        "vc_name": vc_name,
+        "norm_key": norm_key(company_name),
+        "date_confidence": date_confidence,
+    }
+    if extra:
+        structured.update(extra)
+    return RawItem(
+        source_key=source_key,
+        source_url=source_url,
+        external_id=external_id,
+        published_at=published_at,
+        title=title,
+        body_text=body_text,
+        structured=structured,
+        kind_hint="vc_portfolio_listing",
+    )
 
 
 def apply_denylist(db, items: Sequence[RawItem]) -> dict:

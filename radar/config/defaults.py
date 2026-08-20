@@ -452,10 +452,10 @@ DEFAULT_SOURCES = [
     SourceConfig(key="conception_x", track="A"),
     SourceConfig(key="entrepreneur_first", track="A"),
     # Client ask A5 — named early-stage announcement sources, not portfolio
-    # dumps. Founders Factory "Investing in X" posts and UCL Ventures news
-    # (not the dead uclb.com portfolio) are where companies appear first.
+    # dumps. Founders Factory non-investment articles stay discovery; its
+    # "Investing in X" posts are inverted into the denylist (same rule as Zinc).
     SourceConfig(key="founders_factory", track="A",
-                 note="Founders Factory announcement posts"),
+                 note="Studio news; Investing-in posts are denylist"),
     SourceConfig(key="ucl_ventures", track="A",
                  note="UCL Ventures spinout news"),
     SourceConfig(key="businesscloud", track="A"),
