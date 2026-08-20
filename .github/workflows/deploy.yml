@@ -107,6 +107,22 @@ jobs:
             echo "== rescoring all companies under the current config"
             sudo -u radar founder-radar rescore --all
           fi
+          # Self-verify the two failure modes the client actually hit: the
+          # review surface disappearing (I24) and the daily run silently not
+          # firing (I23). If a deploy leaves either down, fail loudly here
+          # rather than let "it's still the same" surface days later.
+          echo "== verifying services are active after deploy"
+          fail=0
+          for unit in founder-radar-web.service founder-radar.timer; do
+            if systemctl is-active --quiet "$unit"; then
+              echo "  ok: $unit active"
+            else
+              echo "::error::$unit is not active after deploy"
+              systemctl status --no-pager --lines 20 "$unit" || true
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
           echo "== after:  $(run_git rev-parse --short HEAD)"
           REMOTE
-          echo "Deploy finished. Verify /api/today on the host."
+          echo "Deploy finished and services verified. Also spot-check /api/today on the host."
