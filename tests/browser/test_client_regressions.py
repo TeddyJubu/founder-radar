@@ -36,14 +36,14 @@ HELP_SECTIONS = (
 def _inject(demo_db, companies) -> list[str]:
     """Store, provenance and score `companies`; returns their ids.
 
-    Mirrors the demo build in `conftest._build_demo_db` so an injected company
+    Mirrors the demo build in `tests.demo_db.build` so an injected company
     is indistinguishable from a demo one.
     """
     from radar.config.defaults import default_config
     from radar.pipeline import score_company
     from radar.store.db import Db, now_iso
+    from tests.demo_db import TODAY
     from tests.factories import store_company
-    from tests.unit.test_track_b_end_to_end import TODAY
 
     db = Db(str(demo_db))
     cfg = default_config()
