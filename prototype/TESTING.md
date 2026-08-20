@@ -27,26 +27,12 @@ cp /tmp/demo.db /tmp/test-run.db          # if /tmp/demo.db is gone, see 0.2
 ### 0.2 Rebuild the demo database from scratch (only if `/tmp/demo.db` is missing)
 
 ```bash
-.venv/bin/python - <<'PY'
-import sys; sys.path.insert(0, ".")
-from radar.store.db import Db
-from radar.config.defaults import default_config
-from radar.pipeline import enrich_stage, resolve_item, score_company
-from radar.sources.base import FetchContext
-from radar.sources.companies_house import CompaniesHouseAdapter
-from tests.unit.test_track_b_end_to_end import MockCompaniesHouse, TODAY
-
-db = Db("/tmp/test-run.db"); db.migrate(); cfg = default_config()
-http = MockCompaniesHouse()
-for it in CompaniesHouseAdapter(api_key="demo", days_back=90, window_days=90).fetch(
-        FetchContext(http=http, config=cfg, db=db, now=TODAY)):
-    resolve_item(db, it, cfg)
-enrich_stage(db, cfg, http, api_key="demo")
-for r in db.query("SELECT id FROM company"):
-    score_company(db, r["id"], cfg, today=TODAY)
-print("companies:", db.scalar("SELECT COUNT(*) FROM company"))
-PY
+.venv/bin/python scripts/seed_demo_db.py /tmp/demo.db
 ```
+
+Pass a different path for a one-off copy (`/tmp/test-run.db`) instead of
+copying. The script is the same recipe the Cloud Agent Today server and the
+browser suite use (`tests.demo_db.build`).
 
 This yields register-derived companies only (all `coverage = 0.8`), so no card
 will be `thin`. **D7b** and **X7** then have nothing to assert against — record

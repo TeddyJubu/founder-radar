@@ -25,76 +25,18 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from pathlib import Path
 
 import pytest
 
 from radar.pipeline import company_from_row, enrich_stage, resolve_item, score_company
 from radar.sources.base import FetchContext
 from radar.sources.companies_house import CompaniesHouseAdapter
-
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "api"
+from tests.demo_db import TODAY, MockCompaniesHouse
 
 #: The fixtures are a coherent set built around 06-scoring §11's worked
 #: example: METZERO LIMITED, 15021884, incorporated 2026-06-14 in Newcastle,
 #: SIC 62012, SH01 filed 2026-07-30.
 METZERO = "15021884"
-TODAY = date(2026, 8, 8)
-
-
-def _fixture(name: str):
-    return json.loads((FIXTURES / name).read_text())
-
-
-class FakeResponse:
-    def __init__(self, payload, status=200):
-        self._payload = payload
-        self.status = status
-        self.text = json.dumps(payload)
-
-    @property
-    def ok(self):
-        return 200 <= self.status < 400
-
-    def json(self):
-        return self._payload
-
-
-class MockCompaniesHouse:
-    """Every Companies House and postcodes.io endpoint, served from fixtures.
-
-    Routing by URL rather than by call order, because the enrichment passes
-    interleave: officers, PSC, prior appointments and filing history are
-    fetched per company, and asserting an order would pin an implementation
-    detail rather than a contract.
-    """
-
-    def __init__(self) -> None:
-        self.calls: list[str] = []
-
-    def get(self, url, **kw):  # noqa: ARG002 - the adapter's http protocol
-        self.calls.append(url)
-        if "/advanced-search/companies" in url:
-            return FakeResponse(_fixture("ch_advanced_search_page.json"))
-        if "postcodes.io" in url:
-            outcode = url.rstrip("/").rsplit("/", 1)[-1].upper()
-            table = _fixture("postcodes_io_outcodes.json")
-            body = table.get(outcode)
-            if body is None:
-                return FakeResponse({"status": 404, "error": "not found"}, status=404)
-            return FakeResponse(body)
-        if "/persons-with-significant-control" in url:
-            return FakeResponse(_fixture("ch_psc.json"))
-        if "/appointments" in url:
-            return FakeResponse(_fixture("ch_officer_appointments.json"))
-        if "/officers" in url:
-            return FakeResponse(_fixture("ch_officers_with_dob.json"))
-        if "/filing-history" in url:
-            return FakeResponse(_fixture("ch_filing_history_sh01.json"))
-        return FakeResponse({}, status=404)
-
-    def count(self, fragment: str) -> int:
-        return sum(1 for c in self.calls if fragment in c)
 
 
 @pytest.fixture
