@@ -1080,16 +1080,18 @@ def _weights_grid(cfg: Any) -> list[list[str]]:
     return grid
 
 
-def _strip_website_from_lists_grid(
+def _strip_qualifiers_from_lists_grid(
     grid: Sequence[Sequence[Any]],
+    drop: Sequence[str],
 ) -> list[list[str]] | None:
-    """Blank `website` cells in the Lists-tab `qualifiers` column.
+    """Blank named cells in the Lists-tab `qualifiers` column.
 
     Rewriting the whole tab would drop extra columns Aryan may have added.
-    Empty cells are ignored by `parse_lists`, so this is the one-cell J25 fix.
+    Empty cells are ignored by `parse_lists`.
     """
     if not grid:
         return None
+    drop_set = {name.lower() for name in drop}
     header = [str(c).strip() for c in grid[0]]
     try:
         index = header.index("qualifiers")
@@ -1100,10 +1102,17 @@ def _strip_website_from_lists_grid(
     for row in out[1:]:
         while len(row) <= index:
             row.append("")
-        if str(row[index]).strip().lower() == "website":
+        if str(row[index]).strip().lower() in drop_set:
             row[index] = ""
             changed = True
     return out if changed else None
+
+
+def _strip_website_from_lists_grid(
+    grid: Sequence[Sequence[Any]],
+) -> list[list[str]] | None:
+    """Blank `website` cells in the Lists-tab `qualifiers` column."""
+    return _strip_qualifiers_from_lists_grid(grid, ("website",))
 
 
 def _lists_grid(cfg: Any) -> list[list[str]]:
@@ -1179,9 +1188,10 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
     from radar.config.loader import (
         FUND_CRITERIA_STATUS_COL,
         J25_META,
+        J25B_META,
         SETTINGS_STATUS_COL,
         WEIGHTS_STATUS_COL,
-        drop_legacy_website_qualifier,
+        drop_legacy_admitting_qualifiers,
         load_config,
         save_snapshot,
     )
@@ -1206,17 +1216,23 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
 
     result = load_config(raw, db=db)
     cfg = result.config
-    lists, stripped = drop_legacy_website_qualifier(cfg.lists, db)
+    lists, stripped = drop_legacy_admitting_qualifiers(cfg.lists, db)
     if stripped:
         cfg = cfg.model_copy(update={"lists": lists})
         save_snapshot(db, cfg, is_last_good=True)
-        patched = _strip_website_from_lists_grid(raw.get(LISTS, []))
+        patched = _strip_qualifiers_from_lists_grid(raw.get(LISTS, []), stripped)
         if patched:
             width = col_letter(max(len(r) for r in patched) - 1)
             seed_writes.append(ValueRange(a1(LISTS, "A", 1, width, len(patched)), patched))
+        if "website" in stripped:
             db.set_meta(J25_META, "1")
-    elif db.get_meta(J25_META) != "1":
-        db.set_meta(J25_META, "1")
+        if "repeat_founder" in stripped:
+            db.set_meta(J25B_META, "1")
+    else:
+        if db.get_meta(J25_META) != "1":
+            db.set_meta(J25_META, "1")
+        if db.get_meta(J25B_META) != "1":
+            db.set_meta(J25B_META, "1")
 
     counts = {
         "companies": db.scalar(

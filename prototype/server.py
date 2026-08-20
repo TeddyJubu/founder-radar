@@ -31,6 +31,7 @@ import sqlite3
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).resolve().parent
@@ -39,6 +40,11 @@ log = logging.getLogger(__name__)
 # Tiers a human is asked to look at. `reject` never reaches Today: the gates
 # already decided, and re-litigating them is what the Companies tab is for.
 REVIEWABLE = ("shortlist", "watchlist")
+REGISTRY_ROUTES = ("registry", "", None)
+VENTURE_SIGNAL_KINDS = (
+    "share_issue", "grant_award", "spinout", "press", "news", "competition_win",
+)
+TRACK_A_ROUTES = ("news", "grant", "spinout", "accelerator")
 
 # Today diagnostics deliberately expose counts, not row-level data. The first
 # matching key is the one reported for a company, so the rows reconcile to the
@@ -57,6 +63,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "missing_provenance": "No usable source URL",
     "reviewed_today": "Already reviewed today",
     "display_limit": "Beyond today's display limit",
+    "registry_without_venture_signal": "Companies House only, no venture signal",
 }
 TODAY_DIAGNOSTIC_ORDER = tuple(TODAY_DIAGNOSTIC_LABELS)
 
@@ -67,6 +74,116 @@ def _is_http_url(value: str | None) -> bool:
         return False
     parsed = urlsplit(str(value).strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _active_config_hash(conn: sqlite3.Connection) -> str | None:
+    """The score generation Today should read.
+
+    Older config_hash rows must not fill the queue: after a sheet-driven
+    rescore the live box kept `dsw` watchlist cards next to the new
+    `dsw ventures` rejects (J25 / I23). When a last-good snapshot exists,
+    use the *canonicalized* in-memory hash so remapped fund keys match the
+    scores `load_runtime_config` will write. Tests without a snapshot keep
+    the historical latest-per-fund behaviour.
+    """
+    try:
+        row = conn.execute(
+            "SELECT config_json FROM config_snapshot WHERE is_last_good = 1 "
+            "ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    if not row or not row["config_json"]:
+        return None
+    from radar.config.loader import parse_snapshot
+
+    cfg = parse_snapshot(row["config_json"])
+    return cfg.hash() if cfg is not None else None
+
+
+def _is_registry_route(route: str | None) -> bool:
+    return (route or "registry") in {"registry", ""}
+
+
+def _is_track_a_route(route: str | None) -> bool:
+    return (route or "") in TRACK_A_ROUTES
+
+
+def _row_company_id(row: sqlite3.Row) -> str:
+    keys = row.keys()
+    if "company_id" in keys:
+        return row["company_id"]
+    return row["id"]
+
+
+def _has_non_ch_source(conn: sqlite3.Connection, company_id: str) -> bool:
+    rows = conn.execute(
+        "SELECT source_key, source_url FROM company_source WHERE company_id = ?",
+        (company_id,),
+    )
+    return any(
+        row["source_key"] != "companies_house" and _is_http_url(row["source_url"])
+        for row in rows
+    )
+
+
+def _has_registry_venture_signal(conn: sqlite3.Connection, company_id: str) -> bool:
+    """True when a Companies House card has a real venture signal, not just a Ltd."""
+    if _has_non_ch_source(conn, company_id):
+        return True
+    row = conn.execute(
+        "SELECT has_share_issue, is_university_spinout, news_mention_count "
+        "FROM company WHERE id = ?",
+        (company_id,),
+    ).fetchone()
+    if row is not None:
+        if row["has_share_issue"] or row["is_university_spinout"]:
+            return True
+        if (row["news_mention_count"] or 0) > 0:
+            return True
+    placeholders = ",".join("?" * len(VENTURE_SIGNAL_KINDS))
+    found = conn.execute(
+        f"SELECT 1 FROM signal WHERE company_id = ? AND kind IN ({placeholders}) "
+        "LIMIT 1",
+        (company_id, *VENTURE_SIGNAL_KINDS),
+    ).fetchone()
+    return found is not None
+
+
+def _today_block_reason(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    config: Any,
+    *,
+    today: date,
+) -> str | None:
+    """First freshness / venture-signal reason a company cannot occupy Today.
+
+    Track A (grant / news / spinout / accelerator) may surface with unknown
+    age: those feeds often lack a Companies House incorporation date.
+    Registry cards still need a verified age *and* a real venture signal —
+    incorporation plus a prior directorship is how random Ltd names filled
+    the live queue.
+    """
+    from radar.score.gates import apply_freshness_gates
+
+    freshness = apply_freshness_gates(row, config, today=today)
+    if not freshness.passed:
+        return freshness.reason or "freshness_gate"
+    flags = list(freshness.flags)
+    if _is_registry_route(row["discovery_route"]):
+        if not row["incorporated_on"] or "age_unknown" in flags:
+            return "age_unknown"
+        leftover = [flag for flag in flags if flag != "age_unknown"]
+        if leftover:
+            return leftover[0]
+        if not _has_registry_venture_signal(conn, _row_company_id(row)):
+            return "registry_without_venture_signal"
+        return None
+    leftover = [flag for flag in flags if flag != "age_unknown"]
+    if leftover:
+        return leftover[0]
+    return None
 
 
 def _source_name(key: str | None) -> str:
@@ -428,26 +545,51 @@ def _today_review_date() -> str:
     return date.today().isoformat()
 
 
-def _eligible_today_company_ids(conn: sqlite3.Connection) -> set[str]:
+def _http_source_company_ids(conn: sqlite3.Connection) -> set[str]:
+    return {
+        row["company_id"]
+        for row in conn.execute(
+            "SELECT company_id, source_url FROM company_source"
+        )
+        if _is_http_url(row["source_url"])
+    }
+
+
+def _eligible_today_company_ids(
+    conn: sqlite3.Connection,
+    config: Any,
+    *,
+    today: date,
+    config_hash: str | None,
+) -> set[str]:
     """Companies that can actually appear on Today, before daily decisions.
 
     Keep this count aligned with the queue's hard gates and provenance guard so
     the completed state can distinguish "nothing surfaced" from "everything
     surfaced has been reviewed".
     """
-    rows = conn.execute(
-        """SELECT DISTINCT c.id, cs.source_url
-             FROM company c
-             JOIN score s ON s.company_id = c.id
-             JOIN company_source cs ON cs.company_id = c.id
-            WHERE s.tier IN (?, ?)
-              AND c.merged_into IS NULL
-              AND c.incorporated_on IS NOT NULL
-              AND (cs.source_url LIKE 'http://%' OR
-                   cs.source_url LIKE 'https://%')""",
-        REVIEWABLE,
-    )
-    return {row["id"] for row in rows if _is_http_url(row["source_url"])}
+    sql = """SELECT c.id AS company_id, c.discovery_route, c.incorporated_on,
+                    c.country_iso2, c.hq_region, c.hq_postcode,
+                    c.companies_house_no, c.hq_city, c.total_funding_gbp,
+                    c.stage, c.on_vc_portfolio
+               FROM company c
+               JOIN score s ON s.company_id = c.id
+              WHERE s.tier IN (?, ?)
+                AND c.merged_into IS NULL"""
+    params: list[Any] = list(REVIEWABLE)
+    if config_hash:
+        sql += " AND s.config_hash = ?"
+        params.append(config_hash)
+    sql += " GROUP BY c.id"
+    source_ids = _http_source_company_ids(conn)
+    eligible: set[str] = set()
+    for row in conn.execute(sql, params):
+        if row["company_id"] not in source_ids:
+            continue
+        if _today_block_reason(conn, row, config, today=today):
+            continue
+        eligible.add(row["company_id"])
+    return eligible
 
 
 def _today_eligibility_diagnostics(
@@ -458,37 +600,32 @@ def _today_eligibility_diagnostics(
     review_date: str,
     limit: int,
     shown_ids: set[str],
+    config_hash: str | None,
 ) -> dict:
     """Explain the Today drop-off using the same final gates as the queue.
 
     This is intentionally an aggregate-only contract. It reads the scored
-    company population, applies ``apply_freshness_gates`` at the same
-    acceptance boundary as ``build_today``, and assigns each scored company
-    one first blocking reason. Names, URLs, score explanations, and scraped
-    values never leave this function.
+    company population, applies the same acceptance boundary as
+    ``build_today``, and assigns each scored company one first blocking
+    reason. Names, URLs, score explanations, and scraped values never leave
+    this function.
     """
-    from radar.score.gates import apply_freshness_gates
 
     rows = conn.execute(
-        """SELECT c.id AS company_id, c.merged_into, c.incorporated_on,
+        f"""SELECT c.id AS company_id, c.merged_into, c.incorporated_on,
                          c.country_iso2, c.hq_region, c.hq_postcode,
                          c.companies_house_no, c.hq_city, c.total_funding_gbp,
-                         c.stage, c.on_vc_portfolio,
+                         c.stage, c.on_vc_portfolio, c.discovery_route,
                          MAX(CASE WHEN s.tier IN (?, ?) THEN 1 ELSE 0 END)
                              AS has_reviewable_score
                     FROM company c
                     JOIN score s ON s.company_id = c.id
+                         {"AND s.config_hash = ?" if config_hash else ""}
                    GROUP BY c.id""",
-        REVIEWABLE,
+        (*REVIEWABLE, *([config_hash] if config_hash else [])),
     ).fetchall()
 
-    source_ids = {
-        row["company_id"]
-        for row in conn.execute(
-            "SELECT company_id, source_url FROM company_source"
-        )
-        if _is_http_url(row["source_url"])
-    }
+    source_ids = _http_source_company_ids(conn)
     reviewed_ids = {
         row["company_id"]
         for row in conn.execute(
@@ -514,12 +651,9 @@ def _today_eligibility_diagnostics(
             continue
 
         reviewable_companies += 1
-        freshness = apply_freshness_gates(row, config, today=today)
-        if not freshness.passed:
-            exclude(freshness.reason or "freshness_gate")
-            continue
-        if freshness.flags:
-            exclude(freshness.flags[0])
+        blocked = _today_block_reason(conn, row, config, today=today)
+        if blocked:
+            exclude(blocked)
             continue
         if company_id not in source_ids:
             exclude("missing_provenance")
@@ -920,6 +1054,8 @@ def _fund_score_payload(
     company_id: str,
     config: Any,
     vehicles: dict[str, dict],
+    *,
+    config_hash: str | None = None,
 ) -> list[dict]:
     """Return the latest score for every configured fund, in config order.
 
@@ -928,14 +1064,16 @@ def _fund_score_payload(
     ``None`` rather than being mistaken for a zero match.
     """
     latest: dict[str, sqlite3.Row] = {}
-    for row in conn.execute(
-        """SELECT id, fund_key, vehicle_key, fund_fit_pct, coverage, tier,
+    sql = """SELECT id, fund_key, vehicle_key, fund_fit_pct, coverage, tier,
                          reject_reason, scored_at
                   FROM score
-                 WHERE company_id = ?
-                 ORDER BY scored_at DESC, id DESC""",
-        (company_id,),
-    ):
+                 WHERE company_id = ?"""
+    params: list[Any] = [company_id]
+    if config_hash:
+        sql += " AND config_hash = ?"
+        params.append(config_hash)
+    sql += " ORDER BY scored_at DESC, id DESC"
+    for row in conn.execute(sql, params):
         latest.setdefault(row["fund_key"], row)
 
     scores: list[dict] = []
@@ -959,13 +1097,14 @@ def _fund_score_payload(
 
 
 def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
-    from radar.score.gates import apply_freshness_gates
-
     config = _config(conn)
     vehicles = _vehicles(conn)
     today = date.today()
     review_date = today.isoformat()
-    eligible_ids = _eligible_today_company_ids(conn)
+    config_hash = _active_config_hash(conn)
+    eligible_ids = _eligible_today_company_ids(
+        conn, config, today=today, config_hash=config_hash,
+    )
     reviewed_ids = {
         row["company_id"] for row in conn.execute(
             "SELECT company_id FROM daily_review WHERE review_date = ?",
@@ -976,14 +1115,17 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
     # One row per company: the fund it fits best. The others become "also
     # fits", because the decision Aryan is making is "who do I send this to",
     # and four rows for one company is the version-1 complaint about scanning.
+    hash_sql = "WHERE s.config_hash = ?" if config_hash else ""
+    hash_params: tuple[Any, ...] = (config_hash,) if config_hash else ()
     rows = conn.execute(
-        """WITH latest_scores AS (
+        f"""WITH latest_scores AS (
               SELECT s.*,
                      ROW_NUMBER() OVER (
                        PARTITION BY s.company_id, s.fund_key
                        ORDER BY s.scored_at DESC, s.id DESC
                      ) AS score_rank
                 FROM score s
+                {hash_sql}
              )
              SELECT s.id sid, s.company_id, s.fund_key, s.vehicle_key, s.tier,
                   s.fund_fit_pct, s.discovery_edge, s.coverage, s.priority,
@@ -999,11 +1141,10 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                      FROM latest_scores s2
                      JOIN company c2 ON c2.id = s2.company_id
                     WHERE s2.score_rank = 1
-                      AND s2.tier IN (?, ?) AND c2.incorporated_on IS NOT NULL
+                      AND s2.tier IN (?, ?)
                     GROUP BY s2.company_id) t
                ON t.company_id = s.company_id AND t.best = s.priority
             WHERE s.score_rank = 1 AND s.tier IN (?, ?) AND c.merged_into IS NULL
-              AND c.incorporated_on IS NOT NULL
               AND NOT EXISTS (
                     SELECT 1 FROM daily_review dr
                      WHERE dr.company_id = c.id
@@ -1016,13 +1157,13 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                             cs.source_url LIKE 'https://%')
               )
             GROUP BY s.company_id
-            -- Ties break on coverage: among companies the scoring cannot
-            -- separate, review the one we actually know something about
-            -- first. Age is a prerequisite for this surface; an unknown-age
-            -- row stays in the research pool until enrichment verifies it.
-            ORDER BY s.priority DESC, s.coverage DESC, c.canonical_name
+            -- Track A first so a pile of Companies House watchlist rows
+            -- cannot occupy the page before grant/news/spinout cards.
+            ORDER BY CASE WHEN c.discovery_route IN ('news','grant','spinout',
+                         'accelerator') THEN 0 ELSE 1 END,
+                     s.priority DESC, s.coverage DESC, c.canonical_name
             """,
-        (*REVIEWABLE, *REVIEWABLE, review_date),
+        (*hash_params, *REVIEWABLE, *REVIEWABLE, review_date),
     ).fetchall()
 
     verdicts = {
@@ -1031,19 +1172,38 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "SELECT company_id, value FROM user_field WHERE field = 'verdict'")
     }
 
-    out = []
+    also_sql = """WITH latest_fund_scores AS (
+                  SELECT fund_key, tier, fund_fit_pct,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY company_id, fund_key
+                           ORDER BY scored_at DESC, id DESC
+                         ) AS score_rank
+                    FROM score
+                   WHERE company_id = ? AND fund_key != ?"""
+    if config_hash:
+        also_sql += " AND config_hash = ?"
+    also_sql += """
+                )
+                SELECT fund_key, tier, fund_fit_pct
+                  FROM latest_fund_scores
+                 WHERE score_rank = 1 AND tier != 'reject'
+                 ORDER BY fund_fit_pct DESC"""
+
+    passing: list[sqlite3.Row] = []
     for r in rows:
-        if len(out) >= limit:
-            break
-
-        # A score row can outlive a configuration change or a failed rescore.
-        # Re-apply the authoritative universal gates at this acceptance
-        # boundary so old, funded, foreign, or unknown-age companies cannot
-        # leak into the opportunity queue through a stale watchlist row.
-        freshness = apply_freshness_gates(r, config, today=today)
-        if not freshness.passed or freshness.flags:
+        if _today_block_reason(conn, r, config, today=today):
             continue
+        passing.append(r)
 
+    passing.sort(key=lambda r: (
+        0 if _is_track_a_route(r["discovery_route"]) else 1,
+        -(r["priority"] or 0),
+        -(r["coverage"] or 0),
+        r["canonical_name"] or "",
+    ))
+
+    out = []
+    for r in passing[: max(0, int(limit))]:
         vehicle = vehicles.get(r["vehicle_key"] or "", {})
         phrase, exact = _age_phrase(r["incorporated_on"], today)
 
@@ -1088,7 +1248,10 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                  FROM company_source WHERE company_id = ?
                 ORDER BY first_seen DESC""",
             (r["company_id"],)) if _is_http_url(s["source_url"])]
-        source = sources[0] if sources else None
+        source = next(
+            (item for item in sources if item["source_key"] != "companies_house"),
+            sources[0] if sources else None,
+        )
         if source is None:
             # The SQL guard is intentionally cheap; this second check handles
             # malformed values such as `https://` without leaking a card that
@@ -1100,22 +1263,13 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                  FROM score_component WHERE score_id = ? ORDER BY contribution DESC""",
             (r["sid"],))]
 
-        also = [dict(a) for a in conn.execute(
-            """WITH latest_fund_scores AS (
-                  SELECT fund_key, tier, fund_fit_pct,
-                         ROW_NUMBER() OVER (
-                           PARTITION BY company_id, fund_key
-                           ORDER BY scored_at DESC, id DESC
-                         ) AS score_rank
-                    FROM score
-                   WHERE company_id = ? AND fund_key != ?
-                )
-                SELECT fund_key, tier, fund_fit_pct
-                  FROM latest_fund_scores
-                 WHERE score_rank = 1 AND tier != 'reject'
-                 ORDER BY fund_fit_pct DESC""",
-            (r["company_id"], r["fund_key"]))]
-        fund_scores = _fund_score_payload(conn, r["company_id"], config, vehicles)
+        also_params: list[Any] = [r["company_id"], r["fund_key"]]
+        if config_hash:
+            also_params.append(config_hash)
+        also = [dict(a) for a in conn.execute(also_sql, also_params)]
+        fund_scores = _fund_score_payload(
+            conn, r["company_id"], config, vehicles, config_hash=config_hash,
+        )
 
         out.append({
             "company_id": r["company_id"],
@@ -1154,8 +1308,14 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "verdict": verdicts.get(r["company_id"]),
         })
 
-    counts = dict(conn.execute(
-        "SELECT tier, COUNT(*) FROM score GROUP BY tier").fetchall())
+    if config_hash:
+        counts = dict(conn.execute(
+            "SELECT tier, COUNT(*) FROM score WHERE config_hash = ? GROUP BY tier",
+            (config_hash,),
+        ).fetchall())
+    else:
+        counts = dict(conn.execute(
+            "SELECT tier, COUNT(*) FROM score GROUP BY tier").fetchall())
     run = conn.execute(
         "SELECT started_at, items_fetched, companies_new, shortlisted, status "
         "FROM run ORDER BY id DESC LIMIT 1").fetchone()
@@ -1166,6 +1326,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
         review_date=review_date,
         limit=limit,
         shown_ids={row["company_id"] for row in out},
+        config_hash=config_hash,
     )
 
     return {

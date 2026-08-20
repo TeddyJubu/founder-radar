@@ -71,9 +71,10 @@ asks "why did this drop off my list?", the answer has to be a number he can chec
   credible, but other scouts can see them too.
 - **Track B — registry-first.** Newly incorporated UK tech companies straight from
   Companies House, qualified by free public evidence — a share-allotment filing
-  (SH01), a grant, a university spinout, press in a tracked source, or a repeat
-  founder. A live website is recorded when found, but it does not by itself
-  admit a registry company: almost every Ltd has one. Lower yield, very high
+  (SH01), a grant, a university spinout, or press in a tracked source. A live
+  website and a prior Companies House appointment are recorded when found, but
+  neither admits a registry company on its own: almost every Ltd has a website,
+  and formation agents sit on thousands of new companies. Lower yield, very high
   edge. This is where the client finds what no fund has seen.
 
 Track B only works because of the derivation step: a register entry has no sector,

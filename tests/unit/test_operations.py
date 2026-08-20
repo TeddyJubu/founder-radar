@@ -32,7 +32,7 @@ from click.testing import CliRunner
 
 from radar.store.db import Db
 
-from tests.factories import C, store_company
+from tests.factories import C, registry_company, store_company
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -807,12 +807,12 @@ def test_today_requires_verified_age_and_uk_presence(db):
 
     stamp = now_iso()
 
-    def add(company, *, priority):
+    def add(company, *, priority, source_key="uktn"):
         cid = store_company(db, company)
         db.execute(
             "INSERT INTO company_source(company_id, source_key, external_id, "
             "source_url, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
-            (cid, "uktn", f"source-{cid}", "https://uktn.co.uk/story", stamp, stamp),
+            (cid, source_key, f"source-{cid}", "https://uktn.co.uk/story", stamp, stamp),
         )
         db.execute(
             """INSERT INTO score
@@ -826,7 +826,21 @@ def test_today_requires_verified_age_and_uk_presence(db):
         return cid
 
     valid = add(C(canonical_name="Verified UK Co", age_months=6, country="GB"), priority=90)
-    add(C(canonical_name="Unknown Age Co", age_months=None, country="GB"), priority=100)
+    news_unknown = add(
+        C(canonical_name="Unknown Age Co", age_months=None, country="GB",
+          discovery_route="news"),
+        priority=100,
+    )
+    registry_unknown = add(
+        registry_company(
+            canonical_name="Registry Unknown Age Ltd",
+            norm_key="registryunknownage",
+            age_months=None,
+            has_share_issue=True,
+        ),
+        priority=101,
+        source_key="companies_house",
+    )
     add(C(canonical_name="Old UK Co", age_months=60, country="GB"), priority=99)
     add(C(canonical_name="Funded UK Co", age_months=6, country="GB", funding=4_000_000), priority=98)
     add(C(canonical_name="Dubai Co", age_months=6, country="AE"), priority=95)
@@ -835,13 +849,17 @@ def test_today_requires_verified_age_and_uk_presence(db):
           hq_city="Dubai"), priority=94)
 
     payload = build_today(db.conn)
-    assert [c["company_id"] for c in payload["companies"]] == [valid]
+    shown = [c["company_id"] for c in payload["companies"]]
+    assert news_unknown in shown
+    assert valid in shown
+    assert registry_unknown not in shown
+    assert set(shown) == {news_unknown, valid}
     assert len(payload["companies"][0]["fund_scores"]) == 4
 
     diagnostics = payload["eligibility_diagnostics"]
-    assert diagnostics["scored_companies"] == 6
-    assert diagnostics["eligible_before_review"] == 1
-    assert diagnostics["shown"] == 1
+    assert diagnostics["scored_companies"] == 7
+    assert diagnostics["eligible_before_review"] == 2
+    assert diagnostics["shown"] == 2
     assert diagnostics["excluded"] == 5
     assert {row["key"]: row["count"] for row in diagnostics["reasons"]} == {
         "age_unknown": 1,

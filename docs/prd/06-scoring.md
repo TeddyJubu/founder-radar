@@ -178,7 +178,7 @@ Roughly 60,000 companies are incorporated in the UK every month. Most are dorman
 | `grant` | matched to a UKRI or Innovate UK award |
 | `spinout` | matched to a university spinout announcement |
 | `press` | matched to any news article |
-| `repeat_founder` | an officer with a prior UK directorship |
+| `repeat_founder` | an officer with a prior UK directorship. **Proven, not admitting by default** — add `repeat_founder` to the Lists tab `qualifiers` column to loosen. |
 | `website` | a live company website resolved and reachable. **Proven, not admitting by default** — add `website` to the Lists tab `qualifiers` column to loosen. |
 
 Companies with none of the *admitting* qualifiers stay in the `candidates` pool with `qualified = 0`. They are **not rejected** — they are re-checked on every run, because a company incorporated today may file an SH01 next month. They simply never reach the sheet until they earn it.

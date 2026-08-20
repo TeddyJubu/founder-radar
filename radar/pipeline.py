@@ -315,6 +315,10 @@ def score_company(db: Db, company_id: str, cfg: Any, *, today: date | None = Non
             "UPDATE company SET qualified = 0, updated_at = ? WHERE id = ?",
             (now_iso(), company_id),
         )
+        # Stale watchlist rows otherwise keep filling Today after the
+        # admitting bar tightens (live J25 leak: old `dsw` scores outlived
+        # the new `dsw ventures` rejects).
+        db.execute("DELETE FROM score WHERE company_id = ?", (company_id,))
         return 0
 
     scores = evaluate(company, cfg, today=today, config_hash=config_hash,
@@ -374,6 +378,19 @@ def score_company(db: Db, company_id: str, cfg: Any, *, today: date | None = Non
                 for component in [*score.components, *score.edge_components]
             ],
         )
+    if scores:
+        current_hash = scores[0].config_hash
+        if fund_key is None:
+            db.execute(
+                "DELETE FROM score WHERE company_id = ? AND config_hash != ?",
+                (company_id, current_hash),
+            )
+        else:
+            db.execute(
+                "DELETE FROM score WHERE company_id = ? AND fund_key = ? "
+                "AND config_hash != ?",
+                (company_id, fund_key, current_hash),
+            )
     return len(scores)
 
 
@@ -566,6 +583,13 @@ def rescore_all(db: Db, cfg: Any, *, today: date | None = None) -> dict[str, Any
                 [(ids[(cid, fund, vehicle)], key, label, sub, weight, contribution, evidence)
                  for cid, fund, vehicle, key, label, sub, weight, contribution, evidence
                  in component_rows],
+            )
+        unqualified_ids = [cid for qualified, _, cid in qualified_updates if not qualified]
+        db.execute("DELETE FROM score WHERE config_hash != ?", (config_hash,))
+        if unqualified_ids:
+            db.executemany(
+                "DELETE FROM score WHERE company_id = ?",
+                [(cid,) for cid in unqualified_ids],
             )
 
     return {"scored": len(companies), "shortlisted": shortlisted,

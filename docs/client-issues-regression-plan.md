@@ -315,26 +315,44 @@ discovery itself."* Symptoms: registered company names with little context, and
 startups".
 
 Fix (this change): a registry (Track B) company is admitted to scoring only by a
-real venture signal — share allotment (SH01), grant, university spinout, press
-in a tracked source, or a repeat founder. A live **website is no longer an
-admitting qualifier**: almost every registered Ltd has one, so it was the exact
-"small business" leak. Companies House keeps its verify/enrich role (the birthday
-gate, officers, filings, the CH-verified badge); it no longer surfaces
-context-less names on its own. The admitting set lives in the sheet
-(`lists["qualifiers"]`), so the bar is tunable without code.
+real venture signal — share allotment (SH01), grant, university spinout, or press
+in a tracked source. A live **website is no longer an admitting qualifier**: almost
+every registered Ltd has one. A **prior Companies House appointment is no longer
+admitting either**: formation agents and accountants sit on thousands of new Ltds,
+which is how names like `4DCONSTRUCTIONPLANNING LTD` filled Today. Repeat-founder
+evidence still *scores*; it does not open the door on its own. Companies House
+keeps its verify/enrich role (the birthday gate, officers, filings, the
+CH-verified badge); it no longer surfaces context-less names on its own. The
+admitting set lives in the sheet (`lists["qualifiers"]`), so the bar is tunable
+without code.
+
+Today itself now refuses a Companies House-only card unless a real venture
+signal is present, reads only the current config hash (so renamed sheet fund
+keys cannot keep old `dsw` watchlist rows alive), and lets Track A
+(grant/news/spinout) surface when incorporation date is unknown.
 
 - **NEW** `test_website_alone_does_not_admit_a_registry_company`
   (tests/unit/test_qualification_gate.py) — a registry company whose only
   qualifier is a website is not scored, not surfaced, and marked `qualified = 0`;
   adding a real signal admits it.
+- **NEW** `test_repeat_founder_alone_does_not_admit_a_registry_company` — a
+  prior appointment does not admit; adding it back to the Lists tab still can.
+- **NEW** `test_today_hides_companies_house_shells` — a CH-only watchlist row
+  cannot occupy Today.
+- **NEW** `test_today_shows_track_a_with_unknown_age` — Innovate UK / news
+  cards are not hidden just because Companies House never stamped an age.
+- **NEW** `test_today_ignores_stale_config_hash_watchlist` — an older
+  `config_hash` cannot fill the queue after a sheet-driven rescore.
+- **NEW** `test_sheet_fund_display_names_canonicalize_to_score_keys` —
+  `DSW Ventures` / `DSW SEIS Fund` score as `dsw` / `seis_fund`.
 - **NEW** `test_website_still_admits_when_the_sheet_re_enables_it` — proves the
   bar is sheet-editable (add `website` back to the Lists tab to loosen).
 - **NEW** `test_track_b_docs_do_not_treat_website_as_an_admitting_qualifier`
   — README and PRD no longer list a live website as Track B admission (J25
   docs drift).
-- `test_any_single_venture_signal_admits_to_scoring` — the five real signals
-  each still admit, so the fix tightens noise without closing the high-edge
-  Track B play (SH01 + prior directorships) the client asked for on Jul 9.
+- `test_any_single_venture_signal_admits_to_scoring` — SH01, grant, spinout
+  and press each still admit, so the fix tightens noise without closing the
+  high-edge Track B play the client asked for on Jul 9.
 
 ### J26 — "It's still the same" after fixes (18–20 Aug) — 🔧 deploy (mechanism added)
 Restatement of I23: correct code was not reaching the deployed box (branch/
@@ -511,6 +529,19 @@ running" (G21).
    code defaults; paired `sic_code`/`sic_sector` columns rebuild the map.
    Pinned by `test_sheet_lists_tab_keeps_sic_map_and_j25_qualifiers` and
    `test_missing_qualifiers_list_does_not_admit_website`.
+7. **Today kept filling with Companies House shells after J25 — FIXED.** Three
+   stacked bugs: `repeat_founder` still admitted Track B; the live Fund
+   Criteria tab used display names (`DSW Ventures`) so scores landed on
+   `dsw ventures` while old `dsw` watchlist rows stayed; Today required a
+   verified age, which hid Innovate UK / news cards and left only CH names.
+   Repeat founder is no longer admitting, fund keys canonicalize, rescore
+   drops other hashes, and Today ranks Track A first while refusing
+   CH-only cards. Pinned by `test_repeat_founder_alone_does_not_admit_a_registry_company`,
+   `test_sheet_fund_display_names_canonicalize_to_score_keys`,
+   `test_today_hides_companies_house_shells`,
+   `test_today_shows_track_a_with_unknown_age`,
+   `test_today_ignores_stale_config_hash_watchlist`, and
+   `test_rescore_all_drops_scores_from_older_config_hashes`.
 
 ---
 
@@ -539,7 +570,7 @@ Every product complaint from the thread, and the pin that keeps it gone.
 | H22 | Device code on his VPS | ✅ process | |
 | I23/J26 | Updates not reflected / still the same | 🔧 | auto-deploy on push to `main` |
 | I24 | Empty dashboard / cannot log in | 🔧 | live §4 |
-| J25 | Companies House driving discovery | ✅ | website not admitting; startup sources first |
+| J25 | Companies House driving discovery | ✅ | website and repeat_founder not admitting; CH-only cards hidden on Today; startup sources first |
 | — | Fund criteria in the sheet, not the code | ✅ | stage ① now loads the sheet on `founder-radar run` |
 | — | Duplicate companies across sources | ✅ | entity resolution |
 | — | Hide Source Failed | ✅ | Sources tab only |

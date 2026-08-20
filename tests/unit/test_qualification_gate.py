@@ -35,11 +35,10 @@ def test_bare_registry_company_is_not_scored(db, cfg):
     assert db.scalar("SELECT qualified FROM company WHERE id = ?", (cid,)) == 0
 
 
-@pytest.mark.parametrize("q", ["share_issue", "grant", "spinout", "press",
-                               "repeat_founder"])
+@pytest.mark.parametrize("q", ["share_issue", "grant", "spinout", "press"])
 def test_any_single_venture_signal_admits_to_scoring(db, cfg, q):
     c = registry_company(qualifiers=[q], discovery_route="registry")
-    assert score_all(c, cfg) != []
+    assert score_all(c, cfg) != {}
     cid = store_company(db, c)
     assert score_company(db, cid, cfg) > 0
 
@@ -59,6 +58,26 @@ def test_website_alone_does_not_admit_a_registry_company(db, cfg):
     c2 = registry_company(qualifiers=["website", "share_issue"],
                           discovery_route="registry")
     assert score_all(c2, cfg) != {}
+
+
+def test_repeat_founder_alone_does_not_admit_a_registry_company(db, cfg):
+    """A prior Companies House appointment is usually a formation agent, not a
+    founder. Names like 4DCONSTRUCTIONPLANNING LTD were admitted this way."""
+    c = registry_company(qualifiers=["repeat_founder"], discovery_route="registry")
+    assert score_all(c, cfg) == {}
+    cid = store_company(db, c)
+    assert score_company(db, cid, cfg) == 0
+    assert db.scalar("SELECT qualified FROM company WHERE id = ?", (cid,)) == 0
+
+
+def test_repeat_founder_still_admits_when_the_sheet_re_enables_it(cfg):
+    from radar.score.qualify import is_qualified
+
+    c = registry_company(qualifiers=["repeat_founder"], discovery_route="registry")
+    assert not is_qualified(c, cfg)
+
+    cfg.lists["qualifiers"] = [*cfg.lists["qualifiers"], "repeat_founder"]
+    assert is_qualified(c, cfg)
 
 
 def test_website_still_admits_when_the_sheet_re_enables_it(cfg):
@@ -83,10 +102,12 @@ def test_missing_qualifiers_list_does_not_admit_website():
     cfg = default_config()
     cfg.lists.pop("qualifiers", None)
     assert "website" not in _admitting_qualifiers(cfg)
+    assert "repeat_founder" not in _admitting_qualifiers(cfg)
     c = registry_company(qualifiers=["website"], discovery_route="registry")
     assert not is_qualified(c, cfg)
     cfg.lists["qualifiers"] = ["not_a_real_qualifier"]
     assert "website" not in _admitting_qualifiers(cfg)
+    assert "repeat_founder" not in _admitting_qualifiers(cfg)
     assert not is_qualified(c, cfg)
 
 
