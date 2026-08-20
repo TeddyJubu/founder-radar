@@ -86,7 +86,9 @@ if [ "$before" = "$remote" ]; then
 else
   say "updating $before -> $remote"
   run_git checkout main
-  run_git pull --ff-only origin main
+  # merge, not `pull origin main`: after `fetch origin main`, git 2.43
+  # errors with "Cannot fast-forward to multiple branches".
+  run_git merge --ff-only origin/main
 fi
 
 if [ "$DRY" = "1" ]; then
