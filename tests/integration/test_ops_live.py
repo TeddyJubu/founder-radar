@@ -68,9 +68,12 @@ def test_timer_is_enabled_and_scheduled():
 
 @needs_vps
 def test_heartbeat_and_backup_timers_are_enabled_too():
-    """The two timers whose absence is invisible: no heartbeat means a dead
-    run is never reported, no backup means the loss is discovered later."""
-    for unit in ("founder-radar-heartbeat.timer", "founder-radar-backup.timer"):
+    """The timers whose absence is invisible: no heartbeat means a dead
+    run is never reported, no backup means the loss is discovered later,
+    no update timer means main stops reaching the box (I23/J26)."""
+    for unit in ("founder-radar-heartbeat.timer",
+                 "founder-radar-backup.timer",
+                 "founder-radar-update.timer"):
         assert _run(["systemctl", "is-enabled", unit]).strip().startswith("enabled"), unit
 
 

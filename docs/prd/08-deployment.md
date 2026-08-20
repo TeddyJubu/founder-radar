@@ -291,14 +291,25 @@ Because the sheet is a **view**, regenerating it from a restored database fully 
 
 ### Ship a new version (this is how the box stays on `main`)
 
-Merging to `main` starts `.github/workflows/deploy.yml`: `git pull --ff-only`
-on `/opt/founder-radar/app`, `sudo bash deploy/install.sh`, `founder-radar
-doctor`, then `rescore --all`. That is the fix for "I merged but the site is
-still the same." A manual run from the Actions tab is only for a forced
-rescore without a commit.
+The VPS watches GitHub. `founder-radar-update.timer` runs
+`deploy/update-from-main.sh` a few minutes after boot and then every five
+minutes: `git pull --ff-only origin main`, `deploy/install.sh`,
+`founder-radar doctor`, then `rescore --all` when HEAD moved. That is the
+fix for "I merged but the site is still the same" — it does **not** need
+GitHub Actions secrets.
 
-Required repository secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
-(optional `VPS_PORT`). The workflow fails fast if any of those is missing.
+`install.sh` enables the timer. Logs land in `/opt/founder-radar/logs/update.log`.
+Fast-forward only; a diverged checkout fails loudly rather than force-pushing.
+A live daily scan (`founder-radar.service` active) skips the cycle so pip
+does not race the oneshot.
+
+Optional: `.github/workflows/deploy.yml` can SSH in and run the same script
+if repository secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (optional
+`VPS_PORT`) are set under Settings → Secrets and variables → Actions.
+`VPS_SSH_KEY` is a **private key** whose public half is in
+`authorized_keys` — not the root password. Missing secrets skip with
+success so the Actions tab does not go red; the box still ships via the
+timer. A manual Actions run is only for a forced rescore without a commit.
 
 ---
 

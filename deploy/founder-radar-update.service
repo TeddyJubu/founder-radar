@@ -1,0 +1,25 @@
+# /etc/systemd/system/founder-radar-update.service
+#
+# Pull origin/main and reinstall. Runs as root because deploy/install.sh
+# must. The radar user owns the checkout and runs git inside the script.
+# Secrets stay in /opt/founder-radar/.env — this unit does not load them.
+
+[Unit]
+Description=Pull origin/main and reinstall UK Founder Radar
+Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/founder-radar
+ExecStart=/opt/founder-radar/app/deploy/update-from-main.sh
+TimeoutStartSec=3600
+Nice=10
+
+StandardOutput=append:/opt/founder-radar/logs/update.log
+StandardError=append:/opt/founder-radar/logs/update.log
+
+[Install]
+WantedBy=multi-user.target
