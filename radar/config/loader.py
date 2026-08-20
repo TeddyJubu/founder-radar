@@ -63,11 +63,16 @@ WEIGHTS_STATUS_COL = "I"
 
 OK = "✅"
 
-# One-shot Lists-tab migration (client J25, 18 Aug 2026). A sheet seeded before
-# website was dropped from the admitting set would otherwise undo that bar the
-# moment stage ① started reading the sheet. After the rewrite, adding
-# `website` back is a deliberate edit and is honoured.
+# One-shot Lists-tab migrations (client J25, 18 Aug 2026). A sheet seeded
+# before these tokens were dropped from the admitting set would otherwise
+# undo the bar the moment stage ① started reading the sheet. After the
+# rewrite, adding either token back is a deliberate edit and is honoured.
 J25_META = "j25_website_not_admitting"
+J25B_META = "j25_repeat_founder_not_admitting"
+LEGACY_NON_ADMITTING_QUALIFIERS: tuple[tuple[str, str], ...] = (
+    (J25_META, "website"),
+    (J25B_META, "repeat_founder"),
+)
 
 TRUE_TOKENS = frozenset({"yes", "y", "true", "t", "1", "✓", "✔", "on", "x", "☑", "enabled"})
 FALSE_TOKENS = frozenset({"no", "n", "false", "f", "0", "off", "", "—", "-", "n/a", "☐"})
@@ -312,7 +317,8 @@ def parse_snapshot(payload: str) -> Config | None:
         cfg = Config.model_validate(json.loads(payload))
     except (ValidationError, ValueError, TypeError):
         return None
-    return cfg.model_copy(update={"sources": with_default_sources(list(cfg.sources))})
+    cfg = cfg.model_copy(update={"sources": with_default_sources(list(cfg.sources))})
+    return canonicalize_config(cfg)
 
 
 def load_last_good(db: Any) -> Config | None:
@@ -350,22 +356,157 @@ def with_default_sources(sources: Sequence[SourceConfig] | None) -> list[SourceC
     return out
 
 
+def _slug_identity(raw: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (raw or "").strip().lower()).strip("_")
+
+
+def identity_aliases() -> tuple[dict[str, str], dict[tuple[str, str], str]]:
+    """Map human Fund Criteria labels onto the canonical keys scoring stores.
+
+    The seeded tab writes `dsw` / `seis_fund`. Aryan's live tab used
+    `DSW Ventures` / `DSW SEIS Fund`. Those landed as `dsw ventures` score
+    rows, so Today treated them as a *new* fund and kept the old `dsw`
+    watchlist cards (J25 / I23 leak after stage ① started reading the sheet).
+    """
+    from radar.config.defaults import default_config
+
+    fund_alias: dict[str, str] = {}
+    vehicle_alias: dict[tuple[str, str], str] = {}
+
+    def add_fund(raw: str, key: str) -> None:
+        text = (raw or "").strip().lower()
+        if not text:
+            return
+        fund_alias[text] = key
+        slug = _slug_identity(text)
+        if slug:
+            fund_alias[slug] = key
+
+    for fund in default_config().funds:
+        add_fund(fund.key, fund.key)
+        add_fund(fund.name, fund.key)
+        add_fund(fund.name.split()[0], fund.key)
+        for vehicle in fund.vehicles:
+            for raw in (vehicle.vehicle_key, vehicle.vehicle_name):
+                text = (raw or "").strip().lower()
+                if not text:
+                    continue
+                vehicle_alias[(fund.key, text)] = vehicle.vehicle_key
+                slug = _slug_identity(text)
+                if slug:
+                    vehicle_alias[(fund.key, slug)] = vehicle.vehicle_key
+    return fund_alias, vehicle_alias
+
+
+def canonical_fund_key(raw: str, aliases: Mapping[str, str] | None = None) -> str:
+    text = (raw or "").strip().lower()
+    if not text:
+        return text
+    table = aliases if aliases is not None else identity_aliases()[0]
+    return table.get(text) or table.get(_slug_identity(text)) or text
+
+
+def canonicalize_config(cfg: Config) -> Config:
+    """Rewrite fund/vehicle keys on a loaded config onto the canonical set."""
+    fund_alias, vehicle_alias = identity_aliases()
+    merged: dict[str, Fund] = {}
+    remap: dict[str, str] = {}
+    changed = False
+    for fund in cfg.funds:
+        key = canonical_fund_key(fund.key, fund_alias)
+        remap[fund.key] = key
+        if key != fund.key:
+            changed = True
+        vehicles: list[Vehicle] = []
+        for vehicle in fund.vehicles:
+            vk = (
+                vehicle_alias.get((key, (vehicle.vehicle_key or "").strip().lower()))
+                or vehicle_alias.get((key, _slug_identity(vehicle.vehicle_key)))
+                or vehicle.vehicle_key
+            )
+            if vk != vehicle.vehicle_key or key != vehicle.fund_key:
+                changed = True
+                vehicle = vehicle.model_copy(update={"fund_key": key, "vehicle_key": vk})
+            vehicles.append(vehicle)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = fund.model_copy(update={"key": key, "vehicles": vehicles})
+        else:
+            have = {v.vehicle_key for v in existing.vehicles}
+            extra = [v for v in vehicles if v.vehicle_key not in have]
+            if extra:
+                existing.vehicles.extend(extra)
+                changed = True
+
+    if not changed and all(k == v for k, v in remap.items()):
+        return cfg
+
+    def remap_leaf(table: Mapping[str, Any] | None) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for name, value in (table or {}).items():
+            out[remap.get(name, name)] = value
+        return out
+
+    matrix: dict[str, dict[str, dict[str, int]]] = {}
+    for attribute, values in (cfg.weights.matrix or {}).items():
+        matrix[attribute] = {
+            value: remap_leaf(per_fund)
+            for value, per_fund in (values or {}).items()
+        }
+    importance = {
+        attribute: remap_leaf(per_fund)
+        for attribute, per_fund in (cfg.weights.importance or {}).items()
+    }
+    weights = cfg.weights.model_copy(update={"matrix": matrix, "importance": importance})
+    return cfg.model_copy(update={"funds": list(merged.values()), "weights": weights})
+
+
 def drop_legacy_website_qualifier(
     lists: Mapping[str, Any], db: Any = None,
 ) -> tuple[dict[str, Any], bool]:
-    """Strip `website` from the admitting set until the Lists tab is rewritten.
+    """Strip `website` from the admitting set until the Lists tab is rewritten."""
+    data, stripped = drop_legacy_admitting_qualifiers(lists, db)
+    return data, "website" in stripped
 
-    After `j25_website_not_admitting=1` is stored, adding `website` back is a
+
+def drop_legacy_admitting_qualifiers(
+    lists: Mapping[str, Any], db: Any = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Strip pre-J25 admitting tokens until each Lists-tab rewrite is stored.
+
+    After the matching `_meta` flag is `1`, adding the token back is a
     deliberate Lists-tab edit and is left untouched.
     """
     data = dict(lists)
-    if db is not None and db.get_meta(J25_META) == "1":
-        return data, False
-    quals = list(data.get("qualifiers") or [])
-    if "website" not in quals:
-        return data, False
-    data["qualifiers"] = [q for q in quals if q != "website"]
-    return data, True
+    quals = [str(q).strip() for q in (data.get("qualifiers") or [])]
+    stripped: list[str] = []
+    keep: list[str] = []
+    for token in quals:
+        drop = False
+        for meta_key, name in LEGACY_NON_ADMITTING_QUALIFIERS:
+            if token != name:
+                continue
+            already = db is not None and db.get_meta(meta_key) == "1"
+            if already:
+                break
+            drop = True
+            stripped.append(name)
+            break
+        if not drop:
+            keep.append(token)
+    if stripped:
+        data["qualifiers"] = keep
+    return data, stripped
+
+
+def _with_legacy_qualifier_strips(cfg: Config, db: Any = None) -> Config:
+    lists, stripped = drop_legacy_admitting_qualifiers(cfg.lists, db)
+    if not stripped:
+        return canonicalize_config(cfg)
+    cfg = canonicalize_config(cfg.model_copy(update={"lists": lists}))
+    if db is not None:
+        save_snapshot(db, cfg, is_last_good=True)
+    return cfg
 
 
 def sheet_credentials_present() -> bool:
@@ -399,20 +540,13 @@ def load_runtime_config(
 
             raw, _, _, _ = read_sheet_state(gw)
             loaded = load_config(raw, db=db)
-            cfg = loaded.config
-            lists, stripped = drop_legacy_website_qualifier(cfg.lists, db)
-            if stripped:
-                cfg = cfg.model_copy(update={"lists": lists})
-                if db is not None:
-                    save_snapshot(db, cfg, is_last_good=True)
+            cfg = _with_legacy_qualifier_strips(loaded.config, db)
             return cfg, gw, warnings
         except Exception as exc:  # noqa: BLE001 — fall through to last-good
             warnings.append(f"sheet not read: {type(exc).__name__}: {exc}")
     cfg = load_last_good(db)
     if cfg is not None:
-        lists, stripped = drop_legacy_website_qualifier(cfg.lists, db)
-        if stripped:
-            cfg = cfg.model_copy(update={"lists": lists})
+        cfg = _with_legacy_qualifier_strips(cfg, db)
         return cfg, gw, warnings
     return default_config(), gw, warnings
 
@@ -660,12 +794,19 @@ def parse_fund_criteria(
     stages = vocab(lists, "stage")
     sectors = vocab(lists, "sector")
     geos = tuple(vocab(lists, "geography")) + tuple(vocab(lists, "gate_geography"))
+    fund_alias, vehicle_alias = identity_aliases()
 
     for offset, row in enumerate(grid[1:], start=2):
-        fund_key = _cell(row, 0).strip().lower()
-        vehicle_key = _cell(row, 1).strip().lower()
-        if not fund_key or not vehicle_key:
+        raw_fund = _cell(row, 0).strip()
+        raw_vehicle = _cell(row, 1).strip()
+        if not raw_fund or not raw_vehicle:
             continue
+        fund_key = canonical_fund_key(raw_fund, fund_alias)
+        vehicle_key = (
+            vehicle_alias.get((fund_key, raw_vehicle.lower()))
+            or vehicle_alias.get((fund_key, _slug_identity(raw_vehicle)))
+            or raw_vehicle.lower()
+        )
 
         notes: list[str] = []
         raw_rejects = _cell(row, 12)
@@ -956,7 +1097,8 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
     funds, fund_warnings, criteria_cells = parse_fund_criteria(
         raw.get("Fund Criteria") or [], lists=lists)
 
-    fund_keys: dict[str, str] = {}
+    fund_alias, _ = identity_aliases()
+    fund_keys: dict[str, str] = dict(fund_alias)
     for fund in funds:
         fund_keys[fund.key] = fund.key
         fund_keys[fund.name.strip().lower()] = fund.key
@@ -986,7 +1128,7 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
         used_last_good = True
         errors["settings"] = f"❌ {exc.error_count()} settings could not be validated together"
 
-    cfg = Config(
+    cfg = canonicalize_config(Config(
         settings=settings,
         funds=funds or (last_good.funds if last_good else []),
         weights=weights if (weights.matrix or weights.importance)
@@ -994,7 +1136,7 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
         sources=sources,
         lists=dict(lists),
         errors=sorted(errors.values()),
-    )
+    ))
 
     if db is not None and not errors:
         save_snapshot(db, cfg, is_last_good=True)

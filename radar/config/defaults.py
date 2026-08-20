@@ -426,9 +426,11 @@ LISTS: dict[str, Any] = {
     # The qualifiers that admit a registry (Track B) company to scoring. A live
     # `website` is intentionally omitted: almost every registered Ltd has one,
     # so it is noise, not a venture signal (client feedback, 18 Aug 2026).
-    # Companies House verifies and enriches; a real signal drives discovery.
-    # Add "website" back here to loosen without touching code.
-    "qualifiers": ["share_issue", "grant", "spinout", "press", "repeat_founder"],
+    # `repeat_founder` is scored but does not admit on its own: Companies House
+    # officers with a prior appointment are accountants, formation agents, and
+    # serial small-business directors, which is how random Ltd names kept
+    # filling Today. Add either token back here to loosen without touching code.
+    "qualifiers": ["share_issue", "grant", "spinout", "press"],
 }
 
 # ------------------------------------------------------------------ sources

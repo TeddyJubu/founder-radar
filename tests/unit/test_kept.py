@@ -71,12 +71,14 @@ def test_today_excludes_a_company_after_a_decision_until_review_again(db):
 
 
 def test_today_does_not_surface_age_unverified_companies(db, config):
-    """Today is a surfaced-opportunity queue, not an age-verification queue."""
+    """Registry cards with unknown age stay in the research pool."""
     from radar.pipeline import score_company
-    from tests.factories import C, store_company
+    from tests.factories import registry_company, store_company
 
-    company = C(age_months=None, canonical_name="Age Unverified Ltd",
-                norm_key="ageunverified")
+    company = registry_company(
+        age_months=None, canonical_name="Age Unverified Ltd",
+        norm_key="ageunverified", has_share_issue=True,
+    )
     cid = store_company(db, company)
     score_company(db, cid, config, today=date(2026, 8, 8))
 
@@ -290,3 +292,131 @@ def test_dashboard_calendar_marks_a_kept_company(db):
 
     assert f"data-date='{first_seen.isoformat()}'" in html
     assert 'data-kept="true"' in html
+
+
+def _watchlist_row(db, company, *, source_key, source_url, priority, fund="dsw"):
+    from radar.store.db import now_iso
+    from tests.factories import store_company
+
+    cid = store_company(db, company)
+    stamp = now_iso()
+    db.execute(
+        "INSERT INTO company_source(company_id, source_key, external_id, "
+        "source_url, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
+        (cid, source_key, f"ext-{cid}", source_url, stamp, stamp),
+    )
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, reject_reason, explanation,
+              flags, config_hash, scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (cid, fund, None, 80.0, 0.8, 70.0, priority, "watchlist", None,
+         "Queued for review.", None, "testhash", "1", stamp),
+    )
+    return cid
+
+
+def test_today_hides_companies_house_shells(db):
+    """Incorporation plus a CH URL is not enough to occupy Today."""
+    from tests.factories import registry_company
+
+    cid = _watchlist_row(
+        db,
+        registry_company(
+            canonical_name="4DCONSTRUCTIONPLANNING LTD",
+            norm_key="4dconstructionplanning",
+            age_months=6,
+        ),
+        source_key="companies_house",
+        source_url="https://find-and-update.company-information.service.gov.uk/company/15021884",
+        priority=99,
+    )
+    payload = build_today(db.conn)
+    assert cid not in {row["company_id"] for row in payload["companies"]}
+    reasons = {row["key"]: row["count"]
+               for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert reasons["registry_without_venture_signal"] == 1
+
+
+def test_today_shows_registry_with_a_share_issue(db):
+    from tests.factories import registry_company
+
+    cid = _watchlist_row(
+        db,
+        registry_company(
+            canonical_name="SH01 Startup Ltd",
+            norm_key="sh01startup",
+            age_months=6,
+            has_share_issue=True,
+        ),
+        source_key="companies_house",
+        source_url="https://find-and-update.company-information.service.gov.uk/company/15021885",
+        priority=80,
+    )
+    payload = build_today(db.conn)
+    assert cid in {row["company_id"] for row in payload["companies"]}
+
+
+def test_today_shows_track_a_with_unknown_age(db):
+    from tests.factories import C
+
+    cid = _watchlist_row(
+        db,
+        C(canonical_name="Innovate Winner Ltd", norm_key="innovatewinner",
+          age_months=None, discovery_route="grant", country="GB"),
+        source_key="innovate_uk",
+        source_url="https://www.gov.uk/innovate-uk/award-1",
+        priority=70,
+    )
+    payload = build_today(db.conn)
+    assert cid in {row["company_id"] for row in payload["companies"]}
+    assert payload["companies"][0]["source_key"] == "innovate_uk"
+
+
+def test_today_ranks_track_a_ahead_of_registry(db):
+    from tests.factories import C, registry_company
+
+    registry_id = _watchlist_row(
+        db,
+        registry_company(
+            canonical_name="Registry SH01 Ltd",
+            norm_key="registrysh01today",
+            age_months=6,
+            has_share_issue=True,
+        ),
+        source_key="companies_house",
+        source_url="https://find-and-update.company-information.service.gov.uk/company/15021999",
+        priority=99,
+    )
+    news_id = _watchlist_row(
+        db,
+        C(canonical_name="News Startup Ltd", norm_key="newsstartuptoday",
+          age_months=8, discovery_route="news"),
+        source_key="uktn",
+        source_url="https://uktn.co.uk/news-startup",
+        priority=40,
+    )
+    order = [row["company_id"] for row in build_today(db.conn)["companies"]]
+    assert order == [news_id, registry_id]
+
+
+def test_today_ignores_stale_config_hash_watchlist(db, config):
+    from radar.config.loader import save_snapshot
+
+    ids = seed_companies(db, count=1, shortlist=1)
+    save_snapshot(db, config, is_last_good=True)
+    db.execute("UPDATE score SET config_hash = 'oldhash' WHERE company_id = ?",
+               (ids[0],))
+
+    payload = build_today(db.conn)
+    assert ids[0] not in {row["company_id"] for row in payload["companies"]}
+    assert payload["totals"]["watchlist"] == 0
+    assert payload["totals"]["shortlist"] == 0
+
+    db.execute(
+        "UPDATE score SET config_hash = ? WHERE company_id = ?",
+        (config.hash(), ids[0]),
+    )
+    payload = build_today(db.conn)
+    assert ids[0] in {row["company_id"] for row in payload["companies"]}

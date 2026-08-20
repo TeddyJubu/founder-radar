@@ -16,12 +16,15 @@ time yet.
 
 **Companies House verifies and enriches; it does not drive discovery** (client
 feedback, 18 Aug 2026). A live website is true of almost every registered Ltd —
-a corner shop has one — so it is *not* a venture signal and no longer admits a
-registry company on its own. What admits a Track B company is a real signal: a
-share allotment (SH01), a grant, a university spinout match, press in a tracked
-source, or a repeat founder. The set of *admitting* qualifiers is read from the
-Lists tab (`lists["qualifiers"]`), so it stays editable from the sheet without a
-code change — add `website` back there to loosen, or drop `press` to tighten.
+a corner shop has one — so it is *not* a venture signal. A prior Companies
+House appointment is not one either: formation agents and accountants sit on
+thousands of new Ltds, which is how names like `4DCONSTRUCTIONPLANNING LTD`
+kept filling Today. What admits a Track B company is a real venture signal: a
+share allotment (SH01), a grant, a university spinout match, or press in a
+tracked source. Repeat-founder evidence still *scores*; it does not open the
+door on its own. The admitting set is read from the Lists tab
+(`lists["qualifiers"]`) — add `website` or `repeat_founder` back there to
+loosen, or drop `press` to tighten.
 """
 
 from __future__ import annotations
@@ -33,9 +36,9 @@ from .derive import _get
 
 # The full qualifier vocabulary — everything the record can prove. Which of
 # these actually *admits* a registry company to scoring is configured in
-# `lists["qualifiers"]` (see `_admitting_qualifiers`); by default `website` is
-# proven but not admitting, because a website alone is a small business, not a
-# venture-backable startup.
+# `lists["qualifiers"]` (see `_admitting_qualifiers`); by default `website`
+# and `repeat_founder` are proven but not admitting. A website alone is a
+# small business; a prior CH appointment is usually a formation agent.
 QUALIFIER_KINDS: tuple[str, ...] = (
     "share_issue",     # SH01 filed since incorporation
     "grant",           # matched to a UKRI or Innovate UK award
@@ -95,8 +98,8 @@ def _admitting_qualifiers(config: Any) -> tuple[str, ...]:
 
     Reads `lists["qualifiers"]` so the bar is editable without a code change.
     When the list is absent or matches nothing, fall back to the seeded
-    admitting set (no `website`), not `QUALIFIER_KINDS`. A live `website` is
-    a proven signal but not an admitting one (client feedback, 18 Aug 2026).
+    admitting set (no `website`, no `repeat_founder`), not `QUALIFIER_KINDS`.
+    Those two are proven signals but not admitting ones (client J25).
     """
     lists = getattr(config, "lists", None) or {}
     configured = lists.get("qualifiers") if isinstance(lists, Mapping) else None

@@ -14,9 +14,13 @@ from types import SimpleNamespace
 from radar.config.defaults import DEFAULT_SOURCES, default_config
 from radar.config.loader import (
     J25_META,
+    J25B_META,
+    canonical_fund_key,
     drop_legacy_website_qualifier,
+    drop_legacy_admitting_qualifiers,
     load_config,
     load_runtime_config,
+    parse_fund_criteria,
     save_snapshot,
     with_default_sources,
 )
@@ -72,6 +76,44 @@ def test_after_j25_migration_website_can_be_re_enabled_from_the_sheet(db):
     out, stripped = drop_legacy_website_qualifier(lists, db)
     assert stripped is False
     assert "website" in out["qualifiers"]
+
+
+def test_legacy_repeat_founder_qualifier_is_stripped_until_lists_rewritten(db):
+    lists = {"qualifiers": ["share_issue", "repeat_founder", "grant"]}
+    out, stripped = drop_legacy_admitting_qualifiers(lists, db)
+    assert stripped == ["repeat_founder"]
+    assert "repeat_founder" not in out["qualifiers"]
+    assert "share_issue" in out["qualifiers"]
+
+
+def test_after_j25b_migration_repeat_founder_can_be_re_enabled_from_the_sheet(db):
+    db.set_meta(J25B_META, "1")
+    lists = {"qualifiers": ["share_issue", "repeat_founder"]}
+    out, stripped = drop_legacy_admitting_qualifiers(lists, db)
+    assert stripped == []
+    assert "repeat_founder" in out["qualifiers"]
+
+
+def test_sheet_fund_display_names_canonicalize_to_score_keys():
+    assert canonical_fund_key("DSW Ventures") == "dsw"
+    assert canonical_fund_key("dsw ventures") == "dsw"
+    assert canonical_fund_key("Outward VC") == "outward"
+    assert canonical_fund_key("Northstar Ventures") == "northstar"
+    lists = default_config().lists
+    funds, _warnings, _cells = parse_fund_criteria(
+        [
+            ["Fund key", "Vehicle key", "Fund", "Vehicle", "Active", "Stage min",
+             "Stage max", "Cheque min", "Cheque max", "Geo rule", "Geo values",
+             "Max age (yrs)", "Hard rejects", "Sectors +", "Sectors −",
+             "One-liner"],
+            ["DSW Ventures", "DSW SEIS Fund", "DSW Ventures", "DSW SEIS Fund",
+             "TRUE", "idea", "pre_seed", "50000", "250000", "HARD",
+             "outside_golden_triangle", "3", "", "deeptech", "", "Regional"],
+        ],
+        lists=lists,
+    )
+    assert [fund.key for fund in funds] == ["dsw"]
+    assert funds[0].vehicles[0].vehicle_key == "seis_fund"
 
 
 def test_run_pipeline_reads_sheet_settings_when_a_gateway_is_present(db):
@@ -151,6 +193,10 @@ def test_track_b_docs_do_not_treat_website_as_an_admitting_qualifier():
             leaked.append(relative)
         if "officer history, live website, grant match" in text:
             leaked.append(relative)
+        if "press in a tracked source, or a repeat founder" in text:
+            leaked.append(relative)
+        if "press, repeat founder) gate Track B" in text:
+            leaked.append(relative)
     assert not leaked, f"Track B docs still treat website as admitting: {leaked}"
 
 
@@ -175,6 +221,7 @@ def test_sheet_lists_tab_keeps_sic_map_and_j25_qualifiers():
 
     admitted = _admitting_qualifiers(cfg)
     assert "website" not in admitted
+    assert "repeat_founder" not in admitted
     assert "share_issue" in admitted
     assert not is_qualified(
         registry_company(qualifiers=["website"], discovery_route="registry"),
@@ -233,3 +280,4 @@ def test_lists_grid_round_trips_the_sic_map():
     assert len(parsed["sic_sector"]["exact"]) == len(cfg.lists["sic_sector"]["exact"])
     assert "62012" in codes
     assert "website" not in parsed["qualifiers"]
+    assert "repeat_founder" not in parsed["qualifiers"]

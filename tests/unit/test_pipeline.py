@@ -471,3 +471,46 @@ def test_rescore_bulk_matches_daily_with_unknown_policies(db, config, policy):
     bulk = snapshot()
 
     assert bulk == daily
+
+
+def test_unqualified_registry_company_drops_stale_scores(db, config):
+    from radar.pipeline import score_company
+    from radar.store.db import now_iso
+    from tests.factories import registry_company, store_company
+
+    cid = store_company(db, registry_company(
+        canonical_name="Stale Ltd", norm_key="staleltd",
+        qualifiers=["repeat_founder"],
+    ))
+    stamp = now_iso()
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, reject_reason, explanation,
+              flags, config_hash, scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (cid, "dsw", None, 80.0, 0.8, 70.0, 90.0, "watchlist", None,
+         "Stale watchlist.", None, "oldhash", "1", stamp),
+    )
+    assert db.scalar("SELECT COUNT(*) FROM score WHERE company_id = ?", (cid,)) == 1
+    assert score_company(db, cid, config) == 0
+    assert db.scalar("SELECT COUNT(*) FROM score WHERE company_id = ?", (cid,)) == 0
+
+
+def test_rescore_all_drops_scores_from_older_config_hashes(db, config):
+    from radar.pipeline import rescore_all, score_company
+    from tests.factories import C, store_company
+
+    cid = store_company(db, C(age_months=6, canonical_name="Hash Co",
+                             norm_key="hashco"))
+    score_company(db, cid, config, today=date(2026, 8, 8))
+    current = config.hash()
+    db.execute("UPDATE score SET config_hash = 'oldhash' WHERE company_id = ?",
+               (cid,))
+    result = rescore_all(db, config, today=date(2026, 8, 8))
+    hashes = {
+        row["config_hash"]
+        for row in db.query("SELECT DISTINCT config_hash FROM score")
+    }
+    assert hashes == {current}
+    assert result["config_hash"] == current

@@ -57,7 +57,7 @@ The Companies House Advanced Search API accepts `incorporated_from` and `incorpo
 ### 2. Two ways in, deliberately
 
 - **Track A — Signal-first.** A human already vetted these: university spinout announcements, accelerator cohorts, Innovate UK grants, curated UK tech news. Good companies, but other people can see them too.
-- **Track B — Register-first.** Nobody has vetted these. We take newly incorporated tech companies and *qualify* them ourselves using free public evidence: a share-allotment filing (which is what a pre-seed round looks like on the register), a grant, a university spinout, press in a tracked source, or a repeat founder. A live website is recorded when found; it is not an admitting qualifier by default.
+- **Track B — Register-first.** Nobody has vetted these. We take newly incorporated tech companies and *qualify* them ourselves using free public evidence: a share-allotment filing (which is what a pre-seed round looks like on the register), a grant, a university spinout, or press in a tracked source. A live website and a prior Companies House appointment are recorded when found; neither is an admitting qualifier by default.
 
 Track B is where Aryan's edge comes from. It surfaces companies that are not on anyone's list yet — which is exactly what he asked for.
 
