@@ -56,8 +56,14 @@ His most repeated complaint (initial feedback, Aug 12, Aug 14).
 ### A2 — Companies that already raised funding — ✅
 - `test_freshness_gates` — funding over £3m rejected; `max_total_funding_gbp`.
 - `test_unknown_funding_is_not_known_zero` — unknown funding is *not* treated
-  as zero (so "no funding known" ≠ "unfunded"), and the funding gate tests pin
-  that unknown funding passes but is flagged.
+  as zero (so "no funding known" ≠ "unfunded"). Note the deliberate asymmetry
+  with age: **unknown funding passes the freshness gate unflagged** and can
+  still shortlist (`test_freshness_gates` case "no funding known";
+  `UNKNOWN_FLAGS["max_total_funding_gbp"]` is `None`), because genuine
+  early-stage targets almost never have disclosed funding — flagging them all
+  would empty the shortlist, defeating the point. Maturity that a null funding
+  figure might otherwise hide is caught by the age, stage and portfolio gates
+  instead, not by the funding gate.
 - `test_portfolio_company_is_gated_not_just_scored` — being on a tracked VC
   portfolio is a hard reject (`already_on_vc_portfolio`), which also covers
   "already raised" in the visible sense.
