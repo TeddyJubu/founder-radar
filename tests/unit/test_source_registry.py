@@ -463,6 +463,230 @@ def test_denylist_is_idempotent(db):
         (held.id,)) == 1
 
 
+def test_zinc_investment_announcements_feed_the_denylist(db):
+    """Client A2: Zinc-backed companies must be demoted, never discovered.
+
+    The investment-announcement feed used to create leads stamped `pre_seed`.
+    It now shares the denylist path with `vc_portfolios`: flag what we already
+    hold, create nothing new.
+    """
+    from radar.resolve.normalise import norm_key
+    from radar.sources import zinc_vc
+    from tests.factories import registry_company, store_company
+
+    held = registry_company(canonical_name="Palisade Health",
+                            norm_key=norm_key("Palisade Health"))
+    store_company(db, held)
+
+    items = zinc_vc.ADAPTER.parse(load("zinc_vc.json"))
+    listings = [i for i in items if i.kind_hint == "vc_portfolio_listing"]
+    assert listings, "investment posts must emit denylist listings"
+    assert all(i.structured.get("on_vc_portfolio") is True for i in listings)
+
+    report = vc_portfolios.apply_denylist(db, listings)
+    assert "Palisade Health" in report["matched"]
+    assert db.one("SELECT on_vc_portfolio FROM company WHERE id = ?",
+                  (held.id,))["on_vc_portfolio"] == 1
+    signal = db.one("SELECT source_key FROM signal WHERE company_id = ?",
+                    (held.id,))
+    assert signal["source_key"] == "zinc_vc"
+    # Denylist never invents companies from Zinc announcements.
+    assert db.scalar("SELECT COUNT(*) FROM company") == 1
+
+
+def test_pipeline_routes_portfolio_listings_through_the_denylist(db, monkeypatch):
+    """Stage ④ must call `apply_denylist` for inverted items, not `resolve_item`.
+
+    Without this, a Zinc / VC-portfolio listing would create a company row —
+    the exact version-1 failure mode the client called out.
+    """
+    from datetime import date
+    from types import SimpleNamespace
+
+    from radar.config.defaults import default_config
+    from radar.pipeline import run_pipeline
+    from radar.resolve.normalise import norm_key
+    from radar.sources.base import RawItem
+    from tests.factories import registry_company, store_company
+
+    held = registry_company(canonical_name="Brightbox Analytics",
+                            norm_key=norm_key("Brightbox Analytics"))
+    store_company(db, held)
+
+    listing = RawItem(
+        source_key="zinc_vc",
+        source_url="https://www.zinc.vc/news/zinc-invests-in-brightbox-analytics/",
+        external_id="zinc:brightbox",
+        published_at=date(2026, 8, 1),
+        title="Zinc invests in Brightbox Analytics",
+        body_text=None,
+        structured={
+            "company_name": "Brightbox Analytics",
+            "on_vc_portfolio": True,
+            "vc_slug": "zinc",
+            "vc_name": "Zinc",
+            "norm_key": norm_key("Brightbox Analytics"),
+            "date_confidence": "exact",
+        },
+        kind_hint="vc_portfolio_listing",
+    )
+
+    fetch = SimpleNamespace(items=[listing], sources=[], status="ok")
+    monkeypatch.setattr(
+        "radar.pipeline.fetch_stage",
+        lambda *a, **k: (fetch.items, fetch),
+    )
+    monkeypatch.setattr("radar.pipeline.enrich_stage", lambda *a, **k: {})
+    # No network, no sheet, no Telegram.
+    result = run_pipeline(db, config=default_config(), http=object(),
+                          gateway=None, use_llm=False, dry_run=True)
+
+    assert result.status in ("ok", "partial")
+    assert db.one("SELECT on_vc_portfolio FROM company WHERE id = ?",
+                  (held.id,))["on_vc_portfolio"] == 1
+    assert db.scalar("SELECT COUNT(*) FROM company") == 1
+    assert db.scalar(
+        "SELECT COUNT(*) FROM signal WHERE company_id = ? AND source_key = 'zinc_vc'",
+        (held.id,)) == 1
+
+
+def test_same_run_discovery_is_flagged_before_scoring(db, monkeypatch):
+    """Bugbot finding: denylist must run after resolve in the same run.
+
+    If a news item creates the company and a Zinc listing for the same name
+    arrives together, applying the denylist beforehand finds no row and the
+    company can still shortlist. Post-resolve demotion closes that gap.
+    """
+    from datetime import date
+    from types import SimpleNamespace
+
+    from radar.config.defaults import default_config
+    from radar.pipeline import run_pipeline
+    from radar.resolve.normalise import norm_key
+    from radar.sources.base import RawItem
+
+    news = RawItem(
+        source_key="uktn",
+        source_url="https://uktech.news/brightbox-analytics-raises/",
+        external_id="uktn:brightbox",
+        published_at=date(2026, 8, 1),
+        title="Brightbox Analytics raises a seed round",
+        body_text="Brightbox Analytics has raised funding.",
+        structured={
+            "company_name": "Brightbox Analytics",
+            "hq_country_iso2": "GB",
+            "stage": "pre_seed",
+            "date_confidence": "exact",
+        },
+        kind_hint="funding_round",
+    )
+
+    listing = RawItem(
+        source_key="zinc_vc",
+        source_url="https://www.zinc.vc/news/zinc-invests-in-brightbox-analytics/",
+        external_id="zinc:brightbox",
+        published_at=date(2026, 8, 1),
+        title="Zinc invests in Brightbox Analytics",
+        body_text=None,
+        structured={
+            "company_name": "Brightbox Analytics",
+            "on_vc_portfolio": True,
+            "vc_slug": "zinc",
+            "vc_name": "Zinc",
+            "norm_key": norm_key("Brightbox Analytics"),
+            "date_confidence": "exact",
+        },
+        kind_hint="vc_portfolio_listing",
+    )
+
+    fetch = SimpleNamespace(items=[listing, news], sources=[], status="ok")
+    monkeypatch.setattr(
+        "radar.pipeline.fetch_stage",
+        lambda *a, **k: (fetch.items, fetch),
+    )
+    monkeypatch.setattr("radar.pipeline.enrich_stage", lambda *a, **k: {})
+    # Skip extract so the structured company_name is what resolve sees.
+    monkeypatch.setattr(
+        "radar.pipeline.extract_stage",
+        lambda items, cfg, **kw: list(items),
+    )
+
+    result = run_pipeline(db, config=default_config(), http=object(),
+                          gateway=None, use_llm=False, dry_run=True)
+
+    assert result.status in ("ok", "partial")
+    row = db.one("SELECT id, on_vc_portfolio, canonical_name FROM company "
+                 "WHERE merged_into IS NULL")
+    assert row is not None
+    assert row["canonical_name"] == "Brightbox Analytics"
+    assert row["on_vc_portfolio"] == 1
+    reject = db.one(
+        "SELECT reject_reason, tier FROM score WHERE company_id = ? LIMIT 1",
+        (row["id"],),
+    )
+    assert reject is not None
+    assert reject["reject_reason"] == "already_on_vc_portfolio"
+    assert reject["tier"] == "reject"
+
+
+def test_resolve_item_refuses_portfolio_listings(db):
+    """Safety net: even a direct call must not create a company from a listing."""
+    from radar.config.defaults import default_config
+    from radar.pipeline import resolve_item
+    from radar.resolve.normalise import norm_key
+    from radar.sources.base import RawItem
+
+    item = RawItem(
+        source_key="vc_portfolios",
+        source_url="https://dsw.vc/portfolio/acme/",
+        external_id="dsw:acme",
+        published_at=None,
+        title="Acme Robotics Ltd",
+        body_text=None,
+        structured={
+            "company_name": "Acme Robotics Ltd",
+            "on_vc_portfolio": True,
+            "norm_key": norm_key("Acme Robotics Ltd"),
+        },
+        kind_hint="vc_portfolio_listing",
+    )
+    assert resolve_item(db, item, default_config()) is None
+    assert db.scalar("SELECT COUNT(*) FROM company") == 0
+
+
+def test_first_party_investment_announcements_are_denylist_not_leads():
+    """Client A2 inventory: every first-party "we invested / Investing in X"
+    adapter must demote, not discover.
+
+    Third-party news (UKTN, BusinessCloud) still reports raises — those stay
+    discovery and rely on age / funding / portfolio gates. Accelerators and
+    venture builders that announce *formation* (EF, Conception X, Carbon13)
+    stay discovery. This pin is only for closed-cheque announcements.
+    """
+    from radar.sources import bethnal_green, founders_factory, zinc_vc
+
+    zinc = zinc_vc.ADAPTER.parse(load("zinc_vc.json"))
+    zinc_hits = [i for i in zinc if i.structured.get("company_name")]
+    assert zinc_hits
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in zinc_hits)
+    assert all(i.structured.get("on_vc_portfolio") is True for i in zinc_hits)
+
+    ff = founders_factory.ADAPTER.parse(load("founders_factory.html"))
+    ff_hits = [i for i in ff if "investing in" in i.title.lower()]
+    assert ff_hits
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in ff_hits)
+    assert all(i.structured.get("on_vc_portfolio") is True for i in ff_hits)
+    # Non-investment articles must not be swept into the denylist.
+    assert any(i.kind_hint == "news_mention" for i in ff)
+
+    bg = bethnal_green.ADAPTER.parse(load("bethnal_green.html"))
+    exited = [i for i in bg if i.structured.get("exited")]
+    active = [i for i in bg if i.kind_hint == "accelerator_cohort"]
+    assert exited and active
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in exited)
+    assert all(i.structured.get("on_vc_portfolio") is True for i in exited)
+
+
 # --------------------------------------------- client-requested categories
 
 # Client-issues plan §3.8 (A5): Aryan's exact ask — "expand [sources] with
@@ -481,10 +705,15 @@ CATEGORY_KEYS: dict[str, set[str]] = {
         "edinburgh_innovations", "sheffield", "converge",
     },
     "accelerator cohorts": {
-        "northern_accelerator", "conception_x", "zinc_vc",
-        "founders_factory", "techstars_london", "carbon13", "bethnal_green",
+        "northern_accelerator", "conception_x",
+        "techstars_london", "carbon13", "bethnal_green",
     },
     "innovate_uk / grants": {"innovate_uk", "ukri_gtr", "govuk_search"},
+    # Inverted feeds — kept registered and on by default, but they demote
+    # already-backed companies rather than discovering leads (client A2).
+    # Founders Factory stays enabled for non-investment articles too; its
+    # Investing-in posts share this denylist path.
+    "vc denylist": {"vc_portfolios", "zinc_vc", "founders_factory"},
 }
 
 

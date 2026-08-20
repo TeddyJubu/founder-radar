@@ -36,7 +36,7 @@ Legend — **Access:** `API` · `JSON` (WordPress/CMS endpoint) · `RSS` · `HTM
 | 6 | **Conception X** | A | HTML | `conceptionx.org/portfolio` | weekly | ~3 | PhD deeptech ventures **at or before incorporation** — structurally the youngest cohort in the entire list. Cohort codes CX18–CX26. |
 | 7 | **UKTN** | A | JSON | `uktech.news/wp-json/wp/v2/posts/latest` | daily | 25–50 | Highest-volume UK-only funding coverage. Slugs carry the publish date. |
 | 8 | **BusinessCloud** | A | RSS | `businesscloud.co.uk/feed/` | daily | 15–30 | **Full article text in the feed.** Genuine North of England coverage. Permissive robots. |
-| 9 | **Zinc VC** | A | JSON | `zinc.vc/wp-json/wp/v2/posts` | weekly | 2–3 | Highest signal-to-noise of anything tested — posts are literally "Announcing Zinc's investment in X". First money in. |
+| 9 | **Zinc VC** | — | JSON | `zinc.vc/wp-json/wp/v2/posts` | weekly | — | **Used as a denylist.** Posts are "Announcing Zinc's investment in X" — companies Zinc has already backed. Feeds `on_vc_portfolio`. Not a discovery source. |
 | 10 | **Entrepreneur First** | A | HTML | `joinef.com/portfolio/` | weekly | ~5 | Company-builder output is pre-seed by construction. London filter, founded-year filter. Snapshot-diff for new entries. |
 | 11 | **UKRI Gateway to Research** | A | API | `gtr.ukri.org/gtr/api/projects` | weekly | 5–15 | Innovate UK grant awards. Quality signal, not a freshness signal. |
 | 12 | **Innovate UK funded projects** | A | FILE | `ukri.org` XLSX, updated every 2–4 weeks | monthly | 10–30 | The most current official Innovate UK award data available free. |
@@ -47,7 +47,7 @@ Legend — **Access:** `API` · `JSON` (WordPress/CMS endpoint) · `RSS` · `HTM
 
 | Source | Track | Access | Endpoint | Notes |
 |---|---|---|---|---|
-| Bethnal Green Ventures | A | HTML | `bethnalgreenventures.com/blog` + `/portfolio` | Verified cohort pattern: "Spring 2026 cohort", 21 Apr 2026, 12 ventures |
+| Bethnal Green Ventures | A | HTML | `bethnalgreenventures.com/blog` + `/portfolio` | Active cohort cards stay discovery; **Exited** cards are denylist |
 | Cambridge Enterprise | A | JSON | `enterprise.cam.ac.uk/wp-json/wp/v2/posts` | Full content + dates |
 | Edinburgh Innovations | A | HTML | `edinburgh-innovations.ed.ac.uk/news` | ⚠️ Not `ed.ac.uk/edinburgh-innovations` — that redirects to a thin page |
 | UCL Ventures | A | HTML | `uclventures.com/news` | ⚠️ `uclb.com` is dead; it 302s here |
@@ -56,7 +56,7 @@ Legend — **Access:** `API` · `JSON` (WordPress/CMS endpoint) · `RSS` · `HTM
 | Bdaily North East | A | RSS | `bdaily.co.uk/region/north-east/rss` | Regional; excerpt only |
 | Sheffield Commercialisation | A | HTML | `sheffield.ac.uk/commercialisation/commercialisation-news` | Yorkshire spinouts → Anticus |
 | Carbon13 | A | RSS+JSON | `carbonthirteen.com/feed/` | Climate → Northstar |
-| Founders Factory | A | HTML | `foundersfactory.com/articles/` | "Investing in X" posts |
+| Founders Factory | A / — | HTML | `foundersfactory.com/articles/` | **"Investing in X" posts are denylist.** Other articles stay as news. |
 | Techstars London | A | HTML | `techstars.com/newsroom` | Cohort announcements |
 | Venture Further (Manchester) | A | HTML | `entrepreneurship.manchester.ac.uk/venture-further/` | Annual burst, ~11 winners |
 | Converge (Scotland) | A | RSS | `convergechallenge.com/updates/` | |
