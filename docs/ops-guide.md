@@ -138,8 +138,10 @@ Sources and Run Log tabs in the sheet.
 
 ## 7. Change the login password
 
-The web review surface sits behind a Caddy reverse proxy with basic auth. To
-change the password, on the server:
+The web review surface sits behind a Caddy reverse proxy with basic auth. The
+Hermes Agent dashboard, when published, is at `https://hermes.<the review
+host>/` and uses the same username and password. To change the password, on
+the server:
 
 ```bash
 caddy hash-password --plaintext 'your-new-password'   # prints a bcrypt hash

@@ -1,0 +1,40 @@
+# Appended to /etc/caddy/Caddyfile by deploy/install.sh when a Hermes
+# dashboard hostname is known (HERMES_WEB_DOMAIN, or hermes.<RADAR_WEB_DOMAIN>).
+#
+# Live failure this exists to fix: https://hermes.<host>/ redirected HTTP→HTTPS
+# but TLS had no certificate for that SNI, so the browser never saw a UI.
+# Caddy only issues a cert for hostnames that appear as site addresses.
+#
+# The dashboard process binds 127.0.0.1:9119. This proxy is the sole way in,
+# with the same Caddy password as the review surface. {$HERMES_DASHBOARD_UPSTREAM}
+# is 127.0.0.1:9119 when the dashboard unit is enabled, and falls back to
+# the review surface (127.0.0.1:8787) so the URL is never a dead TLS name.
+
+{$HERMES_WEB_DOMAIN} {
+	encode gzip
+
+	basic_auth {
+		{$RADAR_WEB_USER} {$RADAR_WEB_PASS_HASH}
+	}
+
+	# flush_interval -1 keeps the Chat tab WebSocket from buffering.
+	reverse_proxy {$HERMES_DASHBOARD_UPSTREAM} {
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		flush_interval -1
+	}
+
+	header {
+		Cache-Control "no-store"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/hermes-dashboard.log
+		format console
+	}
+}
