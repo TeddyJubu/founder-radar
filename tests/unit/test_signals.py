@@ -213,7 +213,7 @@ def test_every_source_declares_the_track_the_ledger_gives_it():
         "cambridge_enterprise": "A",
         "conception_x": "A",
         "entrepreneur_first": "A",
-        "zinc_vc": "A",
+        "zinc_vc": "—",               # inverted — investment posts are denylist
         "govuk_search": "A",
         "ukri_gtr": "A",
         "innovate_uk": "A",

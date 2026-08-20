@@ -792,6 +792,14 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
     structured = getattr(item, "structured", None) or {}
     extraction = getattr(item, "extraction", None)
 
+    if getattr(item, "kind_hint", None) == "vc_portfolio_listing":
+        # Inverted sources demote via `apply_denylist`; creating a company
+        # from a portfolio listing is the version-1 bug. Refuse here too so a
+        # future call site cannot reintroduce it.
+        log.debug("refusing to resolve denylist item %s (%s)",
+                  getattr(item, "source_url", "?"), getattr(item, "source_key", "?"))
+        return None
+
     name = (structured.get("company_name")
             or (getattr(extraction, "company_name", None) if extraction else None)
             or "")
@@ -1157,8 +1165,30 @@ def run_pipeline(
                 result.warnings.append(
                     f"{source.key} degraded: {source.error or 'site is refusing us'}")
 
-        # ③ extract + ④ resolve
-        for item in extract_stage(items, cfg, use_llm=use_llm, db=db, llm=llm):
+        # ③ extract + ④ resolve (+ inverted denylist)
+        # Portfolio / investment listings demote companies we already hold —
+        # they must never create leads. That is precisely the version-1
+        # behaviour the client rejected. Kind hint is the only signal; this
+        # module stays source-agnostic (NFR-5).
+        denylist_items = [
+            item for item in items
+            if getattr(item, "kind_hint", None) == "vc_portfolio_listing"
+        ]
+        discover_items = [
+            item for item in items
+            if getattr(item, "kind_hint", None) != "vc_portfolio_listing"
+        ]
+        if denylist_items:
+            from radar.sources.denylist import apply_denylist
+
+            report = apply_denylist(db, denylist_items)
+            if report["companies_flagged"]:
+                log.info(
+                    "denylist flagged %s already-seen companies from %s listings",
+                    report["companies_flagged"], report["listings"],
+                )
+
+        for item in extract_stage(discover_items, cfg, use_llm=use_llm, db=db, llm=llm):
             extraction = getattr(item, "extraction", None)
             if extraction is not None:
                 result.items_extracted += 1

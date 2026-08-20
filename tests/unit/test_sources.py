@@ -204,11 +204,15 @@ def check_cambridge_enterprise(items):
 
 
 def check_zinc_vc(items):
-    named = {i.structured.get("company_name") for i in items}
-    assert {"Palisade Health", "Brightbox Analytics", "Northwind Diagnostics"} <= named
-    assert all(i.structured["stage"] == "pre_seed"
-               for i in items if i.structured.get("company_name"))
-    # A cohort announcement is not an investment: no name, no invented stage.
+    named = [i for i in items if i.structured.get("company_name")]
+    names = {i.structured["company_name"] for i in named}
+    assert {"Palisade Health", "Brightbox Analytics", "Northwind Diagnostics"} <= names
+    # Investment announcements are denylist evidence, not leads.
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in named)
+    assert all(i.structured["on_vc_portfolio"] is True for i in named)
+    assert all(i.structured["vc_slug"] == "zinc" for i in named)
+    assert all("stage" not in i.structured for i in named)
+    # A cohort announcement is not an investment: no name, not a denylist hit.
     assert any(i.kind_hint == "news" and not i.structured.get("company_name") for i in items)
 
 

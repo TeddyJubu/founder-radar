@@ -463,6 +463,118 @@ def test_denylist_is_idempotent(db):
         (held.id,)) == 1
 
 
+def test_zinc_investment_announcements_feed_the_denylist(db):
+    """Client A2: Zinc-backed companies must be demoted, never discovered.
+
+    The investment-announcement feed used to create leads stamped `pre_seed`.
+    It now shares the denylist path with `vc_portfolios`: flag what we already
+    hold, create nothing new.
+    """
+    from radar.resolve.normalise import norm_key
+    from radar.sources import zinc_vc
+    from tests.factories import registry_company, store_company
+
+    held = registry_company(canonical_name="Palisade Health",
+                            norm_key=norm_key("Palisade Health"))
+    store_company(db, held)
+
+    items = zinc_vc.ADAPTER.parse(load("zinc_vc.json"))
+    listings = [i for i in items if i.kind_hint == "vc_portfolio_listing"]
+    assert listings, "investment posts must emit denylist listings"
+    assert all(i.structured.get("on_vc_portfolio") is True for i in listings)
+
+    report = vc_portfolios.apply_denylist(db, listings)
+    assert "Palisade Health" in report["matched"]
+    assert db.one("SELECT on_vc_portfolio FROM company WHERE id = ?",
+                  (held.id,))["on_vc_portfolio"] == 1
+    signal = db.one("SELECT source_key FROM signal WHERE company_id = ?",
+                    (held.id,))
+    assert signal["source_key"] == "zinc_vc"
+    # Denylist never invents companies from Zinc announcements.
+    assert db.scalar("SELECT COUNT(*) FROM company") == 1
+
+
+def test_pipeline_routes_portfolio_listings_through_the_denylist(db, monkeypatch):
+    """Stage ④ must call `apply_denylist` for inverted items, not `resolve_item`.
+
+    Without this, a Zinc / VC-portfolio listing would create a company row —
+    the exact version-1 failure mode the client called out.
+    """
+    from datetime import date
+    from types import SimpleNamespace
+
+    from radar.config.defaults import default_config
+    from radar.pipeline import run_pipeline
+    from radar.resolve.normalise import norm_key
+    from radar.sources.base import RawItem
+    from tests.factories import registry_company, store_company
+
+    held = registry_company(canonical_name="Brightbox Analytics",
+                            norm_key=norm_key("Brightbox Analytics"))
+    store_company(db, held)
+
+    listing = RawItem(
+        source_key="zinc_vc",
+        source_url="https://www.zinc.vc/news/zinc-invests-in-brightbox-analytics/",
+        external_id="zinc:brightbox",
+        published_at=date(2026, 8, 1),
+        title="Zinc invests in Brightbox Analytics",
+        body_text=None,
+        structured={
+            "company_name": "Brightbox Analytics",
+            "on_vc_portfolio": True,
+            "vc_slug": "zinc",
+            "vc_name": "Zinc",
+            "norm_key": norm_key("Brightbox Analytics"),
+            "date_confidence": "exact",
+        },
+        kind_hint="vc_portfolio_listing",
+    )
+
+    fetch = SimpleNamespace(items=[listing], sources=[], status="ok")
+    monkeypatch.setattr(
+        "radar.pipeline.fetch_stage",
+        lambda *a, **k: (fetch.items, fetch),
+    )
+    monkeypatch.setattr("radar.pipeline.enrich_stage", lambda *a, **k: {})
+    # No network, no sheet, no Telegram.
+    result = run_pipeline(db, config=default_config(), http=object(),
+                          gateway=None, use_llm=False, dry_run=True)
+
+    assert result.status in ("ok", "partial")
+    assert db.one("SELECT on_vc_portfolio FROM company WHERE id = ?",
+                  (held.id,))["on_vc_portfolio"] == 1
+    assert db.scalar("SELECT COUNT(*) FROM company") == 1
+    assert db.scalar(
+        "SELECT COUNT(*) FROM signal WHERE company_id = ? AND source_key = 'zinc_vc'",
+        (held.id,)) == 1
+
+
+def test_resolve_item_refuses_portfolio_listings(db):
+    """Safety net: even a direct call must not create a company from a listing."""
+    from radar.config.defaults import default_config
+    from radar.pipeline import resolve_item
+    from radar.resolve.normalise import norm_key
+    from radar.sources.base import RawItem
+
+    item = RawItem(
+        source_key="vc_portfolios",
+        source_url="https://dsw.vc/portfolio/acme/",
+        external_id="dsw:acme",
+        published_at=None,
+        title="Acme Robotics Ltd",
+        body_text=None,
+        structured={
+            "company_name": "Acme Robotics Ltd",
+            "on_vc_portfolio": True,
+            "norm_key": norm_key("Acme Robotics Ltd"),
+        },
+        kind_hint="vc_portfolio_listing",
+    )
+    assert resolve_item(db, item, default_config()) is None
+    assert db.scalar("SELECT COUNT(*) FROM company") == 0
+
+
 # --------------------------------------------- client-requested categories
 
 # Client-issues plan §3.8 (A5): Aryan's exact ask — "expand [sources] with
@@ -481,10 +593,13 @@ CATEGORY_KEYS: dict[str, set[str]] = {
         "edinburgh_innovations", "sheffield", "converge",
     },
     "accelerator cohorts": {
-        "northern_accelerator", "conception_x", "zinc_vc",
+        "northern_accelerator", "conception_x",
         "founders_factory", "techstars_london", "carbon13", "bethnal_green",
     },
     "innovate_uk / grants": {"innovate_uk", "ukri_gtr", "govuk_search"},
+    # Inverted feeds — kept registered and on by default, but they demote
+    # already-backed companies rather than discovering leads (client A2).
+    "vc denylist": {"vc_portfolios", "zinc_vc"},
 }
 
 

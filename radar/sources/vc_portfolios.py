@@ -25,7 +25,7 @@ Three design notes:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Iterable
 
 from radar.fetch.layout import LayoutChanged
 from radar.sources._common import (
@@ -40,7 +40,6 @@ from radar.sources._common import (
     text_of,
 )
 from radar.sources.base import FetchContext, RawItem
-from radar.store.db import now_iso
 
 CARD_SELECTORS = (
     ".tile--company",              # Outward VC — same template as joinef.com
@@ -67,6 +66,10 @@ class VcSite:
 
 #: The four named in 04-sources, plus the wider UK set the ledger implies.
 #: Adding one is a single line — that is the promise this file has to keep.
+#:
+#: Zinc's public portfolio page is JS-rendered and has no crawlable cards, so
+#: Zinc is covered by the inverted `zinc_vc` investment-announcement feed
+#: instead of a row here.
 SITES: tuple[VcSite, ...] = (
     VcSite("dsw", "DSW Ventures", "https://dsw.vc/portfolio/"),
     VcSite("northstar", "Northstar Ventures",
@@ -163,54 +166,10 @@ class VcPortfoliosAdapter:
 # ---------------------------------------------------------------- the denylist
 
 
-def apply_denylist(db, items: Sequence[RawItem]) -> dict:
-    """Set `company.on_vc_portfolio` and write the negative signal.
-
-    Runs after resolve, on names we already hold. Deliberately does **not**
-    create companies: a portfolio page is a reason to *demote* a company we
-    found elsewhere, never a reason to add one — adding them is precisely the
-    version-1 behaviour the client rejected.
-    """
-    matched: list[str] = []
-    keys = {}
-    for item in items:
-        structured = item.structured or {}
-        key = structured.get("norm_key") or norm_key(item.title)
-        if key:
-            keys.setdefault(key, item)
-
-    if not keys:
-        return {"listings": 0, "companies_flagged": 0, "matched": []}
-
-    placeholders = ",".join("?" for _ in keys)
-    rows = db.query(
-        f"""SELECT id, canonical_name, norm_key FROM company
-            WHERE merged_into IS NULL AND norm_key IN ({placeholders})""",
-        list(keys),
-    )
-    for row in rows:
-        item = keys[row["norm_key"]]
-        structured = item.structured or {}
-        db.execute(
-            "UPDATE company SET on_vc_portfolio = 1, updated_at = ? WHERE id = ?",
-            (now_iso(), row["id"]),
-        )
-        db.execute(
-            """INSERT OR IGNORE INTO signal
-               (company_id, kind, occurred_on, headline, detail, source_key,
-                source_url, first_seen)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (row["id"], "vc_portfolio_listing", None,
-             f"Listed on {structured.get('vc_name', 'a VC')} portfolio",
-             structured.get("vc_slug"), "vc_portfolios", item.source_url, now_iso()),
-        )
-        matched.append(row["canonical_name"])
-
-    return {
-        "listings": len(items),
-        "companies_flagged": len(matched),
-        "matched": sorted(matched),
-    }
+# Kept as a re-export so existing `from radar.sources.vc_portfolios import
+# apply_denylist` call sites (tests, older docs) keep working. New code should
+# import from `radar.sources.denylist` so shared modules stay source-agnostic.
+from radar.sources.denylist import apply_denylist  # noqa: E402
 
 
 def _name_of(card) -> str:

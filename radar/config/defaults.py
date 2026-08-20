@@ -444,7 +444,11 @@ DEFAULT_SOURCES = [
     # registry key exactly (this was `oxford_university_innovation` once, which
     # made the toggle inert and the health column blind).
     SourceConfig(key="oxford_innovation", track="A"),
-    SourceConfig(key="zinc_vc", track="A"),
+    # Inverted — Zinc investment announcements feed `on_vc_portfolio`, they
+    # are not a discovery source. Track column on the sheet stays A|B; the
+    # adapter itself reports track "—".
+    SourceConfig(key="zinc_vc", track="A",
+                 note="Denylist — Zinc investment announcements"),
     SourceConfig(key="conception_x", track="A"),
     SourceConfig(key="entrepreneur_first", track="A"),
     # Client ask A5 — named early-stage announcement sources, not portfolio
