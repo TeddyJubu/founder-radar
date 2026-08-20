@@ -139,17 +139,18 @@ def test_hermes_dashboard_wrapper_execs_loopback(tmp_path):
     fake = tmp_path / "hermes"
     args_path = tmp_path / "args"
     fake.write_text(
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"%s\"\n" % (args_path,)
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + str(args_path) + "'\n"
     )
     fake.chmod(0o755)
     env_file = tmp_path / "hermes.env"
     env_file.write_text(
         "HERMES_BIN=%s\nHERMES_WEB_DOMAIN=hermes.example.test\n" % fake
     )
+    path = str(tmp_path) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
     out = subprocess.run(
         ["bash", str(HERMES_DASHBOARD_SH)],
         env={**os.environ, "HERMES_ENV_FILE": str(env_file),
-             "ROOT": str(tmp_path), "PATH": str(tmp_path)},
+             "ROOT": str(tmp_path), "PATH": path},
         capture_output=True, text=True,
     )
     assert out.returncode == 0, out.stderr
@@ -165,11 +166,12 @@ def test_hermes_dashboard_wrapper_fails_without_a_binary(tmp_path):
     """A green unit that execs nothing is how the URL stays blank."""
     env_file = tmp_path / "hermes.env"
     env_file.write_text("HERMES_BIN=/no/such/hermes\nHERMES_HOME=%s\n" % tmp_path)
+    path = str(tmp_path) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
     out = subprocess.run(
         ["bash", str(HERMES_DASHBOARD_SH)],
         env={**os.environ, "HERMES_ENV_FILE": str(env_file),
              "ROOT": str(tmp_path), "HOME": str(tmp_path),
-             "PATH": str(tmp_path)},
+             "PATH": path},
         capture_output=True, text=True,
     )
     assert out.returncode != 0
