@@ -93,20 +93,25 @@ def derive_qualifiers(company: Any) -> list[str]:
 def _admitting_qualifiers(config: Any) -> tuple[str, ...]:
     """The qualifiers that actually admit a registry company, from the sheet.
 
-    Reads `lists["qualifiers"]` so the bar is editable without a code change,
-    and falls back to the full vocabulary only when the list is absent. A live
-    `website` is deliberately *not* in the seeded default (defaults.py), so a
-    registry company needs a real venture signal — not just an existing URL —
-    to reach scoring (client feedback, 18 Aug 2026).
+    Reads `lists["qualifiers"]` so the bar is editable without a code change.
+    When the list is absent or matches nothing, fall back to the seeded
+    admitting set (no `website`), not `QUALIFIER_KINDS`. A live `website` is
+    a proven signal but not an admitting one (client feedback, 18 Aug 2026).
     """
     lists = getattr(config, "lists", None) or {}
     configured = lists.get("qualifiers") if isinstance(lists, Mapping) else None
     if not configured:
-        return QUALIFIER_KINDS
+        from radar.config.defaults import LISTS
+        configured = LISTS.get("qualifiers") or QUALIFIER_KINDS
     allowed = tuple(q for q in QUALIFIER_KINDS if q in set(configured))
     # A sheet typo that matches nothing must not silently admit everything or
-    # admit nothing; fall back to the full vocabulary rather than zero it out.
-    return allowed or QUALIFIER_KINDS
+    # admit nothing. Fall back to the seeded admitting set, not the full
+    # vocabulary — QUALIFIER_KINDS includes `website`, which is the J25 leak.
+    if allowed:
+        return allowed
+    from radar.config.defaults import LISTS
+    seeded = tuple(q for q in QUALIFIER_KINDS if q in set(LISTS.get("qualifiers") or ()))
+    return seeded or QUALIFIER_KINDS
 
 
 def admitting_qualifiers(company: Any, config: Any) -> list[str]:

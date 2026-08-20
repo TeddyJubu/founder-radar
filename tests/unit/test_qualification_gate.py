@@ -73,6 +73,23 @@ def test_website_still_admits_when_the_sheet_re_enables_it(cfg):
     assert is_qualified(c, cfg)
 
 
+def test_missing_qualifiers_list_does_not_admit_website():
+    """Stage ① used to replace Config.lists with Lists-tab columns only, so
+    `qualifiers` vanished and the fallback admitted every QUALIFIER_KIND —
+    including website. That is the J25 leak on a sheet-driven run.
+    """
+    from radar.score.qualify import _admitting_qualifiers, is_qualified
+
+    cfg = default_config()
+    cfg.lists.pop("qualifiers", None)
+    assert "website" not in _admitting_qualifiers(cfg)
+    c = registry_company(qualifiers=["website"], discovery_route="registry")
+    assert not is_qualified(c, cfg)
+    cfg.lists["qualifiers"] = ["not_a_real_qualifier"]
+    assert "website" not in _admitting_qualifiers(cfg)
+    assert not is_qualified(c, cfg)
+
+
 def test_unqualified_company_is_rechecked_not_rejected(db, cfg):
     """A company incorporated today may file an SH01 next month."""
     c = registry_company(qualifiers=[])
