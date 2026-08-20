@@ -123,11 +123,13 @@ if ! "$PYTHON" -m pytest --version >/dev/null 2>&1; then
 fi
 
 # Tests must run from the worktree. PYTHONPATH beats the live editable install.
+# Do not autoload pytest-playwright / cov — they are heavy on a 4 GB box.
 say "pytest against worktree $WORKTREE"
 set +e
 (
   cd "$WORKTREE"
-  PYTHONPATH="$WORKTREE" "$PYTHON" -m pytest -q --tb=line
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH="$WORKTREE" \
+    "$PYTHON" -m pytest -q --tb=line
 )
 pytest_rc=$?
 set -e

@@ -227,6 +227,7 @@ def test_skill_teaches_repair_and_forbids_scoring_edits():
     assert "Do **not** edit files" in review
     assert "VERDICT: PASS" in test_prompt
     assert "pip install -e" in test_prompt
+    assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD" in test_prompt
 
 
 def test_daily_scan_pages_hermes_only_on_fatal():

@@ -16,7 +16,8 @@ unless a test cannot even start (missing pytest — then
 
 ```bash
 cd {{WORKTREE}}
-PYTHONPATH={{WORKTREE}} /opt/founder-radar/venv/bin/python -m pytest -q --tb=line
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH={{WORKTREE}} \
+  /opt/founder-radar/venv/bin/python -m pytest -q --tb=line
 ```
 
 If pytest is missing, install it into the venv, then run the same command.
