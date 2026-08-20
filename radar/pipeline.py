@@ -1170,6 +1170,11 @@ def run_pipeline(
         # they must never create leads. That is precisely the version-1
         # behaviour the client rejected. Kind hint is the only signal; this
         # module stays source-agnostic (NFR-5).
+        #
+        # Denylist runs *after* resolve on purpose: a same-run discovery item
+        # (news / grant / register) can create the company first, and the
+        # listing must still flag it before scoring. Running beforehand would
+        # miss any company that did not yet exist.
         denylist_items = [
             item for item in items
             if getattr(item, "kind_hint", None) == "vc_portfolio_listing"
@@ -1178,15 +1183,6 @@ def run_pipeline(
             item for item in items
             if getattr(item, "kind_hint", None) != "vc_portfolio_listing"
         ]
-        if denylist_items:
-            from radar.sources.denylist import apply_denylist
-
-            report = apply_denylist(db, denylist_items)
-            if report["companies_flagged"]:
-                log.info(
-                    "denylist flagged %s already-seen companies from %s listings",
-                    report["companies_flagged"], report["listings"],
-                )
 
         for item in extract_stage(discover_items, cfg, use_llm=use_llm, db=db, llm=llm):
             extraction = getattr(item, "extraction", None)
@@ -1197,6 +1193,16 @@ def run_pipeline(
                 continue
             if getattr(extraction, "needs_review", False):
                 db.execute("UPDATE company SET needs_review = 1 WHERE id = ?", (cid,))
+
+        if denylist_items:
+            from radar.sources.denylist import apply_denylist
+
+            report = apply_denylist(db, denylist_items)
+            if report["companies_flagged"]:
+                log.info(
+                    "denylist flagged %s already-seen companies from %s listings",
+                    report["companies_flagged"], report["listings"],
+                )
 
         # ⑤ enrich (only in a real run — the backfill owns its own)
         if not dry_run:

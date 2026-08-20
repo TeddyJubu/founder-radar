@@ -550,6 +550,85 @@ def test_pipeline_routes_portfolio_listings_through_the_denylist(db, monkeypatch
         (held.id,)) == 1
 
 
+def test_same_run_discovery_is_flagged_before_scoring(db, monkeypatch):
+    """Bugbot finding: denylist must run after resolve in the same run.
+
+    If a news item creates the company and a Zinc listing for the same name
+    arrives together, applying the denylist beforehand finds no row and the
+    company can still shortlist. Post-resolve demotion closes that gap.
+    """
+    from datetime import date
+    from types import SimpleNamespace
+
+    from radar.config.defaults import default_config
+    from radar.pipeline import run_pipeline
+    from radar.resolve.normalise import norm_key
+    from radar.sources.base import RawItem
+
+    news = RawItem(
+        source_key="uktn",
+        source_url="https://uktech.news/brightbox-analytics-raises/",
+        external_id="uktn:brightbox",
+        published_at=date(2026, 8, 1),
+        title="Brightbox Analytics raises a seed round",
+        body_text="Brightbox Analytics has raised funding.",
+        structured={
+            "company_name": "Brightbox Analytics",
+            "hq_country_iso2": "GB",
+            "stage": "pre_seed",
+            "date_confidence": "exact",
+        },
+        kind_hint="funding_round",
+    )
+
+    listing = RawItem(
+        source_key="zinc_vc",
+        source_url="https://www.zinc.vc/news/zinc-invests-in-brightbox-analytics/",
+        external_id="zinc:brightbox",
+        published_at=date(2026, 8, 1),
+        title="Zinc invests in Brightbox Analytics",
+        body_text=None,
+        structured={
+            "company_name": "Brightbox Analytics",
+            "on_vc_portfolio": True,
+            "vc_slug": "zinc",
+            "vc_name": "Zinc",
+            "norm_key": norm_key("Brightbox Analytics"),
+            "date_confidence": "exact",
+        },
+        kind_hint="vc_portfolio_listing",
+    )
+
+    fetch = SimpleNamespace(items=[listing, news], sources=[], status="ok")
+    monkeypatch.setattr(
+        "radar.pipeline.fetch_stage",
+        lambda *a, **k: (fetch.items, fetch),
+    )
+    monkeypatch.setattr("radar.pipeline.enrich_stage", lambda *a, **k: {})
+    # Skip extract so the structured company_name is what resolve sees.
+    monkeypatch.setattr(
+        "radar.pipeline.extract_stage",
+        lambda items, cfg, **kw: list(items),
+    )
+
+    result = run_pipeline(db, config=default_config(), http=object(),
+                          gateway=None, use_llm=False, dry_run=True)
+
+    assert result.status in ("ok", "partial")
+    row = db.one("SELECT id, on_vc_portfolio, canonical_name FROM company "
+                 "WHERE merged_into IS NULL")
+    assert row is not None
+    assert row["canonical_name"] == "Brightbox Analytics"
+    assert row["on_vc_portfolio"] == 1
+    reject = db.one(
+        "SELECT reject_reason, tier FROM score WHERE company_id = ? LIMIT 1",
+        (row["id"],),
+    )
+    assert reject is not None
+    assert reject["reject_reason"] == "already_on_vc_portfolio"
+    assert reject["tier"] == "reject"
+
+
 def test_resolve_item_refuses_portfolio_listings(db):
     """Safety net: even a direct call must not create a company from a listing."""
     from radar.config.defaults import default_config
