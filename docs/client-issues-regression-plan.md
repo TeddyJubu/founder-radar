@@ -342,20 +342,21 @@ deploy divergence, GitHub Actions failing — confirmed in-thread 20 Aug). No ne
 product logic. The root cause was a manual, drift-prone deploy ritual (`ssh` →
 `git pull` → `install.sh`).
 
-Fix (mechanism): `.github/workflows/deploy.yml` — a one-click, repeatable deploy
-from a clean checkout of `main`. It is `workflow_dispatch` only (never runs on
-its own, never leaves a spurious red mark) and does exactly what the ritual did,
-in order: `git pull --ff-only origin main` → `sudo bash deploy/install.sh` →
-`founder-radar doctor` → optional `rescore --all`. Trigger it from the Actions
-tab or `gh workflow run Deploy -f rescore_all=true`.
+Fix (mechanism): `.github/workflows/deploy.yml` — a repeatable deploy from a
+clean checkout of `main`. A **push to `main` starts it automatically** (and
+rescores existing rows), because waiting for a human to click
+`workflow_dispatch` is how this issue survived: zero Deploy runs after the
+workflow landed, so the box kept old code. Manual dispatch remains for a
+forced rescore without a commit (`gh workflow run Deploy -f rescore_all=true`).
 
 Still requires (one-time, owner action, outside the repo): add the VPS secrets
 `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (optional `VPS_PORT`) under Settings →
 Secrets and variables → Actions. The production layout is fixed at
 `/opt/founder-radar` (what install.sh and the systemd units assume). Until the
 secrets exist the workflow fails fast with a clear message; once they exist,
-every future deploy is one action and the §4.1–§4.2 live checks confirm the
-deployed commit matches `main`.
+every merge to `main` ships itself and the §4.1–§4.2 live checks confirm the
+deployed commit matches `main`. Pinned by
+`test_deploy_ships_main_without_a_manual_click`.
 
 ---
 
@@ -498,8 +499,10 @@ running" (G21).
    unless explicitly disabled. It is now an allowlist of Enabled rows (empty
    config → `DEFAULT_SOURCES`). Pinned by
    `test_sources_tab_is_an_allowlist_not_a_denylist`.
-5. **Deployment hygiene (I23/I24/J26)** — `.github/workflows/deploy.yml` is
-   the one-click path. The §4 live checklist is still the host-side proof.
+5. **Deployment hygiene (I23/I24/J26)** — `.github/workflows/deploy.yml`
+   ships `main` on every push (plus optional `workflow_dispatch`). The §4
+   live checklist is still the host-side proof. Pinned by
+   `test_deploy_ships_main_without_a_manual_click`.
 
 ---
 
@@ -526,7 +529,7 @@ Every product complaint from the thread, and the pin that keeps it gone.
 | F17/F18 | Change login | ✅ | Caddy + `/help` |
 | G19–G21 | Walkthrough, costs, how it connects | ✅ | ops-guide + `/help` + README Cost |
 | H22 | Device code on his VPS | ✅ process | |
-| I23/J26 | Updates not reflected / still the same | 🔧 | deploy workflow |
+| I23/J26 | Updates not reflected / still the same | 🔧 | auto-deploy on push to `main` |
 | I24 | Empty dashboard / cannot log in | 🔧 | live §4 |
 | J25 | Companies House driving discovery | ✅ | website not admitting; startup sources first |
 | — | Fund criteria in the sheet, not the code | ✅ | stage ① now loads the sheet on `founder-radar run` |

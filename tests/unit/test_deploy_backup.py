@@ -89,3 +89,24 @@ def test_web_surface_requires_a_password():
     # Every bcrypt hash starts with $2a/$2b/$2y; a committed one here would
     # be a credential in the repo. A plaintext password would be worse.
     assert "$2" not in text, "a bcrypt hash leaked into the Caddyfile"
+
+
+DEPLOY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
+
+
+def test_deploy_ships_main_without_a_manual_click():
+    """Client-issues plan I23/J26 — a green main must reach the VPS.
+
+    The one-click `workflow_dispatch` workflow never ran (zero Deploy runs
+    after it landed), so the box kept old code and Aryan kept seeing the same
+    companies. A push to `main` has to start Deploy by itself; the click
+    remains only for a forced rescore.
+    """
+    text = DEPLOY_WORKFLOW.read_text()
+    assert "\n  push:" in text, "Deploy no longer starts on a push to main"
+    assert "branches: [main]" in text or "branches:\n      - main" in text
+    assert "workflow_dispatch:" in text, "lost the manual rescore trigger"
+    # Auto-deploy must rescore; otherwise J25 qualifier / source-allowlist
+    # changes sit in the checkout but never rewrite existing rows.
+    assert "github.event_name != 'workflow_dispatch'" in text
+    assert "inputs.rescore_all" in text

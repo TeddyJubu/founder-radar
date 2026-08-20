@@ -289,6 +289,17 @@ sudo systemctl start founder-radar.timer
 
 Because the sheet is a **view**, regenerating it from a restored database fully recovers the visible state. That property is why the sheet is not the source of truth.
 
+### Ship a new version (this is how the box stays on `main`)
+
+Merging to `main` starts `.github/workflows/deploy.yml`: `git pull --ff-only`
+on `/opt/founder-radar/app`, `sudo bash deploy/install.sh`, `founder-radar
+doctor`, then `rescore --all`. That is the fix for "I merged but the site is
+still the same." A manual run from the Actions tab is only for a forced
+rescore without a commit.
+
+Required repository secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
+(optional `VPS_PORT`). The workflow fails fast if any of those is missing.
+
 ---
 
 ## 9. Monitoring
