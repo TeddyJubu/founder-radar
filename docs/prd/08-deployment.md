@@ -161,7 +161,7 @@ find /opt/founder-radar/backups -name 'radar-*.db' -mtime +14 -delete
 
 ---
 
-## 5. Hermes Agent — Telegram only
+## 5. Hermes Agent — Telegram and VPS repair
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-browser
@@ -177,14 +177,24 @@ hermes config set telegram.allowed_users <aryan-user-id>
 sudo hermes gateway install --system                # systemd, starts at boot
 ```
 
-Then copy the skill:
+Then copy the skill (or re-run `deploy/install.sh`, which does this and writes `/opt/founder-radar/hermes.env`):
 
 ```bash
-mkdir -p ~/.hermes/skills/founder-radar
-cp /opt/founder-radar/app/hermes/skills/founder-radar/SKILL.md ~/.hermes/skills/founder-radar/
+mkdir -p ~/.hermes/skills
+cp -a /opt/founder-radar/app/hermes/skills/founder-radar ~/.hermes/skills/
 ```
 
 Finally, in Telegram, message the bot `/sethome` so scheduled deliveries know where to go.
+
+**When a bug appears**, Hermes on this box is the repair agent. systemd is the trigger, not Hermes cron:
+
+- `founder-radar-repair.timer` at 09:05, after the heartbeat
+- `OnFailure=` of `founder-radar.service` (fatal exit 2 only; partial is a normal Tuesday)
+- Telegram: `/fix` or “fix it”
+
+Both paths run `deploy/hermes-repair.sh`: `founder-radar repair --apply` first (migrate, prune backups, restart web), then `hermes chat --yolo -s founder-radar` if a code-level fix is still needed. Scoring stays off-limits. A missing `hermes` binary is not a failed timer — ops remediations still run.
+
+Do not start Hermes while the daily scan is active (MemoryMax 1G on the scan, 800M on repair). The script no-ops the agent in that case and retries next cycle. A 6-hour cooldown stops an OnFailure loop.
 
 **Digest delivery with fallback:**
 
@@ -265,7 +275,7 @@ Check the AI spend. Re-verify one or two adapters against live pages.
 
 | Symptom | First move |
 |---|---|
-| No digest arrived | `systemctl status founder-radar.timer` then `tail /opt/founder-radar/logs/error.log` |
+| No digest arrived | `founder-radar repair --apply`, or reply “fix it” in Telegram. Then `systemctl status founder-radar.timer` and `tail /opt/founder-radar/logs/error.log` |
 | Digest arrived but is empty | Normal on a quiet day. Confirm with `founder-radar status` — if sources are ✅ and gates rejected everything, it worked. |
 | One source shows ⚠️ | `founder-radar sources --test <key>` — prints the raw response and the parse result |
 | Source returns 0 but says OK | Layout change. `founder-radar sources --sniff <url>` to find the new endpoint. **This is the dangerous failure — it looks like a quiet week.** |

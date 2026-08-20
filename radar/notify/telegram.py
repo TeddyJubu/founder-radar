@@ -9,7 +9,7 @@ That promise is only true if the fallback is unconditional, so the fallback
 fires on a missing binary, a non-zero exit, a timeout and an exception alike.
 `test_digest_delivered_when_hermes_is_down` is the test that holds it.
 
-**Routing** — the nine commands from 07-interfaces §2 mapped to CLI argv, plus
+**Routing** — the Telegram commands from 07-interfaces §2 mapped to CLI argv, plus
 the `TELEGRAM_ALLOWED_USERS` check. `route()` and `handle()` are pure: they
 return a plan, they never execute one unless a runner is injected. That is what
 lets the allow-list test assert `ran_pipeline is False` without a subprocess.
@@ -160,8 +160,8 @@ send_digest = send_message
 
 # ------------------------------------------------------------------ routing
 
-#: The nine commands of 07-interfaces §2. Value is the CLI argv, or None for
-#: the two that are answered from a constant and never shell out.
+#: The commands of 07-interfaces §2 plus `/fix` (FR-9.7). Value is the CLI
+#: argv, or None for the ones answered from a constant and never shell out.
 COMMANDS: dict[str, list[str] | None] = {
     "/today": ["digest", "--today"],
     "/run": ["run"],
@@ -170,6 +170,7 @@ COMMANDS: dict[str, list[str] | None] = {
     "/status": ["status"],
     "/sheet": None,
     "/week": ["digest", "--week"],
+    "/fix": ["repair", "--apply"],
     "/help": None,
     "/start": None,
 }
@@ -188,6 +189,7 @@ HELP_TEXT = """📡 UK Founder Radar
 /status         last run, source health, this month's cost
 /week           this week's new shortlist entries
 /sheet          link to the spreadsheet
+/fix            diagnose and repair this box
 /help           this list
 
 Fund keys: northstar · dsw · outward · anticus"""
@@ -299,7 +301,7 @@ def skill_commands(path) -> list[list[str]]:
 
 
 def commands_used() -> set[str]:
-    """The CLI verbs the nine Telegram commands actually invoke."""
+    """The CLI verbs the Telegram commands actually invoke."""
     return {argv[0] for argv in COMMANDS.values() if argv}
 
 

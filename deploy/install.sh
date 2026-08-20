@@ -115,10 +115,11 @@ for unit in founder-radar.service founder-radar.timer \
             founder-radar-heartbeat.service founder-radar-heartbeat.timer \
             founder-radar-backup.service founder-radar-backup.timer \
             founder-radar-web.service \
-            founder-radar-update.service founder-radar-update.timer; do
+            founder-radar-update.service founder-radar-update.timer \
+            founder-radar-repair.service founder-radar-repair.timer; do
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
-chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh"
+chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh" "$HERE/hermes-repair.sh"
 
 install -m 644 "$HERE/logrotate.founder-radar" "$LOGROTATE_DIR/founder-radar"
 
@@ -127,6 +128,7 @@ systemctl enable --now founder-radar.timer
 systemctl enable --now founder-radar-heartbeat.timer
 systemctl enable --now founder-radar-backup.timer
 systemctl enable --now founder-radar-update.timer
+systemctl enable --now founder-radar-repair.timer
 
 # ------------------------------------------------------------- 4b. the review
 #
@@ -188,22 +190,37 @@ fi
 
 # ------------------------------------------------------------------ 5. hermes
 #
-# The entire Hermes footprint: one skill file. Deleting it and one unit costs
-# the system nothing but the chat surface (02-architecture §3).
+# Skill + playbook so the agent already on this VPS can diagnose and fix
+# production bugs. Deleting the skill still leaves the pipeline and
+# `founder-radar repair` intact (02-architecture §3, FR-9.7).
 
 say "hermes skill"
-HERMES_HOME="${HERMES_HOME:-$(getent passwd "${SUDO_USER:-root}" | cut -d: -f6)}"
+HERMES_USER="${HERMES_USER:-${SUDO_USER:-root}}"
+HERMES_HOME="${HERMES_HOME:-$(getent passwd "$HERMES_USER" | cut -d: -f6)}"
+printf 'HERMES_USER=%s\nHERMES_HOME=%s\n' "$HERMES_USER" "$HERMES_HOME" \
+  > "$ROOT/hermes.env"
+chmod 644 "$ROOT/hermes.env"
+
+install_skill() {
+  local dest="$1/.hermes/skills"
+  install -d "$dest"
+  rm -rf "$dest/founder-radar"
+  cp -a "$APP_DIR/hermes/skills/founder-radar" "$dest/founder-radar"
+}
+
 if [ -d "$HERMES_HOME/.hermes" ]; then
-  install -d "$HERMES_HOME/.hermes/skills/founder-radar"
-  install -m 644 "$APP_DIR/hermes/skills/founder-radar/SKILL.md" \
-    "$HERMES_HOME/.hermes/skills/founder-radar/SKILL.md"
+  install_skill "$HERMES_HOME"
   if [ -n "${SUDO_USER:-}" ]; then
     chown -R "$SUDO_USER" "$HERMES_HOME/.hermes/skills/founder-radar"
   fi
 else
-  say "no ~/.hermes yet — install Hermes, then copy"
-  say "  $APP_DIR/hermes/skills/founder-radar/SKILL.md"
-  say "  to ~/.hermes/skills/founder-radar/"
+  say "no $HERMES_HOME/.hermes yet — install Hermes, then copy"
+  say "  $APP_DIR/hermes/skills/founder-radar/"
+  say "  to $HERMES_HOME/.hermes/skills/founder-radar/"
+fi
+# Root's gateway, if that is a different home than SUDO_USER.
+if [ "$HERMES_USER" != "root" ] && [ -d /root/.hermes ]; then
+  install_skill /root
 fi
 
 # ------------------------------------------------------------------ 6. schema

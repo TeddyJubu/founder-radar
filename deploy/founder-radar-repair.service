@@ -1,0 +1,32 @@
+# /etc/systemd/system/founder-radar-repair.service
+#
+# Operational remediations plus, when still needed, the Hermes agent that
+# already runs on this VPS. systemd is the trigger — not Hermes cron
+# (02-architecture §3: the daily scan must survive a sick gateway).
+#
+# Started by founder-radar-repair.timer (09:05) and by OnFailure= of
+# founder-radar.service (fatal scan only; exit 1 / partial is a normal Tuesday).
+
+[Unit]
+Description=Diagnose and repair UK Founder Radar
+Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/founder-radar
+EnvironmentFile=-/opt/founder-radar/hermes.env
+ExecStart=/opt/founder-radar/app/deploy/hermes-repair.sh
+TimeoutStartSec=1800
+Nice=10
+
+# Chat-only Hermes is 300–600 MB. Leave headroom beside a 4 GB box; never
+# overlap a live scan (the script no-ops Hermes when the scan is active).
+MemoryMax=800M
+
+StandardOutput=append:/opt/founder-radar/logs/repair.log
+StandardError=append:/opt/founder-radar/logs/repair.log
+
+[Install]
+WantedBy=multi-user.target

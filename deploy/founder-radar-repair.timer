@@ -1,0 +1,15 @@
+# /etc/systemd/system/founder-radar-repair.timer
+#
+# 09:05 — five minutes after the heartbeat, so a stale/source/disk alert
+# already went out and this pass can repair it. Persistent=true catches a
+# box that was down over breakfast.
+
+[Unit]
+Description=Repair Founder Radar after the morning heartbeat
+
+[Timer]
+OnCalendar=*-*-* 09:05:00 Europe/London
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -118,7 +118,8 @@ fi
 
 if command -v systemctl >/dev/null 2>&1; then
   fail=0
-  for unit in founder-radar-web.service founder-radar.timer founder-radar-update.timer; do
+  for unit in founder-radar-web.service founder-radar.timer \
+              founder-radar-update.timer founder-radar-repair.timer; do
     if systemctl is-enabled --quiet "$unit" 2>/dev/null \
         || systemctl is-active --quiet "$unit" 2>/dev/null; then
       say "ok: $unit"

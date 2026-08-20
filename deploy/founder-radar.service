@@ -8,6 +8,9 @@ Description=UK Founder Radar daily scan
 Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
 After=network-online.target
 Wants=network-online.target
+# Fatal only. SuccessExitStatus treats exit 1 (partial) as success, so a
+# normal Tuesday does not page Hermes. Exit 2 still fails the unit.
+OnFailure=founder-radar-repair.service
 
 [Service]
 Type=oneshot

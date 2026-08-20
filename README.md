@@ -59,10 +59,11 @@ Stage ⑥ is the important row: **no AI and no network.** It is a pure function 
 database and the configuration, which is what makes re-scoring five thousand
 companies take milliseconds and every score reproducible from a `config_hash`.
 
-**The rule, stated once:** the AI may read prose into a record, and may turn a chat
-sentence into a command. It may never decide whether a company passes a gate, what
-it scores, whether it is a duplicate, or what lands in the sheet. When the client
-asks "why did this drop off my list?", the answer has to be a number he can check.
+**The rule, stated once:** the AI may read prose into a record, may turn a chat
+sentence into a command, and may repair operational and adapter bugs on the VPS.
+It may never decide whether a company passes a gate, what it scores, whether it
+is a duplicate, or what lands in the sheet. When the client asks "why did this
+drop off my list?", the answer has to be a number he can check.
 
 ## Two ways in
 
@@ -112,6 +113,7 @@ founder-radar review
 founder-radar forget "person name"
 founder-radar db backup|restore|migrate
 founder-radar doctor
+founder-radar repair [--apply] [--run]
 ```
 
 Exit codes: `0` success · `1` partial (some sources failed) · `2` fatal.

@@ -131,8 +131,7 @@ founder-radar sync-sheet
 4. Use Telegram for the digest and remote `/run` / `/status` when away from the
    browser.
 
-If something looks empty or wrong: `founder-radar doctor`, then check the
-Sources and Run Log tabs in the sheet.
+If something looks empty or wrong: `founder-radar repair --apply` (or `/fix` in Telegram), then `founder-radar doctor`. Check the Sources and Run Log tabs in the sheet.
 
 ---
 
