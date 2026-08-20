@@ -183,9 +183,9 @@ Each requirement has an ID, a plain statement, and an acceptance test. **A requi
 | **FR-9.4** | The database is backed up daily, with 14 days retained. |
 | **FR-9.5** | Secrets live in a `0600` env file outside the repository and are never logged. |
 | **FR-9.6** | The command-line tool is the complete interface; anything the chat layer can do, a human can do in a shell. |
-| **FR-9.7** | When a bug appears on the VPS, Hermes on that box can diagnose and repair it. Operational remediations are `founder-radar repair` (testable Python). Adapter/layout/crash fixes follow the skill playbook. Scoring, gates and thresholds stay in `radar/score/` — the agent may not retune them. A missing Hermes install degrades to ops-only repair; the pipeline never depends on it. |
+| **FR-9.7** | When a bug appears on the VPS, Hermes on that box can diagnose and repair it **without asking a non-technical person to SSH, pick a branch, or merge**. Operational remediations are `founder-radar repair` (testable Python). Adapter/layout/crash fixes follow `references/workflow.md`: git worktree → implement → review sub-agent (`VERDICT: APPROVE`) → test sub-agent (`VERDICT: PASS`) → `deploy/hermes-ship.sh` (pytest again, refuse `radar/score/` / secrets, fast-forward live `main`, push, reinstall). Sub-agents run one at a time (4 GB). Scoring, gates and thresholds stay in `radar/score/` — the agent may not retune them. A missing Hermes install degrades to ops-only repair; the pipeline never depends on it. |
 
-**Acceptance:** `09-test-plan.md` §7 — timer enabled and scheduled, run-log row complete, heartbeat fires when stale, backups create and prune, `.env` is `0600` and never appears in logs, every Telegram command resolves to a real CLI command, `founder-radar repair --apply` remediates an empty schema, the Hermes skill forbids editing `radar/score/`.
+**Acceptance:** `09-test-plan.md` §7 — timer enabled and scheduled, run-log row complete, heartbeat fires when stale, backups create and prune, `.env` is `0600` and never appears in logs, every Telegram command resolves to a real CLI command, `founder-radar repair --apply` remediates an empty schema, the Hermes skill forbids editing `radar/score/`, `hermes-ship.sh` refuses a scoring diff and a dirty worktree, `update-from-main.sh` keeps a local `main` that is ahead of GitHub.
 
 ---
 

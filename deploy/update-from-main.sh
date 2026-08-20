@@ -83,12 +83,24 @@ if [ "$before" = "$remote" ]; then
     exit 0
   fi
   say "already at $before — forced rescore without a pull"
-else
+elif run_git merge-base --is-ancestor "$before" "$remote"; then
   say "updating $before -> $remote"
   run_git checkout main
   # merge, not `pull origin main`: after `fetch origin main`, git 2.43
   # errors with "Cannot fast-forward to multiple branches".
   run_git merge --ff-only origin/main
+elif run_git merge-base --is-ancestor "$remote" "$before"; then
+  # Hermes shipped a reviewed+tested fix on this box. Pulling would
+  # require a non-ff merge or a reset. Keep the VPS commit.
+  say "local is ahead of origin/main — keeping the VPS fix, not pulling"
+  if ! truthy "$FORCE"; then
+    say "after:  $(run_git rev-parse HEAD)"
+    exit 0
+  fi
+  say "forced rescore without a pull (local still ahead)"
+else
+  say "diverged from origin/main ($before vs $remote) — refusing to mix"
+  exit 1
 fi
 
 if [ "$DRY" = "1" ]; then

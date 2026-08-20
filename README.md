@@ -61,6 +61,8 @@ companies take milliseconds and every score reproducible from a `config_hash`.
 
 **The rule, stated once:** the AI may read prose into a record, may turn a chat
 sentence into a command, and may repair operational and adapter bugs on the VPS.
+A non-technical person sending `/fix` is not asked to SSH or merge: Hermes uses a
+worktree, a review sub-agent, a test sub-agent, then `deploy/hermes-ship.sh`.
 It may never decide whether a company passes a gate, what it scores, whether it
 is a duplicate, or what lands in the sheet. When the client asks "why did this
 drop off my list?", the answer has to be a number he can check.

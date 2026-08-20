@@ -137,7 +137,10 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "founder-radar-repair.timer" in installer
     assert "founder-radar-repair.service" in installer
     assert "hermes-repair.sh" in installer
+    assert "hermes-ship.sh" in installer
+    assert "worktrees" in installer
     assert "enable --now founder-radar-repair.timer" in installer
+    assert "keeping the VPS fix" in script
     assert "OnFailure=founder-radar-repair.service" in (
         DEPLOY_DIR / "founder-radar.service").read_text()
     # pip as radar from /root dies on an editable path hook. Pin the fix.
@@ -217,3 +220,54 @@ def test_update_from_main_fast_forwards_and_skips_when_current(tmp_path):
     assert head_after == origin_head
     assert "dry-run" in second.stdout + second.stderr + (
         root / "logs" / "update.log").read_text()
+
+
+def test_update_from_main_keeps_a_local_commit_ahead_of_github(tmp_path):
+    """Hermes may ship a reviewed fix before git push succeeds. The timer
+    must not rewind that commit with a failed --ff-only pull."""
+    if shutil.which("git") is None:
+        pytest.skip("git is not available")
+
+    origin = tmp_path / "origin.git"
+    checkout = tmp_path / "app"
+    root = tmp_path / "root"
+    (root / "logs").mkdir(parents=True)
+    env = {
+        **os.environ,
+        "ROOT": str(root),
+        "APP_DIR": str(checkout),
+        "RADAR_UPDATE_ALLOW_NONROOT": "1",
+        "RADAR_UPDATE_DRY_RUN": "1",
+        "RADAR_UPDATE_LOCK": str(tmp_path / "update.lock"),
+        "RADAR_UPDATE_LOG": str(root / "logs" / "update.log"),
+        "GIT_AUTHOR_NAME": "radar-test",
+        "GIT_AUTHOR_EMAIL": "radar-test@example.test",
+        "GIT_COMMITTER_NAME": "radar-test",
+        "GIT_COMMITTER_EMAIL": "radar-test@example.test",
+    }
+
+    def git(cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, env=env,
+                              capture_output=True, text=True, check=True)
+
+    git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "seed"
+    git(tmp_path, "clone", str(origin), str(work))
+    (work / "README").write_text("one\n")
+    git(work, "add", "README")
+    git(work, "commit", "-m", "one")
+    git(work, "push", "origin", "main")
+    git(tmp_path, "clone", str(origin), str(checkout))
+
+    (checkout / "README").write_text("vps-fix\n")
+    git(checkout, "add", "README")
+    git(checkout, "commit", "-m", "vps-fix")
+    local_head = git(checkout, "rev-parse", "HEAD").stdout.strip()
+
+    done = subprocess.run(["bash", str(UPDATE_SCRIPT)], env=env,
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    combined = done.stdout + done.stderr + (
+        root / "logs" / "update.log").read_text()
+    assert "keeping the VPS fix" in combined
+    assert git(checkout, "rev-parse", "HEAD").stdout.strip() == local_head

@@ -119,7 +119,9 @@ for unit in founder-radar.service founder-radar.timer \
             founder-radar-repair.service founder-radar-repair.timer; do
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
-chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh" "$HERE/hermes-repair.sh"
+chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh" \
+          "$HERE/hermes-repair.sh" "$HERE/hermes-ship.sh"
+install -d -o "$APP_USER" -g "$APP_USER" -m 755 "$ROOT/worktrees"
 
 install -m 644 "$HERE/logrotate.founder-radar" "$LOGROTATE_DIR/founder-radar"
 

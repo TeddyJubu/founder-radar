@@ -387,11 +387,11 @@
 
   ┌──────────────────────────────────────────────────────┐
   │  Hermes Agent    always on, Telegram + VPS repair    │
-  │  skill maps chat → CLI; playbook fixes ops/adapters  │
+  │  /fix → repair CLI → worktree → review → test → ship │
   │  Scoring stays in Python. Delete it, pipeline lives. │
   └──────────────────────────────────────────────────────┘</div>
 
-  <p style="margin-top:22px"><strong>Why the split.</strong> The engine is boring, deterministic Python that can be unit-tested offline in under a minute. Hermes gives a polished Telegram surface and an on-box repair loop — operational remediations are Python (<code>founder-radar repair</code>), adapter/layout bugs follow a playbook that is not allowed to touch scoring. If Hermes ever proves flaky, removing it costs the skill directory and one timer. The pipeline never knew it was there.</p>
+  <p style="margin-top:22px"><strong>Why the split.</strong> The engine is boring, deterministic Python that can be unit-tested offline in under a minute. Hermes gives a polished Telegram surface and an on-box repair loop — operational remediations are Python (<code>founder-radar repair</code>), adapter/layout bugs go through a worktree, a review sub-agent, a test sub-agent, then <code>hermes-ship.sh</code>. Scoring is off-limits. The person on Telegram is not asked to merge. If Hermes ever proves flaky, removing it costs the skill directory and one timer. The pipeline never knew it was there.</p>
 </section>
 
 <!-- ============ RESILIENCE ============ -->

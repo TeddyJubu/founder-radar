@@ -83,7 +83,7 @@ Turning a paragraph of English into a structured record.
 Talking to Aryan on Telegram, and repairing the box when something breaks.
 
 - Translates "show me the Northstar ones" into `founder-radar fund northstar`
-- Translates "it's broken" / `/fix` into `founder-radar repair --apply`, then the playbook in `hermes/skills/founder-radar/references/repair.md`
+- Translates "it's broken" / `/fix` into `founder-radar repair --apply`, then — only if a code fix is still needed — the worktree → review sub-agent → test sub-agent → `hermes-ship.sh` loop in `references/workflow.md`. The person chatting is not asked to SSH or merge.
 - Contains no scoring, no thresholds, no gates — those stay Layer 1
 - Removable: delete the skill and `founder-radar-repair.timer`. The pipeline and the `repair` CLI remain.
 

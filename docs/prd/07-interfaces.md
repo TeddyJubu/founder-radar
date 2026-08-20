@@ -289,9 +289,9 @@ Only allow-listed Telegram user IDs may issue commands (`TELEGRAM_ALLOWED_USERS`
 
 ### The Hermes skill — chat plus a VPS repair playbook
 
-`~/.hermes/skills/founder-radar/SKILL.md` maps chat to CLI commands and, when something is broken, to `founder-radar repair --apply` plus `references/repair.md`.
+`~/.hermes/skills/founder-radar/SKILL.md` maps chat to CLI commands and, when something is broken, to `founder-radar repair --apply` plus `references/workflow.md`.
 
-Scoring still does not live there. Operational remediations are Python (`radar/ops/repair.py`) so they can be unit-tested offline. Adapter/layout/crash fixes are the one thing the on-box agent is allowed to edit, on a `hermes/fix-*` branch, never on live `main`.
+Scoring still does not live there. Operational remediations are Python (`radar/ops/repair.py`) so they can be unit-tested offline. Adapter/layout/crash fixes are the one thing the on-box agent is allowed to edit: in a git worktree on `hermes/fix-*`, reviewed and tested by **other** sub-agents, then merged only by `deploy/hermes-ship.sh`. The person on Telegram is not an engineer and is never asked to merge.
 
 `install.sh` copies the whole skill directory. Deleting it and `founder-radar-repair.timer` loses chat repair; `founder-radar repair` and the pipeline keep working.
 

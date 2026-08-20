@@ -205,16 +205,28 @@ def test_fix_telegram_command_maps_to_repair(monkeypatch):
 
 
 def test_skill_teaches_repair_and_forbids_scoring_edits():
+    refs = REPO / "hermes" / "skills" / "founder-radar" / "references"
     skill = (REPO / "hermes" / "skills" / "founder-radar" / "SKILL.md").read_text()
-    playbook = (REPO / "hermes" / "skills" / "founder-radar" / "references"
-                / "repair.md").read_text()
+    playbook = (refs / "repair.md").read_text()
+    workflow = (refs / "workflow.md").read_text()
+    review = (refs / "review-prompt.md").read_text()
+    test_prompt = (refs / "test-prompt.md").read_text()
     assert "founder-radar repair --apply" in skill
     assert "radar/score/" in skill
     assert "Never edit" in skill
-    assert "hermes/fix-" in skill
+    assert "I'm on it" in skill
+    assert "hermes/fix-" in workflow
+    assert "hermes-ship.sh" in workflow
+    assert "VERDICT: APPROVE" in workflow
+    assert "VERDICT: PASS" in workflow
+    assert "One sub-agent at a time" in workflow
+    assert "delegation.worktree_isolation" in workflow
     assert "radar/score/" in playbook
-    assert (REPO / "hermes" / "skills" / "founder-radar" / "references"
-            / "repair.md").is_file()
+    assert "hermes-ship.sh" in playbook
+    assert "VERDICT: APPROVE" in review
+    assert "Do **not** edit files" in review
+    assert "VERDICT: PASS" in test_prompt
+    assert "pip install -e" in test_prompt
 
 
 def test_daily_scan_pages_hermes_only_on_fatal():
@@ -310,3 +322,11 @@ def test_hermes_repair_without_binary_still_applies_ops(tmp_path):
     combined = done.stdout + done.stderr + (root / "logs" / "repair.log").read_text()
     assert "hermes not installed" in combined
     assert (root / "logs" / "hermes-repair.requested").is_file()
+
+
+def test_hermes_repair_prompt_sends_the_nontech_workflow():
+    text = REPAIR_SH.read_text()
+    assert "workflow.md" in text
+    assert "hermes-ship.sh" in text
+    assert "one at a time" in text
+    assert "Never ask them to run a command" in text

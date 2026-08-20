@@ -697,7 +697,10 @@ def test_repair_apply_migrates_an_empty_database(tmp_db):
 
 def test_skill_forbids_scoring_edits():
     skill = read("hermes/skills/founder-radar/SKILL.md")
+    workflow = read("hermes/skills/founder-radar/references/workflow.md")
     assert "Never edit" in skill and "radar/score/" in skill                  # FR-9.7
+    assert "hermes-ship.sh" in workflow and "VERDICT: APPROVE" in workflow
+    assert "VERDICT: PASS" in workflow
 
 def test_telegram_allowlist_rejects_unknown_user(bot):
     r = bot.handle(update(user_id=999999, text="/run"))

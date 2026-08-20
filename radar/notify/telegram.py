@@ -189,7 +189,7 @@ HELP_TEXT = """📡 UK Founder Radar
 /status         last run, source health, this month's cost
 /week           this week's new shortlist entries
 /sheet          link to the spreadsheet
-/fix            diagnose and repair this box
+/fix            something's wrong — I'll look and fix it
 /help           this list
 
 Fund keys: northstar · dsw · outward · anticus"""

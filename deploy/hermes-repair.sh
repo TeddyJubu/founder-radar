@@ -191,17 +191,18 @@ trap 'rm -f "$prompt"' EXIT
 
 {
   printf '%s\n' \
-    "You are repairing UK Founder Radar on this VPS." \
-    "Follow the founder-radar skill, especially references/repair.md." \
-    "Run commands yourself. Do not ask a human to paste output." \
+    "You are repairing UK Founder Radar on this VPS for a non-technical person." \
+    "Follow the founder-radar skill, then references/workflow.md." \
+    "Talk to them in short plain English. Never ask them to run a command." \
+    "First message: I'm on it. I'll message you when it's done." \
     "" \
     "Rules:" \
-    "- Never edit radar/score/, gates, or thresholds." \
-    "- Never print /opt/founder-radar/.env or any secret." \
-    "- Never git push --force or commit on local main." \
-    "- Prefer founder-radar repair --apply for ops." \
-    "- Code fixes: branch hermes/fix-* off origin/main, run pytest if present." \
-    "- When done, send a short Telegram summary." \
+    "- Ops: founder-radar repair --apply first." \
+    "- Code: worktree under /opt/founder-radar/worktrees, never live main." \
+    "- Review sub-agent, then test sub-agent, one at a time." \
+    "- Ship only with sudo bash deploy/hermes-ship.sh after APPROVE and PASS." \
+    "- Never edit radar/score/, never print .env, never git push --force." \
+    "- When done, one Telegram sentence: fixed and live, or could not finish." \
     "" \
     "Diagnosis JSON (may be empty):" \
     ""

@@ -46,40 +46,33 @@ Never `cat /opt/founder-radar/.env`. Never paste a service-account JSON.
 restarts a dead web unit. Do not re-implement those in a one-off shell
 loop.
 
-## 3. Code fixes (adapters and crashes only)
+## 3. Code fixes — worktree, review, test, then ship
 
-Production `main` is owned by `deploy/update-from-main.sh` (`--ff-only`).
-A local commit on `main` makes the next update fail closed. So:
+Do not patch live `main`. Follow `workflow.md` in this folder. Short
+version:
+
+1. Create `/opt/founder-radar/worktrees/fix-…` off `origin/main`.
+2. Implement and commit there.
+3. A **different** sub-agent reviews (`review-prompt.md`) → `VERDICT: APPROVE`.
+4. A **different** sub-agent tests (`test-prompt.md`) → `VERDICT: PASS`.
+5. Only then: `sudo bash /opt/founder-radar/app/deploy/hermes-ship.sh "$wt"`.
+
+`hermes-ship.sh` is the machine gate: it re-runs pytest, refuses a
+`radar/score/` diff, fast-forwards live `main`, tries `git push origin main`,
+reinstalls, and deletes the worktree. If it fails, the live site is
+unchanged.
+
+The person on Telegram is not an engineer. They never see the worktree.
+Talk from `workflow.md` § Talk like this.
 
 ```bash
-cd /opt/founder-radar/app
-sudo -u radar git fetch origin main
-sudo -u radar git worktree add /tmp/hermes-fix -b hermes/fix-<reason> origin/main
-cd /tmp/hermes-fix
+sudo -u radar mkdir -p /opt/founder-radar/worktrees
+sudo -u radar git -C /opt/founder-radar/app fetch origin main
+sudo -u radar git -C /opt/founder-radar/app merge --ff-only origin/main || true
+wt=/opt/founder-radar/worktrees/fix-$(date -u +%Y%m%dT%H%M%S)
+sudo -u radar git -C /opt/founder-radar/app worktree add \
+  -b "hermes/$(basename "$wt")" "$wt"
 ```
-
-Edit the adapter under `radar/sources/`. Match neighbouring adapters.
-Add or update a `_CHANGED` fixture if the site layout broke.
-
-Verify:
-
-```bash
-/opt/founder-radar/venv/bin/python -m pytest tests/unit/test_sources.py \
-    tests/unit/test_repair.py -q
-```
-
-If pytest is not installed, run `founder-radar sources --test <key>`
-against the live page and `founder-radar doctor`. Say that the offline
-suite did not run.
-
-Durable save:
-
-- If `git push` works: push `hermes/fix-<reason>` and tell Telegram the
-  branch name. Do not merge to `main` from the VPS.
-- If push is refused: `git -C /tmp/hermes-fix diff origin/main > /opt/founder-radar/logs/hermes-fix.patch`
-  and paste a short summary, not the whole diff, into Telegram.
-
-Remove the worktree when finished: `git -C /opt/founder-radar/app worktree remove /tmp/hermes-fix`.
 
 ## 4. Hard limits (do not "just this once")
 
@@ -93,12 +86,15 @@ Remove the worktree when finished: `git -C /opt/founder-radar/app worktree remov
   source in the report instead.
 - Starting a second daily scan while `founder-radar.service` is active
   (4 GB box; MemoryMax on the scan is 1G). Wait or skip.
+- Shipping without a review APPROVE **and** a test PASS. `hermes-ship.sh`
+  is the only merge path.
 
 ## 5. Aftercare
 
-Re-run `founder-radar repair` (no `--apply` needed) and send Telegram:
+Re-run `founder-radar repair` (no `--apply` needed) and send **one**
+Telegram message a non-tech person can read:
 
-- what you diagnosed
-- what `repair --apply` already did
-- what you changed in code (path + branch or patch path)
-- what still needs a human (keys, sheet sharing, anti-bot block)
+- it's fixed and live, in one sentence, **or**
+- you couldn't finish, in one sentence, and that the live site is unchanged
+
+No worktree paths, no pytest, no branch names.
