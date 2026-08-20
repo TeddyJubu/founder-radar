@@ -1080,6 +1080,32 @@ def _weights_grid(cfg: Any) -> list[list[str]]:
     return grid
 
 
+def _strip_website_from_lists_grid(
+    grid: Sequence[Sequence[Any]],
+) -> list[list[str]] | None:
+    """Blank `website` cells in the Lists-tab `qualifiers` column.
+
+    Rewriting the whole tab would drop extra columns Aryan may have added.
+    Empty cells are ignored by `parse_lists`, so this is the one-cell J25 fix.
+    """
+    if not grid:
+        return None
+    header = [str(c).strip() for c in grid[0]]
+    try:
+        index = header.index("qualifiers")
+    except ValueError:
+        return None
+    out = [list(row) for row in grid]
+    changed = False
+    for row in out[1:]:
+        while len(row) <= index:
+            row.append("")
+        if str(row[index]).strip().lower() == "website":
+            row[index] = ""
+            changed = True
+    return out if changed else None
+
+
 def _lists_grid(cfg: Any) -> list[list[str]]:
     from radar.config.loader import DEFAULT_LISTS
 
@@ -1098,6 +1124,32 @@ def _lists_grid(cfg: Any) -> list[list[str]]:
 # ------------------------------------------------------------------- entry
 
 
+def read_sheet_state(gw: SheetGateway) -> tuple[
+    dict[str, list[list[str]]], dict[str, int], dict[str, list[list[str]]], list[str]
+]:
+    """Stage ① read: ensure tabs exist, batchGet the config ranges, seed blanks.
+
+    Shared by `sync_sheet` and `load_runtime_config` so a daily run and a
+    sheet render cannot disagree about what the spreadsheet currently says.
+
+    Returns `(raw, sheets, seeds, missing)` — `missing` is the tabs that had
+    to be created, which is what forces a first-run layout write.
+    """
+    sheets = dict(gw.sheets())
+    missing = [tab for tab in EXPECTED_TABS if tab not in sheets]
+    if missing:
+        sheets.update(gw.add_tabs(missing))
+    ranges = list(READ_RANGES.values())
+    got = gw.batch_get(ranges)
+    raw: dict[str, list[list[str]]] = {
+        tab: list(got.get(rng, []) or []) for tab, rng in READ_RANGES.items()
+    }
+    seeds = seed_grids(raw)
+    for tab, grid in seeds.items():
+        raw[tab] = grid
+    return raw, sheets, seeds, missing
+
+
 def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
                today: date | None = None) -> dict[str, Any]:
     """Render every tab the pipeline owns, in as few API calls as possible.
@@ -1107,29 +1159,20 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
     """
     from radar.config.loader import (
         FUND_CRITERIA_STATUS_COL,
+        J25_META,
         SETTINGS_STATUS_COL,
         WEIGHTS_STATUS_COL,
+        drop_legacy_website_qualifier,
         load_config,
+        save_snapshot,
     )
 
     gw = gateway or open_gateway()
     today = today or date.today()
 
-    sheets = dict(gw.sheets())
-    missing = [tab for tab in EXPECTED_TABS if tab not in sheets]
-    if missing:
-        sheets.update(gw.add_tabs(missing))
-
-    ranges = list(READ_RANGES.values())
-    got = gw.batch_get(ranges)
-    raw: dict[str, list[list[str]]] = {
-        tab: list(got.get(rng, []) or []) for tab, rng in READ_RANGES.items()
-    }
-
-    seeds = seed_grids(raw)
+    raw, sheets, seeds, missing = read_sheet_state(gw)
     seed_writes: list[ValueRange] = []
     for tab, grid in seeds.items():
-        raw[tab] = grid
         width = col_letter(max(len(r) for r in grid) - 1)
         seed_writes.append(ValueRange(a1(tab, "A", 1, width, len(grid)), grid))
 
@@ -1144,6 +1187,17 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
 
     result = load_config(raw, db=db)
     cfg = result.config
+    lists, stripped = drop_legacy_website_qualifier(cfg.lists, db)
+    if stripped:
+        cfg = cfg.model_copy(update={"lists": lists})
+        save_snapshot(db, cfg, is_last_good=True)
+        patched = _strip_website_from_lists_grid(raw.get(LISTS, []))
+        if patched:
+            width = col_letter(max(len(r) for r in patched) - 1)
+            seed_writes.append(ValueRange(a1(LISTS, "A", 1, width, len(patched)), patched))
+            db.set_meta(J25_META, "1")
+    elif db.get_meta(J25_META) != "1":
+        db.set_meta(J25_META, "1")
 
     counts = {
         "companies": db.scalar(

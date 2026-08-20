@@ -1099,13 +1099,20 @@ def run_pipeline(
     `dry_run` skips the sheet write and the run-log row. `gateway=None` skips
     the sheet entirely (tests, `--dry-run`); `http=None` builds a real client.
     """
-    from radar.config.defaults import default_config
+    from radar.config.loader import load_runtime_config
 
-    cfg = config or default_config()
+    config_warnings: list[str] = []
+    if config is None:
+        cfg, opened, config_warnings = load_runtime_config(db, gateway=gateway)
+        if gateway is None:
+            gateway = opened
+    else:
+        cfg = config
     # Validate `--fund` before the crawl, not after: a typo should cost nothing.
     funds_in_scope(cfg, fund_key)
     run_id = None if dry_run else _begin_run(db, mode=mode, scope=f"fund={fund_key}" if fund_key else None)
     result = RunResult(mode=mode, scope=f"fund={fund_key}" if fund_key else None)
+    result.warnings.extend(config_warnings)
 
     try:
         # ② fetch
@@ -1209,10 +1216,13 @@ def run_backfill(db: Db, *, days: int = 90, config: Config | None = None,
                  http: Any = None, now: date | None = None,
                  api_key: str | None = None) -> dict[str, Any]:
     """First-run Companies House sweep + enrichment (Phase 3)."""
-    from radar.config.defaults import default_config
+    from radar.config.loader import load_runtime_config
     from radar.enrich import backfill
 
-    cfg = config or default_config()
+    if config is None:
+        cfg, _, _ = load_runtime_config(db)
+    else:
+        cfg = config
     client = http or _make_http()
     result = backfill(db, client, cfg, days=days, api_key=api_key, now=now)
     return {
@@ -1234,9 +1244,12 @@ def run_backfill(db: Db, *, days: int = 90, config: Config | None = None,
 def run_rescore(db: Db, *, all_companies: bool = False, config: Config | None = None,
                 today: date | None = None) -> dict[str, Any]:
     """Recompute scores. `--all` rescans the whole table; default is today's."""
-    from radar.config.defaults import default_config
+    from radar.config.loader import load_runtime_config
 
-    cfg = config or default_config()
+    if config is None:
+        cfg, _, _ = load_runtime_config(db)
+    else:
+        cfg = config
     if all_companies:
         return rescore_all(db, cfg, today=today)
     rows = db.query(
