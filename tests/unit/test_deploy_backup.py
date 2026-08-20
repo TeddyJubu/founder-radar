@@ -111,7 +111,7 @@ def test_deploy_ships_main_without_a_manual_click():
     script = UPDATE_SCRIPT.read_text()
     assert UPDATE_SCRIPT.is_file()
     assert os.access(UPDATE_SCRIPT, os.X_OK), "update-from-main.sh is not executable"
-    assert "pull --ff-only origin main" in script
+    assert "merge --ff-only origin/main" in script
     assert "deploy/install.sh" in script
     assert "rescore" in script and "--all" in script
     assert "flock" in script
