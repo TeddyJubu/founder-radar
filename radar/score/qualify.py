@@ -13,14 +13,29 @@ reach the sheet until they earn it.
 This is also the honest answer to *"why isn't every new company on my list?"* —
 because a company with nothing but a SIC code genuinely is not worth Aryan's
 time yet.
+
+**Companies House verifies and enriches; it does not drive discovery** (client
+feedback, 18 Aug 2026). A live website is true of almost every registered Ltd —
+a corner shop has one — so it is *not* a venture signal and no longer admits a
+registry company on its own. What admits a Track B company is a real signal: a
+share allotment (SH01), a grant, a university spinout match, press in a tracked
+source, or a repeat founder. The set of *admitting* qualifiers is read from the
+Lists tab (`lists["qualifiers"]`), so it stays editable from the sheet without a
+code change — add `website` back there to loosen, or drop `press` to tighten.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from .derive import _get
 
+# The full qualifier vocabulary — everything the record can prove. Which of
+# these actually *admits* a registry company to scoring is configured in
+# `lists["qualifiers"]` (see `_admitting_qualifiers`); by default `website` is
+# proven but not admitting, because a website alone is a small business, not a
+# venture-backable startup.
 QUALIFIER_KINDS: tuple[str, ...] = (
     "share_issue",     # SH01 filed since incorporation
     "grant",           # matched to a UKRI or Innovate UK award
@@ -75,23 +90,49 @@ def derive_qualifiers(company: Any) -> list[str]:
     return [q for q in QUALIFIER_KINDS if q in found]
 
 
+def _admitting_qualifiers(config: Any) -> tuple[str, ...]:
+    """The qualifiers that actually admit a registry company, from the sheet.
+
+    Reads `lists["qualifiers"]` so the bar is editable without a code change,
+    and falls back to the full vocabulary only when the list is absent. A live
+    `website` is deliberately *not* in the seeded default (defaults.py), so a
+    registry company needs a real venture signal — not just an existing URL —
+    to reach scoring (client feedback, 18 Aug 2026).
+    """
+    lists = getattr(config, "lists", None) or {}
+    configured = lists.get("qualifiers") if isinstance(lists, Mapping) else None
+    if not configured:
+        return QUALIFIER_KINDS
+    allowed = tuple(q for q in QUALIFIER_KINDS if q in set(configured))
+    # A sheet typo that matches nothing must not silently admit everything or
+    # admit nothing; fall back to the full vocabulary rather than zero it out.
+    return allowed or QUALIFIER_KINDS
+
+
+def admitting_qualifiers(company: Any, config: Any) -> list[str]:
+    """The proven qualifiers that count towards admission, in stable order."""
+    allowed = set(_admitting_qualifiers(config))
+    return [q for q in derive_qualifiers(company) if q in allowed]
+
+
 def is_qualified(company: Any, config: Any) -> bool:
     """`min_qualifiers` is a Setting, default 1. Raise it to 2 if the noise is
-    still too high."""
+    still too high. Only *admitting* qualifiers count (see the module docstring):
+    a registry company with nothing but a website stays in the pool, unscored."""
     minimum = config.settings.min_qualifiers
     if minimum <= 0:
         return True
     route = _get(company, "discovery_route")
     if route is not None and route not in REGISTRY_ROUTES:
         return True
-    return len(derive_qualifiers(company)) >= minimum
+    return len(admitting_qualifiers(company, config)) >= minimum
 
 
 def qualification_reason(company: Any, config: Any) -> str:
-    qualifiers = derive_qualifiers(company)
+    qualifiers = admitting_qualifiers(company, config)
     if is_qualified(company, config):
         return "qualified by " + (", ".join(qualifiers) or "discovery route")
     return (
         f"no qualifying signal yet — needs {config.settings.min_qualifiers} of "
-        + ", ".join(QUALIFIER_KINDS)
+        + ", ".join(_admitting_qualifiers(config))
     )
