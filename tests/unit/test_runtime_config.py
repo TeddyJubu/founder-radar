@@ -152,3 +152,84 @@ def test_track_b_docs_do_not_treat_website_as_an_admitting_qualifier():
         if "officer history, live website, grant match" in text:
             leaked.append(relative)
     assert not leaked, f"Track B docs still treat website as admitting: {leaked}"
+
+
+def test_sheet_lists_tab_keeps_sic_map_and_j25_qualifiers():
+    """The live rescore crash: Lists-tab columns are strings, but scoring
+    needs `sic_sector.exact` and a qualifiers set that does not include
+    `website`. Loading an empty-ish Lists tab must not drop those maps.
+    """
+    from radar.config.loader import load_config
+    from radar.render.formatting import LISTS_HEADERS
+    from radar.score.derive import derive_sector
+    from radar.score.qualify import _admitting_qualifiers, is_qualified
+    from tests.factories import registry_company
+
+    raw = {"Lists": [list(LISTS_HEADERS)]}
+    cfg, errors = load_config(raw)
+    assert not errors
+    table = cfg.lists["sic_sector"]
+    assert isinstance(table, dict)
+    assert "62012" in table["exact"]
+    assert derive_sector(["62012"], cfg) == "b2b_saas"
+
+    admitted = _admitting_qualifiers(cfg)
+    assert "website" not in admitted
+    assert "share_issue" in admitted
+    assert not is_qualified(
+        registry_company(qualifiers=["website"], discovery_route="registry"),
+        cfg,
+    )
+
+
+def test_stringified_sic_sector_column_does_not_crash_derive():
+    """How the Lists tab used to seed `sic_sector`: iterating the nested
+    dict wrote the keys `exact`/`prefix` as the column, and derive_sector
+    then called `.get` on a list.
+    """
+    from radar.config.loader import load_config, parse_lists
+    from radar.score.derive import derive_sector
+
+    lists = parse_lists([
+        ["stage", "sic_code", "sic_sector"],
+        ["seed", "", "exact"],
+        ["pre_seed", "", "prefix"],
+    ])
+    assert isinstance(lists["sic_sector"], dict)
+    assert lists["sic_sector"]["exact"]["62012"] == "b2b_saas"
+    assert derive_sector(["62012"], type("C", (), {"lists": lists})()) == "b2b_saas"
+
+    raw = {"Lists": [["stage", "sic_code", "sic_sector"], ["seed", "", "exact"]]}
+    cfg, errors = load_config(raw)
+    assert not errors
+    # A company with SIC codes must not raise — that was the VPS traceback.
+    assert derive_sector(["72110"], cfg) == "life_sciences"
+
+
+def test_paired_sic_columns_rebuild_the_sector_map():
+    from radar.config.loader import parse_lists
+
+    lists = parse_lists([
+        ["sic_code", "sic_sector"],
+        ["99999", "fintech"],
+        ["77", "climate_tech"],
+    ])
+    assert lists["sic_sector"]["exact"]["99999"] == "fintech"
+    assert lists["sic_sector"]["prefix"]["77"] == "climate_tech"
+
+
+def test_lists_grid_round_trips_the_sic_map():
+    from radar.config.defaults import default_config
+    from radar.config.loader import parse_lists, sic_columns_from_map
+    from radar.render.sheet import _lists_grid
+
+    cfg = default_config()
+    grid = _lists_grid(cfg)
+    header = grid[0]
+    assert "sic_code" in header and "sic_sector" in header
+    parsed = parse_lists(grid)
+    codes, _ = sic_columns_from_map(cfg.lists["sic_sector"])
+    assert parsed["sic_sector"]["exact"]["62012"] == "b2b_saas"
+    assert len(parsed["sic_sector"]["exact"]) == len(cfg.lists["sic_sector"]["exact"])
+    assert "62012" in codes
+    assert "website" not in parsed["qualifiers"]

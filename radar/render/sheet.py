@@ -1107,12 +1107,31 @@ def _strip_website_from_lists_grid(
 
 
 def _lists_grid(cfg: Any) -> list[list[str]]:
-    from radar.config.loader import DEFAULT_LISTS
+    from radar.config.loader import (
+        DEFAULT_LISTS,
+        outcode_columns_from_map,
+        sic_columns_from_map,
+    )
 
     columns = list(HEADERS[LISTS])
+    lists = cfg.lists or {}
+    sic_codes, sic_sectors = sic_columns_from_map(lists.get("sic_sector"))
+    region_ons, region_values = outcode_columns_from_map(lists.get("outcode_region"))
     data: dict[str, list[str]] = {}
     for name in columns:
-        values = (cfg.lists or {}).get(name) or list(DEFAULT_LISTS.get(name, ()))
+        if name == "sic_code":
+            values = sic_codes
+        elif name == "sic_sector":
+            values = sic_sectors
+        elif name == "region_ons":
+            values = region_ons
+        elif name == "region_value":
+            values = region_values
+        else:
+            raw = lists.get(name)
+            if isinstance(raw, dict):
+                raw = list(raw.keys())
+            values = raw or list(DEFAULT_LISTS.get(name, ()))
         data[name] = [str(v) for v in values]
     depth = max((len(v) for v in data.values()), default=0)
     grid = [columns]

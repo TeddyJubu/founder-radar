@@ -503,6 +503,14 @@ running" (G21).
    ships `main` on every push (plus optional `workflow_dispatch`). The §4
    live checklist is still the host-side proof. Pinned by
    `test_deploy_ships_main_without_a_manual_click`.
+6. **Sheet Lists tab dropped nested scoring maps — FIXED.** Once stage ①
+   actually read the spreadsheet, `parse_lists` replaced `Config.lists` with
+   column strings. `sic_sector` became `["exact","prefix"]` and rescore
+   crashed (`list.get`); missing `qualifiers` fell back to the full
+   vocabulary including `website`, reopening J25. Nested maps now overlay
+   code defaults; paired `sic_code`/`sic_sector` columns rebuild the map.
+   Pinned by `test_sheet_lists_tab_keeps_sic_map_and_j25_qualifiers` and
+   `test_missing_qualifiers_list_does_not_admit_website`.
 
 ---
 

@@ -197,8 +197,13 @@ def derive_sector(sic_codes: Sequence[str] | None, config: Any = None) -> str | 
     if not sic_codes:
         return None
     table = _lists(config).get("sic_sector", {})
-    exact: Mapping[str, str] = table.get("exact", {})
-    prefix: Mapping[str, str] = table.get("prefix", {})
+    if not isinstance(table, Mapping):
+        from radar.config.defaults import SIC_SECTOR
+        table = SIC_SECTOR
+    exact_raw = table.get("exact", {})
+    prefix_raw = table.get("prefix", {})
+    exact: Mapping[str, str] = exact_raw if isinstance(exact_raw, Mapping) else {}
+    prefix: Mapping[str, str] = prefix_raw if isinstance(prefix_raw, Mapping) else {}
 
     for raw in sic_codes:
         code = str(raw).strip()
@@ -246,6 +251,9 @@ def geography_from_outcode(outcode: str | None, config: Any = None) -> str | Non
     if not outcode:
         return None
     table = _lists(config).get("outcode_region", {})
+    if not isinstance(table, Mapping):
+        from radar.config.defaults import OUTCODE_REGION
+        table = OUTCODE_REGION
     # The postcode *area* is the leading alphabetic run and nothing else:
     # "EC2A" is area EC, "S75" is area S. Falling back to shorter prefixes
     # would read "EH1" (Edinburgh) as area E (London).

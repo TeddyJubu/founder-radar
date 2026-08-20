@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Mapping, Sequence
 
@@ -429,32 +430,125 @@ def _is_note(text: str) -> bool:
     return bool(text) and bool(_NOTE_CELL.match(text))
 
 
-def parse_lists(grid: Sequence[Sequence[Any]]) -> dict[str, list[str]]:
+def structured_lists_defaults() -> dict[str, Any]:
+    """Vocabularies plus the nested maps scoring actually reads.
+
+    The Lists tab is columns of strings. Scoring also needs `sic_sector`
+    `{exact, prefix}`, `outcode_region`, `qualifiers`, `discovery_edge`, …
+    from `LISTS`. A sheet load that replaced the whole dict with column
+    lists made `derive_sector` crash (`list.get`) and fell `qualifiers`
+    back to the full vocabulary — including `website`, which is how Track B
+    small businesses survived J25 once stage ① actually read the sheet.
+    """
+    from radar.config.defaults import LISTS
+
+    out: dict[str, Any] = deepcopy(dict(LISTS))
+    for name, values in DEFAULT_LISTS.items():
+        out.setdefault(name, list(values))
+    return out
+
+
+def sic_map_from_columns(
+    codes: Sequence[Any], sectors: Sequence[Any],
+) -> dict[str, dict[str, str]] | None:
+    """Rebuild `{exact, prefix}` from the Lists-tab paired columns.
+
+    Five-or-more-character codes are exact SIC values; shorter ones are
+    prefixes (`86` → healthcare). A leftover stringify of the nested map
+    (`sic_sector` = `exact`/`prefix` with no codes) is ignored so the
+    default map stays in force.
+    """
+    exact: dict[str, str] = {}
+    prefix: dict[str, str] = {}
+    for raw_code, raw_sector in zip(codes, sectors):
+        code = str(raw_code or "").strip()
+        sector = str(raw_sector or "").strip()
+        if not code or not sector:
+            continue
+        if sector in {"exact", "prefix"}:
+            return None
+        digits = re.sub(r"\D", "", code)
+        if len(digits) >= 5 or len(code) >= 5:
+            exact[code] = sector
+        else:
+            prefix[code] = sector
+    if not exact and not prefix:
+        return None
+    return {"exact": exact, "prefix": prefix}
+
+
+def sic_columns_from_map(table: Any) -> tuple[list[str], list[str]]:
+    """The inverse of `sic_map_from_columns`, for seeding the Lists tab."""
+    if not isinstance(table, Mapping):
+        return [], []
+    nested = "exact" in table or "prefix" in table
+    items: list[tuple[str, str]] = []
+    if nested:
+        items.extend((str(k), str(v)) for k, v in (table.get("exact") or {}).items())
+        items.extend((str(k), str(v)) for k, v in (table.get("prefix") or {}).items())
+    elif table and all(isinstance(v, str) for v in table.values()):
+        items.extend((str(k), str(v)) for k, v in table.items())
+    return [k for k, _ in items], [v for _, v in items]
+
+
+def outcode_columns_from_map(table: Any) -> tuple[list[str], list[str]]:
+    if not isinstance(table, Mapping):
+        return [], []
+    items = [(str(k), str(v)) for k, v in table.items() if not isinstance(v, Mapping)]
+    return [k for k, _ in items], [v for _, v in items]
+
+
+def parse_lists(grid: Sequence[Sequence[Any]]) -> dict[str, Any]:
     """The Lists tab: one column per vocabulary, header in row 1.
 
     Also carries the SIC → sector map and the ONS region map, as paired
-    columns (`sic_code`/`sic_sector`, `region_ons`/`region_value`).
+    columns (`sic_code`/`sic_sector`, `region_ons`/`region_value`). Nested
+    scoring maps that are not columns stay on the code defaults unless the
+    paired columns actually contain rows.
     """
+    out = structured_lists_defaults()
     if not grid:
-        return {name: list(values) for name, values in DEFAULT_LISTS.items()}
+        return out
 
     header = [str(c).strip() for c in grid[0]]
-    out: dict[str, list[str]] = {name: [] for name in header if name}
+    columns: dict[str, list[str]] = {name: [] for name in header if name}
     for row in grid[1:]:
         for index, name in enumerate(header):
             if not name:
                 continue
             value = _cell(row, index)
             if value:
-                out[name].append(value)
+                columns[name].append(value)
 
     for name, values in DEFAULT_LISTS.items():
-        if not out.get(name):
+        if columns.get(name):
+            out[name] = list(columns[name])
+        elif not out.get(name):
             # ponytail: 03-data-model §4 says vocabularies are read at runtime
             # and must not be hard-coded. They still need a value on the very
             # first run, before the Lists tab exists — this is the seed, and it
             # never wins over a populated tab.
             out[name] = list(values)
+
+    rebuilt = sic_map_from_columns(
+        columns.get("sic_code") or [], columns.get("sic_sector") or [],
+    )
+    if rebuilt:
+        out["sic_sector"] = rebuilt
+
+    ons = columns.get("region_ons") or []
+    vals = columns.get("region_value") or []
+    if ons and vals:
+        mapping = {
+            str(a).strip(): str(b).strip()
+            for a, b in zip(ons, vals)
+            if str(a).strip() and str(b).strip()
+        }
+        if mapping:
+            out["outcode_region"] = mapping
+
+    if columns.get("qualifiers"):
+        out["qualifiers"] = list(columns["qualifiers"])
     return out
 
 
