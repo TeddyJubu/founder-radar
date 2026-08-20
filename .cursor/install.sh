@@ -7,18 +7,20 @@
 # virtualenv, and the Chromium the Today prototype browser suite needs). No
 # servers, migrations, or tests run here.
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # System packages the base image lacks: the venv module for the pinned Python
 # and a compiler toolchain for any wheels built from source. apt install is
-# idempotent, so re-runs are cheap no-ops.
+# idempotent, so re-runs are cheap no-ops. Invoke python3.12 explicitly — CI
+# pins 3.12 and `python3` on the image is not guaranteed to be that version.
 sudo apt-get update -qq
-sudo apt-get install -y --no-install-recommends python3.12-venv build-essential
+sudo apt-get install -y --no-install-recommends python3.12 python3.12-venv build-essential
 
 # Project virtualenv. `python -m venv` is idempotent — it reuses an existing
 # .venv rather than rebuilding it.
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install --upgrade pip
 
 # The full developer surface: runtime + dev (pytest), extract (LLM extraction),

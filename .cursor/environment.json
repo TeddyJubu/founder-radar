@@ -5,8 +5,14 @@
   "terminals": [
     {
       "name": "today-server",
-      "command": "bash .cursor/start-today.sh"
+      "command": "bash .cursor/start-today.sh",
+      "description": "Today prototype on http://127.0.0.1:8788 with a fixture-backed demo DB. Not the live data/radar.db preview."
     }
   ],
-  "ports": [8788]
+  "ports": [
+    {
+      "name": "today",
+      "port": 8788
+    }
+  ]
 }
