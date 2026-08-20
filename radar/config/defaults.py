@@ -445,6 +445,13 @@ DEFAULT_SOURCES = [
     SourceConfig(key="zinc_vc", track="A"),
     SourceConfig(key="conception_x", track="A"),
     SourceConfig(key="entrepreneur_first", track="A"),
+    # Client ask A5 — named early-stage announcement sources, not portfolio
+    # dumps. Founders Factory "Investing in X" posts and UCL Ventures news
+    # (not the dead uclb.com portfolio) are where companies appear first.
+    SourceConfig(key="founders_factory", track="A",
+                 note="Founders Factory announcement posts"),
+    SourceConfig(key="ucl_ventures", track="A",
+                 note="UCL Ventures spinout news"),
     SourceConfig(key="businesscloud", track="A"),
     SourceConfig(key="uktn", track="A"),
     SourceConfig(key="govuk_search", track="A"),

@@ -23,6 +23,7 @@ is what makes the whole stage testable offline.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Mapping, Sequence
@@ -60,6 +61,12 @@ FUND_CRITERIA_STATUS_COL = "Q"
 WEIGHTS_STATUS_COL = "I"
 
 OK = "✅"
+
+# One-shot Lists-tab migration (client J25, 18 Aug 2026). A sheet seeded before
+# website was dropped from the admitting set would otherwise undo that bar the
+# moment stage ① started reading the sheet. After the rewrite, adding
+# `website` back is a deliberate edit and is honoured.
+J25_META = "j25_website_not_admitting"
 
 TRUE_TOKENS = frozenset({"yes", "y", "true", "t", "1", "✓", "✔", "on", "x", "☑", "enabled"})
 FALSE_TOKENS = frozenset({"no", "n", "false", "f", "0", "off", "", "—", "-", "n/a", "☐"})
@@ -294,6 +301,19 @@ def save_snapshot(db: Any, cfg: Config, *, is_last_good: bool = True) -> str:
     return digest
 
 
+def parse_snapshot(payload: str) -> Config | None:
+    """Rebuild a Config from a stored JSON blob, overlaying new default sources.
+
+    An old snapshot must not hide adapters added to `DEFAULT_SOURCES` after it
+    was taken — Aryan's named early sources have to appear without a reseed.
+    """
+    try:
+        cfg = Config.model_validate(json.loads(payload))
+    except (ValidationError, ValueError, TypeError):
+        return None
+    return cfg.model_copy(update={"sources": with_default_sources(list(cfg.sources))})
+
+
 def load_last_good(db: Any) -> Config | None:
     if db is None:
         return None
@@ -303,10 +323,97 @@ def load_last_good(db: Any) -> Config | None:
     )
     if row is None:
         return None
-    try:
-        return Config.model_validate(json.loads(row["config_json"]))
-    except (ValidationError, ValueError):
-        return None
+    return parse_snapshot(row["config_json"])
+
+
+def with_default_sources(sources: Sequence[SourceConfig] | None) -> list[SourceConfig]:
+    """Append any `DEFAULT_SOURCES` key the sheet (or snapshot) does not list.
+
+    Existing Enabled flags are left alone, so a source Aryan turned off stays
+    off. New defaults appear as enabled, which is how Founders Factory and
+    UCL Ventures reach an already-seeded Sources tab.
+    """
+    from radar.config.defaults import DEFAULT_SOURCES
+
+    out = [
+        SourceConfig(key=s.key, track=s.track, enabled=s.enabled, note=s.note)
+        for s in (sources or [])
+    ]
+    have = {s.key for s in out}
+    for source in DEFAULT_SOURCES:
+        if source.key not in have:
+            out.append(SourceConfig(
+                key=source.key, track=source.track,
+                enabled=source.enabled, note=source.note,
+            ))
+    return out
+
+
+def drop_legacy_website_qualifier(
+    lists: Mapping[str, Any], db: Any = None,
+) -> tuple[dict[str, Any], bool]:
+    """Strip `website` from the admitting set until the Lists tab is rewritten.
+
+    After `j25_website_not_admitting=1` is stored, adding `website` back is a
+    deliberate Lists-tab edit and is left untouched.
+    """
+    data = dict(lists)
+    if db is not None and db.get_meta(J25_META) == "1":
+        return data, False
+    quals = list(data.get("qualifiers") or [])
+    if "website" not in quals:
+        return data, False
+    data["qualifiers"] = [q for q in quals if q != "website"]
+    return data, True
+
+
+def sheet_credentials_present() -> bool:
+    sheet_id = os.environ.get("SHEET_ID") or os.environ.get("RADAR_SHEET_ID")
+    return bool(sheet_id and os.environ.get("GOOGLE_SA_JSON"))
+
+
+def load_runtime_config(
+    db: Any = None, *, gateway: Any = None,
+) -> tuple[Config, Any, list[str]]:
+    """Stage ① for a real run: sheet if reachable, else last-good, else defaults.
+
+    Never raises. A missing credential or a dead Sheets API is a warning and a
+    fallback, not a stopped run (05-pipeline §1, 02-architecture §7).
+    """
+    from radar.config.defaults import default_config
+
+    warnings: list[str] = []
+    gw = gateway
+    if gw is None and sheet_credentials_present():
+        try:
+            from radar.render.sheet import open_gateway
+
+            gw = open_gateway()
+        except Exception as exc:  # noqa: BLE001 — stage ① never kills the run
+            warnings.append(f"sheet not opened: {type(exc).__name__}: {exc}")
+            gw = None
+    if gw is not None:
+        try:
+            from radar.render.sheet import read_sheet_state
+
+            raw, _, _, _ = read_sheet_state(gw)
+            loaded = load_config(raw, db=db)
+            cfg = loaded.config
+            lists, stripped = drop_legacy_website_qualifier(cfg.lists, db)
+            if stripped:
+                cfg = cfg.model_copy(update={"lists": lists})
+                if db is not None:
+                    save_snapshot(db, cfg, is_last_good=True)
+            return cfg, gw, warnings
+        except Exception as exc:  # noqa: BLE001 — fall through to last-good
+            warnings.append(f"sheet not read: {type(exc).__name__}: {exc}")
+    cfg = load_last_good(db)
+    if cfg is not None:
+        lists, stripped = drop_legacy_website_qualifier(cfg.lists, db)
+        if stripped:
+            cfg = cfg.model_copy(update={"lists": lists})
+        return cfg, gw, warnings
+    return default_config(), gw, warnings
 
 
 # ------------------------------------------------------------- tab parsers
@@ -769,6 +876,9 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
         raw.get("Settings") or [], last_good=last_good, lists=lists)
 
     sources = parse_sources(raw.get("Sources") or [])
+    if not sources:
+        sources = list(last_good.sources) if last_good else []
+    sources = with_default_sources(sources)
 
     used_last_good = False
     try:
@@ -787,7 +897,7 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
         funds=funds or (last_good.funds if last_good else []),
         weights=weights if (weights.matrix or weights.importance)
         else (last_good.weights if last_good else weights),
-        sources=sources or (last_good.sources if last_good else []),
+        sources=sources,
         lists=dict(lists),
         errors=sorted(errors.values()),
     )

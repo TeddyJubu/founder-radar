@@ -195,7 +195,14 @@ class FetchResult:
 
 
 def enabled_adapters(cfg: Any, keys: Sequence[str] | None = None) -> list[Any]:
-    """Registry order, filtered by the `Sources` sheet tab and by `--source`."""
+    """Registry order, filtered by the `Sources` sheet tab and by `--source`.
+
+    The Sources tab is an **allowlist**. An adapter runs when its row is
+    Enabled, or — with `--source KEY` — when that key is requested and not
+    explicitly disabled. An empty config falls back to `DEFAULT_SOURCES` so a
+    first run before the sheet exists still crawls the named early sources
+    rather than every registered adapter (including lagging portfolio dumps).
+    """
     wanted = set(keys) if keys else None
     configured = list(getattr(cfg, "sources", []) or [])
     # A configured key that is not a registry key is a toggle that does nothing
@@ -210,11 +217,17 @@ def enabled_adapters(cfg: Any, keys: Sequence[str] | None = None) -> list[Any]:
     disabled = {
         s.key for s in configured if not getattr(s, "enabled", True)
     }
+    if wanted is not None:
+        allow = wanted - disabled
+    elif configured:
+        allow = {s.key for s in configured if getattr(s, "enabled", True)}
+    else:
+        from radar.config.defaults import DEFAULT_SOURCES
+
+        allow = {s.key for s in DEFAULT_SOURCES}
     out = []
     for key, adapter in REGISTRY.available().items():
-        if wanted is not None and key not in wanted:
-            continue
-        if key in disabled:
+        if key not in allow:
             continue
         out.append(adapter)
     return out

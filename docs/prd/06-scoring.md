@@ -179,9 +179,9 @@ Roughly 60,000 companies are incorporated in the UK every month. Most are dorman
 | `spinout` | matched to a university spinout announcement |
 | `press` | matched to any news article |
 | `repeat_founder` | an officer with a prior UK directorship |
-| `website` | a live company website resolved and reachable |
+| `website` | a live company website resolved and reachable. **Proven, not admitting by default** — add `website` to the Lists tab `qualifiers` column to loosen. |
 
-Companies with none of these stay in the `candidates` pool with `qualified = 0`. They are **not rejected** — they are re-checked on every run, because a company incorporated today may file an SH01 next month. They simply never reach the sheet until they earn it.
+Companies with none of the *admitting* qualifiers stay in the `candidates` pool with `qualified = 0`. They are **not rejected** — they are re-checked on every run, because a company incorporated today may file an SH01 next month. They simply never reach the sheet until they earn it.
 
 `min_qualifiers` is a Setting, default **1**. Raise it to 2 if the noise is still too high.
 

@@ -308,10 +308,15 @@ def test_bare_registry_company_is_not_scored():
     assert db.get(c.id).qualified == 0
 
 @pytest.mark.parametrize("q", ["share_issue","grant","spinout","press",
-                               "repeat_founder","website"])
-def test_any_single_qualifier_admits_to_scoring(q):
+                               "repeat_founder"])
+def test_any_single_venture_signal_admits_to_scoring(q):
     c = registry_company(qualifiers=[q], discovery_route="registry")
     assert score_all(c, cfg) != []
+
+def test_website_alone_does_not_admit_a_registry_company():
+    """A live website is true of almost every Ltd — not a venture signal."""
+    c = registry_company(qualifiers=["website"], discovery_route="registry")
+    assert score_all(c, cfg) == {}
 
 def test_unqualified_company_is_rechecked_not_rejected():
     """A company incorporated today may file an SH01 next month."""

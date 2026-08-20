@@ -554,6 +554,80 @@ def test_disabling_a_configured_source_removes_its_adapter():
     assert "oxford_innovation" in keys
 
 
+def test_sources_tab_is_an_allowlist_not_a_denylist():
+    """An adapter that is not on the Sources tab must not run.
+
+    The previous behaviour ran every registered adapter unless it was
+    explicitly disabled, so lagging portfolio dumps and unvetted Tier 2
+    sources crawled even when the sheet listed only the named early ones.
+    """
+    from radar.config.models import SourceConfig
+    from radar.sources import enabled_adapters
+
+    cfg = SimpleNamespace(sources=[
+        SourceConfig(key="oxford_innovation", track="A", enabled=True),
+    ])
+    keys = {a.key for a in enabled_adapters(cfg)}
+    assert keys == {"oxford_innovation"}
+    assert "founders_factory" not in keys
+    assert "bethnal_green" not in keys
+
+
+def test_source_flag_can_run_an_adapter_that_is_not_on_the_sheet():
+    """`founder-radar run --source KEY` is how a new adapter is tested."""
+    from radar.config.models import SourceConfig
+    from radar.sources import enabled_adapters
+
+    cfg = SimpleNamespace(sources=[
+        SourceConfig(key="oxford_innovation", track="A", enabled=True),
+    ])
+    keys = {a.key for a in enabled_adapters(cfg, keys=["founders_factory"])}
+    assert keys == {"founders_factory"}
+
+
+def test_source_flag_still_respects_an_explicit_disable():
+    from radar.config.models import SourceConfig
+    from radar.sources import enabled_adapters
+
+    cfg = SimpleNamespace(sources=[
+        SourceConfig(key="founders_factory", track="A", enabled=False),
+    ])
+    keys = {a.key for a in enabled_adapters(cfg, keys=["founders_factory"])}
+    assert "founders_factory" not in keys
+
+
+def test_empty_config_falls_back_to_default_sources():
+    from radar.config.defaults import DEFAULT_SOURCES
+    from radar.sources import enabled_adapters
+
+    keys = {a.key for a in enabled_adapters(SimpleNamespace(sources=[]))}
+    assert keys == {s.key for s in DEFAULT_SOURCES}
+
+
+def test_aryan_named_early_sources_are_enabled_by_default():
+    """The named first-appearance sources from the brief, on without a sheet edit.
+
+    Imperial and Warwick static portfolios are excluded on purpose (lagging
+    dumps). Antler is blocked by robots.txt. Durham/Newcastle/Northumbria/
+    Sunderland/Teesside are covered by `northern_accelerator`.
+    """
+    from radar.config.defaults import DEFAULT_SOURCES
+
+    enabled = {s.key for s in DEFAULT_SOURCES}
+    required = {
+        "entrepreneur_first",
+        "founders_factory",
+        "innovate_uk",
+        "ukri_gtr",
+        "cambridge_enterprise",
+        "oxford_innovation",
+        "ucl_ventures",
+        "northern_accelerator",
+    }
+    missing = required - enabled
+    assert not missing, f"named early sources not on by default: {missing}"
+
+
 def test_unknown_configured_key_warns_instead_of_staying_silent(caplog):
     """A stale key in the sheet (e.g. an old `oxford_university_innovation`
     row that predates the fix) must log a warning, not quietly do nothing —

@@ -102,10 +102,16 @@ The requested categories all exist as adapters:
 - `test_phase8_sources.py` — grant adapters parse committed fixtures, detect
   layout change, dedupe, filter out universities/large companies, and register.
 - `test_source_registry.py` — every registered adapter passes shape checks.
-- **NEW** `test_client_requested_source_categories_are_registered_and_enabled`
-  (§3.8) — each of the three categories has a registered adapter AND at least
-  one enabled by default, so the request cannot silently become
-  sheet-configuration nobody switched on.
+- **NEW** `test_dedicated_innovate_uk_feeds_are_enabled_by_default`
+  (tests/unit/test_source_registry.py) — the dedicated grant adapters, not
+  just `govuk_search`.
+- **NEW** `test_aryan_named_early_sources_are_enabled_by_default` — Entrepreneur
+  First, Founders Factory, Innovate UK / UKRI, Cambridge, Oxford, UCL Ventures
+  news, Northern Accelerator are on by default. Imperial/Warwick static
+  portfolios are excluded (lagging dumps); Antler is blocked by robots.txt.
+- **NEW** `test_sources_tab_is_an_allowlist_not_a_denylist` — unlisted adapters
+  do not crawl. Stage ① now reads the sheet, so the Enabled column is the
+  actual switch.
 - **Finding (RESOLVED):** the *dedicated* Innovate UK adapters
   (`innovate_uk`, `ukri_gtr`) are registered, fully tested, and now in
   `DEFAULT_SOURCES` — enabled by default, no longer satisfied by
@@ -323,6 +329,9 @@ context-less names on its own. The admitting set lives in the sheet
   adding a real signal admits it.
 - **NEW** `test_website_still_admits_when_the_sheet_re_enables_it` — proves the
   bar is sheet-editable (add `website` back to the Lists tab to loosen).
+- **NEW** `test_track_b_docs_do_not_treat_website_as_an_admitting_qualifier`
+  — README and PRD no longer list a live website as Track B admission (J25
+  docs drift).
 - `test_any_single_venture_signal_admits_to_scoring` — the five real signals
   each still admit, so the fix tightens noise without closing the high-edge
   Track B play (SH01 + prior directorships) the client asked for on Jul 9.
@@ -450,9 +459,12 @@ running" (G21).
 - [x] `docs/ops-guide.md` has a "Change the login password" section (F18) — new §7.
 - [x] `prototype/help.html` serves the same sections — "Change the login
       password" added; enforced by `test_help_covers_the_handover_sections`.
-- [ ] README cost table still names every paid dependency (G21).
-- [ ] The Companies House key / Google service-account rotation note is still
+- [x] README cost table still names every paid dependency (G21).
+- [x] The Companies House key / Google service-account rotation note is still
       present (H22-adjacent hygiene).
+- [x] README / PRD Track B copy no longer lists a live website as an admitting
+      qualifier (J25 docs). Pinned by
+      `test_track_b_docs_do_not_treat_website_as_an_admitting_qualifier`.
 
 ---
 
@@ -462,8 +474,9 @@ running" (G21).
    `ukri_gtr` are now in `DEFAULT_SOURCES` (enabled by default), so the
    dedicated grant adapters feed the pipeline without sheet configuration.
    `test_dedicated_innovate_uk_feeds_are_enabled_by_default` pins both.
-   On the deployed box the change takes effect on the next `sync-sheet`
-   reseed; until then the sheet remains the source of truth.
+   `with_default_sources` appends missing default keys onto an already-seeded
+   Sources tab without resetting Enabled, so this reaches the live sheet on
+   the next run rather than waiting for a blank-tab reseed.
 2. **Config key mismatch — FIXED.** The seeded Sources tab used
    `oxford_university_innovation` while the adapter's registry key is
    `oxford_innovation`, so the Enabled toggle for Oxford was inert and its
@@ -474,8 +487,50 @@ running" (G21).
    (the Sources-tab health join). `enabled_adapters` also logs a warning for
    any configured key that matches no adapter, so a stale sheet row can never
    be silently inert again.
-3. **Deployment hygiene (I23/I24) still has no automated guard** — the §4 live
-   checklist is manual by nature, but a CI step that fails when
-   `deploy/Caddyfile` loses `basic_auth` (now covered, §3.6) or when the
-   onboarding page stops deriving fund rules (already covered) closes the
-   repeatable parts.
+3. **Stage ① was not wired into `founder-radar run` — FIXED.** The daily
+   timer used `default_config()` and never opened the spreadsheet, so Fund
+   Criteria / Settings / Sources edits did not affect scoring or fetch. The
+   run now loads the sheet when credentials exist, falls back to the last-good
+   snapshot, then to code defaults. Pinned by
+   `test_run_pipeline_reads_sheet_settings_when_a_gateway_is_present` and
+   `test_run_pipeline_uses_last_good_when_the_sheet_is_unreachable`.
+4. **Sources tab was a denylist — FIXED.** Every registered adapter crawled
+   unless explicitly disabled. It is now an allowlist of Enabled rows (empty
+   config → `DEFAULT_SOURCES`). Pinned by
+   `test_sources_tab_is_an_allowlist_not_a_denylist`.
+5. **Deployment hygiene (I23/I24/J26)** — `.github/workflows/deploy.yml` is
+   the one-click path. The §4 live checklist is still the host-side proof.
+
+---
+
+## 7. Fiverr conversation map (Jun–Aug 2026)
+
+Every product complaint from the thread, and the pin that keeps it gone.
+
+| # | Aryan said | Status | Evidence |
+|---|---|---|---|
+| A1 | Companies 5–7 years old / ~a decade | ✅ | A1 tests in §A |
+| A2 | Already raised / established | ✅ | freshness + portfolio gates |
+| A3 | US / Dubai companies | ✅ | `min_uk_presence` |
+| A4 | Parent/investor shown as the startup | ✅ | resolve refuses `parent` role |
+| A5 | More early sources (EF, FF, Innovate UK, unis) | ✅ | named sources default-on; Imperial/Warwick/Antler excluded on purpose |
+| B7 | Articles instead of companies | ✅ | extraction + Today "What they do" |
+| B8 | Direct source URL on every card | ✅ | provenance gate |
+| B9 | Breakdown hard to read | ✅ | per-fund scores on Today |
+| B10 | Short business summary / one-liner | ✅ | `one_liner` |
+| C11 | Edge the same across results | ✅ | Edge varies |
+| C12 | Match % for all four funds | ✅ | four fund scores |
+| C13 | 100 Match on sparse coverage | ✅ | coverage floor |
+| D14 | Outward "government-backed" | ✅ | onboarding derived from vehicles |
+| E15/E16 | Shortlist/Kept + daily review / Review Again | ✅ | `/kept`, daily_review |
+| F17/F18 | Change login | ✅ | Caddy + `/help` |
+| G19–G21 | Walkthrough, costs, how it connects | ✅ | ops-guide + `/help` + README Cost |
+| H22 | Device code on his VPS | ✅ process | |
+| I23/J26 | Updates not reflected / still the same | 🔧 | deploy workflow |
+| I24 | Empty dashboard / cannot log in | 🔧 | live §4 |
+| J25 | Companies House driving discovery | ✅ | website not admitting; startup sources first |
+| — | Fund criteria in the sheet, not the code | ✅ | stage ① now loads the sheet on `founder-radar run` |
+| — | Duplicate companies across sources | ✅ | entity resolution |
+| — | Hide Source Failed | ✅ | Sources tab only |
+| — | Telegram digest + `/run` one fund | ✅ | telegram command map |
+

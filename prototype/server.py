@@ -94,14 +94,33 @@ def _conn(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _config() -> Any:
-    """The seeded fund configuration — the same object scoring gates on."""
-    from radar.config.defaults import default_config
+def _config(conn: sqlite3.Connection | None = None) -> Any:
+    """Fund configuration: last-good snapshot from the daily run, else defaults.
 
+    The sheet is the editable brain. The daily run snapshots it into SQLite;
+    this surface reads that snapshot so a Fund Criteria edit shows up here
+    without a redeploy. Code defaults are only the fallback for a fresh db.
+    """
+    from radar.config.defaults import default_config
+    from radar.config.loader import parse_snapshot
+
+    if conn is not None:
+        try:
+            row = conn.execute(
+                "SELECT config_json FROM config_snapshot WHERE is_last_good = 1 "
+                "ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = None
+        payload = row["config_json"] if row else None
+        if payload:
+            cfg = parse_snapshot(payload)
+            if cfg is not None:
+                return cfg
     return default_config()
 
 
-def _vehicles() -> dict[str, dict]:
+def _vehicles(conn: sqlite3.Connection | None = None) -> dict[str, dict]:
     """`vehicle_key -> display name and cheque range`, from the seeded config.
 
     The score table stores the key, not the label. Resolving it here rather
@@ -109,7 +128,7 @@ def _vehicles() -> dict[str, dict]:
     a vehicle is called.
     """
     out: dict[str, dict] = {}
-    for fund in _config().funds:
+    for fund in _config(conn).funds:
         for v in fund.vehicles:
             out[v.vehicle_key] = {
                 "name": v.vehicle_name,
@@ -354,7 +373,7 @@ def build_kept(conn: sqlite3.Connection) -> dict[str, list[dict]]:
             WHERE u.field = 'verdict' AND c.merged_into IS NULL
             ORDER BY u.updated_at DESC, c.canonical_name""").fetchall()
 
-    vehicles = _vehicles()
+    vehicles = _vehicles(conn)
     out: dict[str, list[dict]] = {v: [] for v in KEPT_VERDICTS}
     for r in rows:
         verdict = (r["verdict"] or "").strip().lower()
@@ -942,8 +961,8 @@ def _fund_score_payload(
 def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
     from radar.score.gates import apply_freshness_gates
 
-    config = _config()
-    vehicles = _vehicles()
+    config = _config(conn)
+    vehicles = _vehicles(conn)
     today = date.today()
     review_date = today.isoformat()
     eligible_ids = _eligible_today_company_ids(conn)
@@ -1242,7 +1261,7 @@ def make_handler(conn: sqlite3.Connection):
                 # for the first thing that needs a script to appear.
                 page = (HERE / "onboarding.html").read_text(encoding="utf-8")
                 page = page.replace("<!--FUND_RULES-->",
-                                    render_fund_rows(_config()))
+                                    render_fund_rows(_config(conn)))
                 self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path in ("/kept", "/kept.html"):
                 page = (HERE / "kept.html").read_text(encoding="utf-8")

@@ -227,7 +227,7 @@ Each requirement has an ID, a plain statement, and an acceptance test. **A requi
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Companies House volume is too noisy even after filtering | Medium | High | Qualification signals (SH01, officer history, live website, grant match) gate Track B separately. Track A works regardless. Threshold sweep tool tunes it against Aryan's labels. |
+| Companies House volume is too noisy even after filtering | Medium | High | Qualification signals (SH01, grant, spinout, press, repeat founder) gate Track B separately. A live website is proven but not admitting by default. Track A works regardless. Threshold sweep tool tunes it against Aryan's labels. |
 | Too few companies pass the gates; quiet days feel broken | Medium | Medium | Quiet days are correct behaviour and must be *stated* in the digest: "2 today — deliberately strict." Widen the region or age window in Settings if it persists for a week. |
 | A source changes layout | High | Low | Per-source isolation, health tab, and a snapshot-diff test that flags when a source's output shape changes. |
 | Founder-name storage raises GDPR questions | Low | Medium | Minimal fields, documented legitimate-interests assessment, published privacy notice, one-command erasure. |
