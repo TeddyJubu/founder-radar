@@ -56,12 +56,17 @@ fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
 say "python environment"
+# pip as $APP_USER inherits the caller's cwd. Running install.sh from /root
+# then dies with PermissionError on an editable path hook under root's home.
+# Always install from the checkout, with the service user's HOME.
+cd "$APP_DIR"
 if [ ! -x "$VENV/bin/python" ]; then
-  sudo -u "$APP_USER" python3 -m venv "$VENV"
+  sudo -H -u "$APP_USER" python3 -m venv "$VENV"
 fi
-sudo -u "$APP_USER" "$VENV/bin/pip" install --quiet --upgrade pip
-sudo -u "$APP_USER" "$VENV/bin/pip" install --quiet -e "$APP_DIR"
+sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet --upgrade pip
+sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet -e .
 ln -sf "$VENV/bin/founder-radar" /usr/local/bin/founder-radar
+cd "$ROOT"
 
 # ---------------------------------------------------------------- 3. secrets
 #
@@ -109,10 +114,11 @@ say "systemd units"
 for unit in founder-radar.service founder-radar.timer \
             founder-radar-heartbeat.service founder-radar-heartbeat.timer \
             founder-radar-backup.service founder-radar-backup.timer \
-            founder-radar-web.service; do
+            founder-radar-web.service \
+            founder-radar-update.service founder-radar-update.timer; do
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
-chmod 755 "$HERE/backup.sh"
+chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh"
 
 install -m 644 "$HERE/logrotate.founder-radar" "$LOGROTATE_DIR/founder-radar"
 
@@ -120,6 +126,7 @@ systemctl daemon-reload
 systemctl enable --now founder-radar.timer
 systemctl enable --now founder-radar-heartbeat.timer
 systemctl enable --now founder-radar-backup.timer
+systemctl enable --now founder-radar-update.timer
 
 # ------------------------------------------------------------- 4b. the review
 #

@@ -91,22 +91,118 @@ def test_web_surface_requires_a_password():
     assert "$2" not in text, "a bcrypt hash leaked into the Caddyfile"
 
 
+DEPLOY_DIR = Path(__file__).resolve().parents[2] / "deploy"
 DEPLOY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
+UPDATE_SCRIPT = DEPLOY_DIR / "update-from-main.sh"
+UPDATE_TIMER = DEPLOY_DIR / "founder-radar-update.timer"
+UPDATE_SERVICE = DEPLOY_DIR / "founder-radar-update.service"
+INSTALL_SH = DEPLOY_DIR / "install.sh"
 
 
 def test_deploy_ships_main_without_a_manual_click():
     """Client-issues plan I23/J26 — a green main must reach the VPS.
 
-    The one-click `workflow_dispatch` workflow never ran (zero Deploy runs
-    after it landed), so the box kept old code and Aryan kept seeing the same
-    companies. A push to `main` has to start Deploy by itself; the click
-    remains only for a forced rescore.
+    GitHub Actions secrets were never filled, so the Actions Deploy job
+    failed closed and the box kept old code. Auto-ship is on the VPS:
+    a systemd timer runs update-from-main.sh, which fast-forwards main
+    and reinstalls. GitHub remains optional and must not go red when
+    those secrets are empty.
     """
-    text = DEPLOY_WORKFLOW.read_text()
-    assert "\n  push:" in text, "Deploy no longer starts on a push to main"
-    assert "branches: [main]" in text or "branches:\n      - main" in text
-    assert "workflow_dispatch:" in text, "lost the manual rescore trigger"
-    # Auto-deploy must rescore; otherwise J25 qualifier / source-allowlist
-    # changes sit in the checkout but never rewrite existing rows.
-    assert "github.event_name != 'workflow_dispatch'" in text
-    assert "inputs.rescore_all" in text
+    script = UPDATE_SCRIPT.read_text()
+    assert UPDATE_SCRIPT.is_file()
+    assert os.access(UPDATE_SCRIPT, os.X_OK), "update-from-main.sh is not executable"
+    assert "pull --ff-only origin main" in script
+    assert "deploy/install.sh" in script
+    assert "rescore" in script and "--all" in script
+    assert "flock" in script
+    assert "SSHPASS" not in script
+    assert "BEGIN OPENSSH" not in script
+
+    timer = UPDATE_TIMER.read_text()
+    assert "OnBootSec=" in timer
+    assert "OnUnitInactiveSec=" in timer
+    assert "WantedBy=timers.target" in timer
+
+    service = UPDATE_SERVICE.read_text()
+    assert "User=root" in service
+    assert "update-from-main.sh" in service
+    assert "EnvironmentFile=" not in service, \
+        "the update unit must not load .env (secrets would enter the journal)"
+
+    installer = INSTALL_SH.read_text()
+    assert "founder-radar-update.timer" in installer
+    assert "founder-radar-update.service" in installer
+    assert "enable --now founder-radar-update.timer" in installer
+    assert "chmod 755" in installer and "update-from-main.sh" in installer
+    # pip as radar from /root dies on an editable path hook. Pin the fix.
+    assert 'cd "$APP_DIR"' in installer
+    assert 'sudo -H -u "$APP_USER"' in installer
+
+    workflow = DEPLOY_WORKFLOW.read_text()
+    assert "configured=false" in workflow
+    assert "update-from-main.sh" in workflow
+    assert "::error::Required secret" not in workflow
+    assert "exit 1" not in workflow.split("Skip when")[1].split("- name: Deploy")[0], \
+        "missing GitHub secrets must skip, not fail the Actions tab"
+    assert "workflow_dispatch:" in workflow
+    assert "inputs.rescore_all" in workflow
+
+
+def test_update_from_main_fast_forwards_and_skips_when_current(tmp_path):
+    """The timer's job, against a local origin: no-op when HEAD matches,
+    fast-forward when main moves. Dry-run so we do not invoke install.sh."""
+    if shutil.which("git") is None:
+        pytest.skip("git is not available")
+
+    origin = tmp_path / "origin.git"
+    checkout = tmp_path / "app"
+    root = tmp_path / "root"
+    (root / "logs").mkdir(parents=True)
+    env = {
+        **os.environ,
+        "ROOT": str(root),
+        "APP_DIR": str(checkout),
+        "RADAR_UPDATE_ALLOW_NONROOT": "1",
+        "RADAR_UPDATE_DRY_RUN": "1",
+        "RADAR_UPDATE_LOCK": str(tmp_path / "update.lock"),
+        "RADAR_UPDATE_LOG": str(root / "logs" / "update.log"),
+        "GIT_AUTHOR_NAME": "radar-test",
+        "GIT_AUTHOR_EMAIL": "radar-test@example.test",
+        "GIT_COMMITTER_NAME": "radar-test",
+        "GIT_COMMITTER_EMAIL": "radar-test@example.test",
+    }
+
+    def git(cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, env=env,
+                              capture_output=True, text=True, check=True)
+
+    git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "seed"
+    git(tmp_path, "clone", str(origin), str(work))
+    (work / "README").write_text("one\n")
+    git(work, "add", "README")
+    git(work, "commit", "-m", "one")
+    git(work, "push", "origin", "main")
+    git(tmp_path, "clone", str(origin), str(checkout))
+
+    first = subprocess.run(["bash", str(UPDATE_SCRIPT)], env=env,
+                           capture_output=True, text=True)
+    assert first.returncode == 0, first.stdout + first.stderr
+    log = (root / "logs" / "update.log").read_text()
+    assert "nothing to do" in first.stdout + first.stderr + log
+
+    head_before = git(checkout, "rev-parse", "HEAD").stdout.strip()
+    (work / "README").write_text("two\n")
+    git(work, "add", "README")
+    git(work, "commit", "-m", "two")
+    git(work, "push", "origin", "main")
+    origin_head = git(work, "rev-parse", "HEAD").stdout.strip()
+    assert origin_head != head_before
+
+    second = subprocess.run(["bash", str(UPDATE_SCRIPT)], env=env,
+                            capture_output=True, text=True)
+    assert second.returncode == 0, second.stdout + second.stderr
+    head_after = git(checkout, "rev-parse", "HEAD").stdout.strip()
+    assert head_after == origin_head
+    assert "dry-run" in second.stdout + second.stderr + (
+        root / "logs" / "update.log").read_text()

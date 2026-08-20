@@ -1,29 +1,22 @@
 name: Deploy
 
-# Manual, repeatable deploy to the production VPS (08-deployment).
+# Optional GitHub-side deploy. Production auto-ship is on the VPS:
+# founder-radar-update.timer runs deploy/update-from-main.sh every few
+# minutes, so a merge to main reaches /opt/founder-radar without repository
+# secrets (I23/J26).
 #
-# This exists because the recurring "it's still the same" problem (client
-# issues I23/I24/J26) was branch/deploy divergence: fixes landed on main but
-# the box kept running old code. Auto-deploy from a clean checkout of
-# main removes the human ritual (`ssh`, `git pull`, `install.sh`) that drifted.
+# This workflow stays as a second door: workflow_dispatch, or a push to
+# main IF VPS_HOST / VPS_USER / VPS_SSH_KEY are set. Missing secrets skip
+# with success so the Actions tab does not show a red X. When secrets exist
+# the remote command is the same script the timer runs (flock serialises).
 #
-# A green push to main deploys automatically. Waiting for a human to click
-# `workflow_dispatch` is how I23/J26 ("it's still the same") survived after
-# this workflow landed: zero Deploy runs ever started, so the box kept the
-# old checkout. Manual dispatch remains for a forced rescore without a commit.
-# Trigger by merging to main, or:
-#   gh workflow run Deploy -f rescore_all=true
-#
-# Required repository secrets (Settings -> Secrets and variables -> Actions):
+# Optional repository secrets (Settings -> Secrets and variables -> Actions):
 #   VPS_HOST     - hostname or IP of the VPS (e.g. srv1821489.hstgr.cloud)
 #   VPS_USER     - SSH user with sudo (deploy/install.sh needs root)
-#   VPS_SSH_KEY  - a private SSH key whose public half is in the VPS authorized_keys
-# Optional:
+#   VPS_SSH_KEY  - a private SSH key whose public half is in authorized_keys
 #   VPS_PORT     - SSH port (default 22)
 #
-# The production layout is fixed at /opt/founder-radar (ROOT) with the checkout
-# at /opt/founder-radar/app — this is what deploy/install.sh and every systemd
-# unit assume, so it is not configurable here.
+# The production layout is fixed at /opt/founder-radar.
 
 on:
   push:
@@ -31,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       rescore_all:
-        description: "Run 'rescore --all' after deploy (applies config/qualifier changes to existing rows)"
+        description: "Force rescore --all even when HEAD is already current"
         type: boolean
         default: true
 
@@ -41,99 +34,42 @@ concurrency:
 
 jobs:
   deploy:
-    # Push to main always deploys. Manual dispatch still works from the
-    # Actions tab. Do not also key off `workflow_run` — that would ship twice.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify required secrets are present
+      - name: Skip when VPS GitHub secrets are not configured
+        id: secrets
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           set -euo pipefail
-          missing=0
-          for name in VPS_HOST VPS_USER VPS_SSH_KEY; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Required secret $name is not set."
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "Add VPS_HOST, VPS_USER and VPS_SSH_KEY (and optionally VPS_PORT)" \
-                 "under Settings -> Secrets and variables -> Actions."
-            exit 1
+          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_USER:-}" ] || [ -z "${VPS_SSH_KEY:-}" ]; then
+            echo "VPS GitHub secrets are not set."
+            echo "Production ships via founder-radar-update.timer on the box"
+            echo "(deploy/update-from-main.sh). This job is a no-op."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Deploy main to the VPS
+        if: steps.secrets.outputs.configured == 'true'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
-          # Auto-deploy (push) always rescores so qualifier/source changes on
-          # main actually rewrite existing rows. Manual dispatch honours the
-          # checkbox (`inputs.rescore_all` is empty on push).
-          RESCORE_ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.rescore_all || github.event_name != 'workflow_dispatch' }}
+          RESCORE_ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.rescore_all }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           port="${VPS_PORT:-22}"
-
-          # Pin the host key on first contact, then require it thereafter.
           ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          # RESCORE_ALL is expanded here and passed to the remote shell as a
-          # command prefix, so the remote heredoc stays literal (no local
-          # expansion). The production paths are fixed in the remote script.
           ssh -i ~/.ssh/id_deploy -p "$port" -o StrictHostKeyChecking=accept-new \
             "$VPS_USER@$VPS_HOST" \
-            "RESCORE_ALL='$RESCORE_ALL' bash -se" <<'REMOTE'
-          set -euo pipefail
-          # Fixed production layout (deploy/install.sh + the systemd units all
-          # assume it): ROOT holds .env and data/; the checkout is ROOT/app.
-          root_dir="/opt/founder-radar"
-          app_dir="$root_dir/app"
-          # The checkout is owned by the 'radar' service user (install.sh chowns
-          # it), so run git AS radar to avoid permission / "dubious ownership"
-          # errors. This requires the radar user to be able to fetch origin —
-          # true for a public repo, otherwise configure a deploy key or a
-          # credential helper under the radar user.
-          run_git() { sudo -u radar git -C "$app_dir" "$@"; }
-          echo "== before: $(run_git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-          run_git fetch --all --prune
-          run_git checkout main
-          run_git pull --ff-only origin main
-          # Idempotent: reinstalls the venv and restarts the systemd units.
-          sudo bash "$app_dir/deploy/install.sh"
-          # Run the CLI from ROOT so it loads ROOT/.env and the real
-          # ROOT/data/radar.db, not a shadow ./data/radar.db under the checkout
-          # (see deploy/install.sh).
-          cd "$root_dir"
-          sudo -u radar founder-radar doctor || echo "doctor reported issues (see output above)"
-          if [ "${RESCORE_ALL:-false}" = "true" ]; then
-            echo "== rescoring all companies under the current config"
-            sudo -u radar founder-radar rescore --all
-          fi
-          # Self-verify the two failure modes the client actually hit: the
-          # review surface disappearing (I24) and the daily run silently not
-          # firing (I23). If a deploy leaves either down, fail loudly here
-          # rather than let "it's still the same" surface days later.
-          echo "== verifying services are active after deploy"
-          fail=0
-          for unit in founder-radar-web.service founder-radar.timer; do
-            if systemctl is-active --quiet "$unit"; then
-              echo "  ok: $unit active"
-            else
-              echo "::error::$unit is not active after deploy"
-              systemctl status --no-pager --lines 20 "$unit" || true
-              fail=1
-            fi
-          done
-          [ "$fail" -eq 0 ] || exit 1
-          echo "== after:  $(run_git rev-parse --short HEAD)"
-          REMOTE
-          echo "Deploy finished and services verified. Also spot-check /api/today on the host."
+            "sudo -n env RADAR_UPDATE_FORCE_RESCORE='$RESCORE_ALL' bash /opt/founder-radar/app/deploy/update-from-main.sh"
+          echo "Deploy finished. Also spot-check /api/today on the host."

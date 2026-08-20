@@ -358,23 +358,17 @@ keys cannot keep old `dsw` watchlist rows alive), and lets Track A
 Restatement of I23: correct code was not reaching the deployed box (branch/
 deploy divergence, GitHub Actions failing — confirmed in-thread 20 Aug). No new
 product logic. The root cause was a manual, drift-prone deploy ritual (`ssh` →
-`git pull` → `install.sh`).
+`git pull` → `install.sh`), then an Actions workflow that went red because
+repository secrets were never set.
 
-Fix (mechanism): `.github/workflows/deploy.yml` — a repeatable deploy from a
-clean checkout of `main`. A **push to `main` starts it automatically** (and
-rescores existing rows), because waiting for a human to click
-`workflow_dispatch` is how this issue survived: zero Deploy runs after the
-workflow landed, so the box kept old code. Manual dispatch remains for a
-forced rescore without a commit (`gh workflow run Deploy -f rescore_all=true`).
-
-Still requires (one-time, owner action, outside the repo): add the VPS secrets
-`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (optional `VPS_PORT`) under Settings →
-Secrets and variables → Actions. The production layout is fixed at
-`/opt/founder-radar` (what install.sh and the systemd units assume). Until the
-secrets exist the workflow fails fast with a clear message; once they exist,
-every merge to `main` ships itself and the §4.1–§4.2 live checks confirm the
-deployed commit matches `main`. Pinned by
-`test_deploy_ships_main_without_a_manual_click`.
+Fix (mechanism): the **VPS pulls `main` itself**. `founder-radar-update.timer`
+runs `deploy/update-from-main.sh` every five minutes (`git pull --ff-only`,
+`install.sh`, `rescore --all` when HEAD moved). No GitHub secrets required.
+`.github/workflows/deploy.yml` is optional: missing `VPS_HOST` /
+`VPS_USER` / `VPS_SSH_KEY` skip with success (no red X); if those secrets
+exist, Actions SSHs in and runs the same script. Pinned by
+`test_deploy_ships_main_without_a_manual_click` and
+`test_update_from_main_fast_forwards_and_skips_when_current`.
 
 ---
 
@@ -517,9 +511,10 @@ running" (G21).
    unless explicitly disabled. It is now an allowlist of Enabled rows (empty
    config → `DEFAULT_SOURCES`). Pinned by
    `test_sources_tab_is_an_allowlist_not_a_denylist`.
-5. **Deployment hygiene (I23/I24/J26)** — `.github/workflows/deploy.yml`
-   ships `main` on every push (plus optional `workflow_dispatch`). The §4
-   live checklist is still the host-side proof. Pinned by
+5. **Deployment hygiene (I23/I24/J26)** — `founder-radar-update.timer` on
+   the VPS pulls `main` every five minutes. GitHub Deploy is optional and
+   skips when Actions secrets are empty. The §4 live checklist is still
+   the host-side proof. Pinned by
    `test_deploy_ships_main_without_a_manual_click`.
 6. **Sheet Lists tab dropped nested scoring maps — FIXED.** Once stage ①
    actually read the spreadsheet, `parse_lists` replaced `Config.lists` with
@@ -568,7 +563,7 @@ Every product complaint from the thread, and the pin that keeps it gone.
 | F17/F18 | Change login | ✅ | Caddy + `/help` |
 | G19–G21 | Walkthrough, costs, how it connects | ✅ | ops-guide + `/help` + README Cost |
 | H22 | Device code on his VPS | ✅ process | |
-| I23/J26 | Updates not reflected / still the same | 🔧 | auto-deploy on push to `main` |
+| I23/J26 | Updates not reflected / still the same | 🔧 | VPS timer pulls `main` |
 | I24 | Empty dashboard / cannot log in | 🔧 | live §4 |
 | J25 | Companies House driving discovery | ✅ | website and repeat_founder not admitting; CH-only cards hidden on Today; startup sources first |
 | — | Fund criteria in the sheet, not the code | ✅ | stage ① now loads the sheet on `founder-radar run` |

@@ -1,0 +1,17 @@
+# /etc/systemd/system/founder-radar-update.timer
+#
+# The box watches GitHub. A merge to main lands here without Actions secrets
+# (I23/J26). Five minutes is frequent enough to ship a fix the same morning
+# and polite enough not to hammer origin.
+
+[Unit]
+Description=Check GitHub main for founder-radar updates
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
