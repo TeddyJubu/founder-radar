@@ -80,7 +80,9 @@ Legend — **Access:** `API` · `JSON` (WordPress/CMS endpoint) · `RSS` · `HTM
 | **`icure.co.uk`** | A domain-for-sale parking page, not the programme | ✅ |
 | **Maddyness UK** | Feed carries headlines only — empty description and content | ✅ |
 | **Hult Prize UK / Blue Sky Northumbria** | No UK winner list published / could not verify it exists | ✅ |
-| **Durham, Newcastle, Northumbria, Sunderland individually** | Redundant — Northern Accelerator aggregates all four | ✅ |
+| **Antler UK cohort page** | robots.txt **disallows** `/new-portfolio-companies/`. The permitted `/portfolio` root is a lagging dump of every company Antler has ever backed. Not crawled. | ✅ |
+| **Imperial / Warwick spinout portfolio pages** | Static lists of every company the TTO has ever backed — the version-1 "already 5–7 years old" failure mode. Imperial's enterprise news URL 404s. Do not scrape these portfolios. | ✅ |
+| **Durham, Newcastle, Northumbria, Sunderland, Teesside individually** | Redundant — Northern Accelerator aggregates them | ✅ |
 
 ---
 

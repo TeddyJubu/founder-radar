@@ -71,8 +71,10 @@ asks "why did this drop off my list?", the answer has to be a number he can chec
   credible, but other scouts can see them too.
 - **Track B — registry-first.** Newly incorporated UK tech companies straight from
   Companies House, qualified by free public evidence — a share-allotment filing
-  (SH01), founders with prior directorships, a live website, a matching grant award.
-  Lower yield, very high edge. This is where the client finds what no fund has seen.
+  (SH01), a grant, a university spinout, press in a tracked source, or a repeat
+  founder. A live website is recorded when found, but it does not by itself
+  admit a registry company: almost every Ltd has one. Lower yield, very high
+  edge. This is where the client finds what no fund has seen.
 
 Track B only works because of the derivation step: a register entry has no sector,
 stage, founder type or traction, so `radar/score/derive.py` turns SIC code → sector,

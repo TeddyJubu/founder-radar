@@ -101,12 +101,15 @@ Common knobs:
 **Sources** tab:
 
 - Flip **Enabled** to `FALSE` to silence a noisy or broken adapter; `TRUE` to
-  bring it back. Takes effect on the next run — no deploy.
+  bring it back. Takes effect on the next run — no deploy. The tab is an
+  allowlist: only Enabled rows crawl (plus any new default sources the next
+  run appends for you).
 - Health columns (last OK, items, status) are written by the pipeline.
 
 **Brand-new source:** enablement alone is not enough. Someone must add an
-adapter under `radar/sources/`, register it, then add a Sources-tab row. The
-sheet only toggles adapters that already exist in code.
+adapter under `radar/sources/`, register it, then add a Sources-tab row (or
+add it to `DEFAULT_SOURCES`). The sheet only toggles adapters that already
+exist in code.
 
 Useful CLI:
 
