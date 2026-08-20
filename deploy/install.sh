@@ -138,9 +138,28 @@ systemctl enable --now founder-radar-update.timer
 say "review surface"
 systemctl enable --now founder-radar-web.service
 
-# shellcheck disable=SC1090
-. "$ENV_FILE" 2>/dev/null || true
-if [ -n "${RADAR_WEB_DOMAIN:-}" ] && [ -n "${RADAR_WEB_PASS_HASH:-}" ]; then
+# Do not `source` .env. Caddy bcrypt hashes are `$2y$...`; under `set -u`
+# bash treats `$2` as an unbound positional and aborts the installer after
+# the units are already in place (the timer then looks enabled while
+# migrate/Caddy never run). Read only the keys we need, unexpanded.
+web_domain=""
+web_hash_set=0
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in
+    RADAR_WEB_DOMAIN=*)
+      web_domain="${line#RADAR_WEB_DOMAIN=}"
+      web_domain="${web_domain#\"}"
+      web_domain="${web_domain%\"}"
+      web_domain="${web_domain#\'}"
+      web_domain="${web_domain%\'}"
+      ;;
+    RADAR_WEB_PASS_HASH=*)
+      web_hash_set=1
+      ;;
+  esac
+done < "$ENV_FILE"
+
+if [ -n "$web_domain" ] && [ "$web_hash_set" -eq 1 ]; then
   if ! command -v caddy >/dev/null 2>&1; then
     say "installing caddy"
     apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
@@ -158,7 +177,7 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
   systemctl daemon-reload
   systemctl enable --now caddy
   systemctl reload caddy 2>/dev/null || systemctl restart caddy
-  say "review surface live at https://$RADAR_WEB_DOMAIN (password required)"
+  say "review surface live at https://$web_domain (password required)"
 else
   say "RADAR_WEB_DOMAIN / RADAR_WEB_PASS_HASH not set in $ENV_FILE"
   say "  the review surface is running on 127.0.0.1:8787 and is NOT published."
