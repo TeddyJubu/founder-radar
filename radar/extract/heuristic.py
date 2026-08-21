@@ -84,6 +84,29 @@ UNIVERSITY = re.compile(
     r"\b(University of [A-Z][\w'’\-]+(?:\s+[A-Z][\w'’\-]+)?|[A-Z][\w'’\-]+(?:\s+[A-Z][\w'’\-]+)?\s+University)\b"
 )
 
+# Late-stage / public-company language. If we leave stage unknown these pass
+# `max_stage` and occupy Today — the client's "already VC-backed / about to
+# IPO" complaint.
+IPO_LANGUAGE = re.compile(
+    r"\b(?:initial public offering|IPO|fil(?:e|es|ed) for (?:an )?IPO|"
+    r"going public|"
+    r"listed on (?:the )?(?:AIM|LSE|NASDAQ|NYSE|London Stock Exchange))\b",
+    re.I,
+)
+# Headlines like "Spine files for IPO" have no funding verb, so NAME_IN_TITLE
+# misses them. Capture the subject anyway so the reject record is named.
+IPO_SUBJECT = re.compile(
+    r"(?P<name>[A-Z][\w&'’.\-]*(?:\s+[A-Z0-9][\w&'’.\-]*){0,3})\s+"
+    r"(?:files?|filed)\s+for\s+(?:an\s+)?IPO\b"
+)
+LATE_ROUND = re.compile(
+    r"\b(series\s+(?!a\b)[a-z]\b|growth round|late[- ]stage(?: round)?|pre-?IPO)\b",
+    re.I,
+)
+SERIES_A = re.compile(r"\bseries\s+a\b", re.I)
+PRE_SEED = re.compile(r"\bpre-?seed\b", re.I)
+SEED_ROUND = re.compile(r"\b(seed round|seed funding|seed investment)\b", re.I)
+
 # Location is deliberately conservative. A place is treated as headquarters
 # evidence only when the prose says "based"/"headquartered", or calls it a
 # startup/company in that place. This avoids turning a customer, market, or
@@ -214,6 +237,10 @@ def find_company_name(title: str, text: str, html: str, jsonld: dict | None = No
     if match:
         candidates.append(match.group("name"))
 
+    ipo_subject = IPO_SUBJECT.search(stripped or "") or IPO_SUBJECT.search(text or "")
+    if ipo_subject:
+        candidates.append(ipo_subject.group("name"))
+
     for candidate in candidates:
         cleaned = candidate.strip(" ,.-–—")
         if cleaned and len(cleaned) > 1:
@@ -272,6 +299,22 @@ def heuristic_extract(
         data["rejection_reason"] = "roundup"
         return Extraction.model_validate(data)
 
+    haystack = f"{title}\n{text}"
+    # IPO / listing copy is not a lead even when the headline has no funding
+    # verb and we cannot parse a company name.
+    ipo = IPO_LANGUAGE.search(haystack)
+    if ipo:
+        name = find_company_name(title, text, html, jsonld)
+        if name:
+            data["company_name"] = name
+            data["evidence_quote_company"] = _sentence_containing(text, name)
+        data["rejection_reason"] = "already_large_company"
+        data["stage"] = "growth"
+        data["evidence_quote_stage"] = (
+            _sentence_containing(text, ipo.group(0)) or ipo.group(0)
+        )
+        return Extraction.model_validate(data)
+
     name = find_company_name(title, text, html, jsonld)
     if name:
         data["company_name"] = name
@@ -317,4 +360,41 @@ def heuristic_extract(
             text, uni.group(1) if uni else SPINOUT.search(text).group(0)
         )
 
+    stage, stage_quote, reject_large = _detect_stage(haystack, text)
+    if reject_large:
+        data["rejection_reason"] = "already_large_company"
+    if stage:
+        data["stage"] = stage
+        if stage_quote:
+            data["evidence_quote_stage"] = stage_quote
+
     return Extraction.model_validate(data)
+
+
+def _detect_stage(haystack: str, text: str) -> tuple[str | None, str | None, bool]:
+    """Return `(stage, quote, already_large)`.
+
+    IPO / listing language is a reject, not a lead. Series B+ still produces
+    a record so the freshness `max_stage` gate can fire with a reason.
+    """
+    ipo = IPO_LANGUAGE.search(haystack)
+    if ipo:
+        quote = _sentence_containing(text, ipo.group(0)) or ipo.group(0)
+        return "growth", quote, True
+    late = LATE_ROUND.search(haystack)
+    if late:
+        quote = _sentence_containing(text, late.group(0)) or late.group(0)
+        return "series_b_plus", quote, False
+    if SERIES_A.search(haystack):
+        match = SERIES_A.search(haystack)
+        quote = _sentence_containing(text, match.group(0)) if match else None
+        return "series_a", quote, False
+    if PRE_SEED.search(haystack):
+        match = PRE_SEED.search(haystack)
+        quote = _sentence_containing(text, match.group(0)) if match else None
+        return "pre_seed", quote, False
+    if SEED_ROUND.search(haystack):
+        match = SEED_ROUND.search(haystack)
+        quote = _sentence_containing(text, match.group(0)) if match else None
+        return "seed", quote, False
+    return None, None, False
