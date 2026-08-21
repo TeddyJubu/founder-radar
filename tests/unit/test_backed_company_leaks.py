@@ -189,7 +189,71 @@ def test_today_hides_undated_unspecified_stage_spinout(db, cfg):
     payload = build_today(db.conn)
     assert cid not in {row["company_id"] for row in payload["companies"]}
     reasons = {row["key"] for row in payload["eligibility_diagnostics"]["reasons"]}
-    assert reasons & {"maturity_unknown", "geography_unverified", "max_company_age_months"}
+    assert "maturity_unknown" in reasons
+
+
+def _stale_today_row(db, company, *, vehicle_key, fund="anticus"):
+    """A watchlist row as the live DB looked *before* a rescore.
+
+    The leak: Today used the stored vehicle even when city→region now makes
+    that vehicle's HARD geo fail. `score_company` would reject; stale rows
+    would not.
+    """
+    from radar.store.db import now_iso
+    from tests.factories import store_company
+
+    cid = store_company(db, company)
+    stamp = now_iso()
+    db.execute(
+        "INSERT INTO company_source(company_id, source_key, external_id, "
+        "source_url, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
+        (cid, "oxford_innovation", f"ext-{cid}",
+         "https://innovation.ox.ac.uk/investing/our-portfolio-companies/x",
+         stamp, stamp),
+    )
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, reject_reason, explanation,
+              flags, config_hash, scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (cid, fund, vehicle_key, 56.0, 0.4, 70.0, 60, "watchlist", None,
+         "Queued for review.", None, "testhash", "1", stamp),
+    )
+    return cid
+
+
+def test_today_hides_oxford_on_a_stale_yorkshire_watchlist_row(db):
+    """Known city, known early stage, already scored onto Finance Yorkshire."""
+    from prototype.server import build_today
+
+    cid = _stale_today_row(
+        db,
+        _ionsight(age_months=8, stage="seed"),
+        vehicle_key="fy_seedcorn",
+    )
+    payload = build_today(db.conn)
+    assert cid not in {row["company_id"] for row in payload["companies"]}
+    reasons = {row["key"] for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert "geography_mismatch" in reasons
+
+
+def test_today_hides_unresolved_uk_on_a_hard_regional_vehicle(db):
+    """uk_wide with no city is not a Yorkshire match — it is unverified."""
+    from prototype.server import build_today
+
+    cid = _stale_today_row(
+        db,
+        C(canonical_name="Anywhere Ltd", norm_key="anywhereltd",
+          age_months=8, stage="seed", discovery_route="spinout",
+          country="GB", geography="uk_wide", hq_city=None, hq_postcode=None,
+          sector="life_sciences"),
+        vehicle_key="fy_seedcorn",
+    )
+    payload = build_today(db.conn)
+    assert cid not in {row["company_id"] for row in payload["companies"]}
+    reasons = {row["key"] for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert "geography_unverified" in reasons
 
 
 def test_today_still_shows_a_grant_winner_with_unknown_age_and_known_early_stage(db):

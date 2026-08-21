@@ -62,6 +62,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "uk_unverified": "UK presence not verified",
     "maturity_unknown": "Age and stage both unknown — could already be funded",
     "geography_unverified": "Region not confirmed for a fund that requires it",
+    "geography_mismatch": "Does not meet the fund's region rule",
     "missing_provenance": "No usable source URL",
     "reviewed_today": "Already reviewed today",
     "display_limit": "Beyond today's display limit",
@@ -164,12 +165,18 @@ def _row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
     return default if value is None else value
 
 
-def _winning_vehicle_key(conn: sqlite3.Connection, company_id: str) -> str | None:
-    row = conn.execute(
+def _winning_vehicle_key(
+    conn: sqlite3.Connection, company_id: str, *, config_hash: str | None = None,
+) -> str | None:
+    sql = (
         "SELECT vehicle_key FROM score WHERE company_id = ? AND tier IN (?, ?) "
-        "ORDER BY priority DESC, id DESC LIMIT 1",
-        (company_id, *REVIEWABLE),
-    ).fetchone()
+    )
+    params: list[Any] = [company_id, *REVIEWABLE]
+    if config_hash:
+        sql += "AND config_hash = ? "
+        params.append(config_hash)
+    sql += "ORDER BY priority DESC, id DESC LIMIT 1"
+    row = conn.execute(sql, params).fetchone()
     return row["vehicle_key"] if row else None
 
 
@@ -189,6 +196,7 @@ def _today_block_reason(
     config: Any,
     *,
     today: date,
+    config_hash: str | None = None,
 ) -> str | None:
     """First freshness / venture-signal reason a company cannot occupy Today.
 
@@ -200,8 +208,9 @@ def _today_block_reason(
     signal.
 
     A HARD regional mandate that we could not verify (Oxford stored as
-    `uk_wide`, no postcode) is also not a Today card — watchlist in the sheet
-    is the research prompt, not the morning queue.
+    `uk_wide`, no postcode) — or that we *can* verify and it fails — is also
+    not a Today card. Stale watchlist rows scored before city→region existed
+    would otherwise keep an Oxford spinout on Finance Yorkshire until rescore.
     """
     from radar.config.models import STAGES, canon_enum
     from radar.score.gates import apply_freshness_gates, evaluate_vehicle_gates
@@ -229,11 +238,13 @@ def _today_block_reason(
             return "maturity_unknown"
 
     vehicle_key = _row_value(row, "vehicle_key") or _winning_vehicle_key(
-        conn, _row_company_id(row)
+        conn, _row_company_id(row), config_hash=config_hash,
     )
     vehicle = _vehicle_by_key(config, vehicle_key)
     if vehicle is not None and vehicle.geo_rule == "HARD" and vehicle.geo_values:
         verdict = evaluate_vehicle_gates(row, vehicle, config)
+        if not verdict.passed and (verdict.reason or "").startswith("geography"):
+            return "geography_mismatch"
         if "geography" in (verdict.unverified_rules or ()):
             return "geography_unverified"
     return None
@@ -639,7 +650,9 @@ def _eligible_today_company_ids(
     for row in conn.execute(sql, params):
         if row["company_id"] not in source_ids:
             continue
-        if _today_block_reason(conn, row, config, today=today):
+        if _today_block_reason(
+            conn, row, config, today=today, config_hash=config_hash,
+        ):
             continue
         eligible.add(row["company_id"])
     return eligible
@@ -704,7 +717,9 @@ def _today_eligibility_diagnostics(
             continue
 
         reviewable_companies += 1
-        blocked = _today_block_reason(conn, row, config, today=today)
+        blocked = _today_block_reason(
+            conn, row, config, today=today, config_hash=config_hash,
+        )
         if blocked:
             exclude(blocked)
             continue
@@ -1244,7 +1259,9 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
 
     passing: list[sqlite3.Row] = []
     for r in rows:
-        if _today_block_reason(conn, r, config, today=today):
+        if _today_block_reason(
+            conn, r, config, today=today, config_hash=config_hash,
+        ):
             continue
         passing.append(r)
 
