@@ -60,6 +60,8 @@ TODAY_DIAGNOSTIC_LABELS = {
     "already_on_vc_portfolio": "Already on a tracked VC portfolio",
     "min_uk_presence": "Fails the UK-presence gate",
     "uk_unverified": "UK presence not verified",
+    "maturity_unknown": "Age and stage both unknown — could already be funded",
+    "geography_unverified": "Region not confirmed for a fund that requires it",
     "missing_provenance": "No usable source URL",
     "reviewed_today": "Already reviewed today",
     "display_limit": "Beyond today's display limit",
@@ -150,6 +152,37 @@ def _has_registry_venture_signal(conn: sqlite3.Connection, company_id: str) -> b
     return found is not None
 
 
+def _row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
+    """Read a column that may be missing from older Today SQL shapes."""
+    try:
+        keys = row.keys()
+    except Exception:
+        return default
+    if key not in keys:
+        return default
+    value = row[key]
+    return default if value is None else value
+
+
+def _winning_vehicle_key(conn: sqlite3.Connection, company_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT vehicle_key FROM score WHERE company_id = ? AND tier IN (?, ?) "
+        "ORDER BY priority DESC, id DESC LIMIT 1",
+        (company_id, *REVIEWABLE),
+    ).fetchone()
+    return row["vehicle_key"] if row else None
+
+
+def _vehicle_by_key(config: Any, vehicle_key: str | None) -> Any:
+    if not vehicle_key:
+        return None
+    for fund in getattr(config, "funds", ()):
+        for vehicle in fund.vehicles:
+            if vehicle.vehicle_key == vehicle_key:
+                return vehicle
+    return None
+
+
 def _today_block_reason(
     conn: sqlite3.Connection,
     row: sqlite3.Row,
@@ -160,29 +193,49 @@ def _today_block_reason(
     """First freshness / venture-signal reason a company cannot occupy Today.
 
     Track A (grant / news / spinout / accelerator) may surface with unknown
-    age: those feeds often lack a Companies House incorporation date.
-    Registry cards still need a verified age *and* a real venture signal —
-    incorporation plus a prior directorship is how random Ltd names filled
-    the live queue.
+    age *only when we independently know it is still early* (idea / pre-seed /
+    seed). J25 let Innovate UK cards through without a Companies House date;
+    that same hole let undated TTO portfolio cards and IPO news occupy the
+    queue. Registry cards still need a verified age *and* a real venture
+    signal.
+
+    A HARD regional mandate that we could not verify (Oxford stored as
+    `uk_wide`, no postcode) is also not a Today card — watchlist in the sheet
+    is the research prompt, not the morning queue.
     """
-    from radar.score.gates import apply_freshness_gates
+    from radar.config.models import STAGES, canon_enum
+    from radar.score.gates import apply_freshness_gates, evaluate_vehicle_gates
 
     freshness = apply_freshness_gates(row, config, today=today)
     if not freshness.passed:
         return freshness.reason or "freshness_gate"
     flags = list(freshness.flags)
+    age_unknown = (not _row_value(row, "incorporated_on")) or "age_unknown" in flags
+    stage = canon_enum(_row_value(row, "stage"), STAGES)
+
     if _is_registry_route(row["discovery_route"]):
-        if not row["incorporated_on"] or "age_unknown" in flags:
+        if age_unknown:
             return "age_unknown"
         leftover = [flag for flag in flags if flag != "age_unknown"]
         if leftover:
             return leftover[0]
         if not _has_registry_venture_signal(conn, _row_company_id(row)):
             return "registry_without_venture_signal"
-        return None
-    leftover = [flag for flag in flags if flag != "age_unknown"]
-    if leftover:
-        return leftover[0]
+    else:
+        leftover = [flag for flag in flags if flag != "age_unknown"]
+        if leftover:
+            return leftover[0]
+        if age_unknown and (stage is None or STAGES.index(stage) > STAGES.index("seed")):
+            return "maturity_unknown"
+
+    vehicle_key = _row_value(row, "vehicle_key") or _winning_vehicle_key(
+        conn, _row_company_id(row)
+    )
+    vehicle = _vehicle_by_key(config, vehicle_key)
+    if vehicle is not None and vehicle.geo_rule == "HARD" and vehicle.geo_values:
+        verdict = evaluate_vehicle_gates(row, vehicle, config)
+        if "geography" in (verdict.unverified_rules or ()):
+            return "geography_unverified"
     return None
 
 
