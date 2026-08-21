@@ -103,15 +103,20 @@ def test_web_surface_requires_a_password():
 
 
 def test_hermes_dashboard_is_published_behind_caddy():
-    """https://hermes.<host>/ failed TLS because Caddy had no site address
-    for that SNI, so no Let's Encrypt cert, so no UI. The hermes site block
-    must exist, share the review-surface password, and proxy loopback.
+    """The dashboard process must listen on loopback with a built SPA.
+
+    Caddy on the box is operator-managed: install.sh must not overwrite an
+    existing Caddyfile. The first-boot snippet still exists for a empty box,
+    shares the review-surface password, and rewrites Host to the loopback bind
+    so Hermes does not 400 Invalid Host after TLS already works.
     """
     text = CADDYFILE_HERMES.read_text()
     _assert_caddy_has_no_committed_password(text)
     assert "{$HERMES_WEB_DOMAIN}" in text
     assert "{$HERMES_DASHBOARD_UPSTREAM}" in text
     assert "flush_interval -1" in text, "Chat WebSockets would buffer"
+    assert "header_up Host 127.0.0.1:9119" in text
+    assert "header_up Host {host}" not in text
     assert "0.0.0.0" not in text
 
     unit = HERMES_DASHBOARD_UNIT.read_text()
@@ -124,11 +129,17 @@ def test_hermes_dashboard_is_published_behind_caddy():
         "hermes-dashboard.sh is not executable"
 
     installer = INSTALL_SH.read_text()
-    assert "Caddyfile.hermes" in installer
+    assert "leaving existing /etc/caddy/Caddyfile in place" in installer
+    assert 'cat "$HERE/Caddyfile" > /etc/caddy/Caddyfile' not in installer
+    assert "systemctl reload caddy" in installer
+    assert installer.index("leaving existing /etc/caddy/Caddyfile") < \
+        installer.index("systemctl reload caddy")
     assert 'hermes_domain="hermes.$web_domain"' in installer
     assert "hermes-dashboard.service" in installer
     assert "HERMES_DASHBOARD_PUBLIC_URL" in installer
     assert "npm run build" in installer
+    assert "Frontend not built" in installer
+    assert "probe_hermes_dashboard" in installer
     assert 'EnvironmentFile=-%s' in installer or "hermes.env" in installer
     # Still never source .env (bcrypt `$2y$` under `set -u`).
     assert '. "$ENV_FILE"' not in installer
@@ -214,7 +225,7 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "enable --now founder-radar-update.timer" in installer
     assert "chmod 755" in installer and "update-from-main.sh" in installer
     assert "hermes-dashboard.sh" in installer
-    assert "Caddyfile.hermes" in installer
+    assert "leaving existing /etc/caddy/Caddyfile in place" in installer
     # pip as radar from /root dies on an editable path hook. Pin the fix.
     assert 'cd "$APP_DIR"' in installer
     assert 'sudo -H -u "$APP_USER"' in installer
@@ -223,6 +234,11 @@ def test_deploy_ships_main_without_a_manual_click():
     # without sourcing the file.
     assert '. "$ENV_FILE"' not in installer
     assert "web_hash_set" in installer
+
+    script = UPDATE_SCRIPT.read_text()
+    assert "hermes-dashboard.service" in script
+    assert "Frontend not built" in script
+    assert "not serving UI" in script
 
     workflow = DEPLOY_WORKFLOW.read_text()
     assert "configured=false" in workflow

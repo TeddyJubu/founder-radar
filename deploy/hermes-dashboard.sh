@@ -2,8 +2,9 @@
 #
 # Start the Hermes Agent web dashboard on loopback.
 #
-# Invoked by hermes-dashboard.service. Binds 127.0.0.1 only — Caddy
-# (deploy/Caddyfile.hermes) terminates TLS and enforces the password.
+# Invoked by hermes-dashboard.service. Binds 127.0.0.1 only. Caddy on
+# the box terminates TLS and enforces the password; this wrapper does
+# not touch Caddy.
 #
 # Never prints secrets. Never force-pushes. Never binds 0.0.0.0 (that
 # engages Hermes's public auth gate and is the wrong shape behind Caddy).

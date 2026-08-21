@@ -9,8 +9,9 @@
 # happen while nobody is looking.
 #
 # Values come from /opt/founder-radar/.env (and hermes.env for the dashboard
-# hostname). install.sh concatenates deploy/Caddyfile.hermes when a distinct
-# Hermes dashboard hostname is known, so that name gets a Let's Encrypt cert.
+# hostname). install.sh writes this file only on first boot; an existing
+# /etc/caddy/Caddyfile is left alone. deploy/Caddyfile.hermes is an optional
+# first-boot snippet for the dashboard hostname.
 #
 #   RADAR_WEB_DOMAIN     radar.example.com
 #   RADAR_WEB_USER       scout

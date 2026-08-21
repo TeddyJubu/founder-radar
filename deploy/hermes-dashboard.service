@@ -2,8 +2,8 @@
 #
 # The Hermes Agent web UI — `hermes dashboard` — as a long-running service.
 #
-# Binds 127.0.0.1:9119 only. Caddy (deploy/Caddyfile.hermes) terminates TLS
-# and enforces the same password as the review surface. User / HOME /
+# Binds 127.0.0.1:9119 only. Caddy on the box terminates TLS and enforces
+# the password; this unit never rewrites /etc/caddy/Caddyfile. User / HOME /
 # ReadWritePaths come from the drop-in install.sh writes for the account
 # that owns ~/.hermes (the updater runs as root, so SUDO_USER is empty).
 

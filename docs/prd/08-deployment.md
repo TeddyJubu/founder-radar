@@ -184,7 +184,7 @@ mkdir -p ~/.hermes/skills/founder-radar
 cp /opt/founder-radar/app/hermes/skills/founder-radar/SKILL.md ~/.hermes/skills/founder-radar/
 ```
 
-The web dashboard is published at `https://hermes.<RADAR_WEB_DOMAIN>/` (override with `HERMES_WEB_DOMAIN`). Caddy issues the certificate for that hostname — a name that is only in DNS, not in the Caddyfile, redirects HTTP→HTTPS and then fails TLS with no cert, which is how the UI "does not show up". `hermes-dashboard.service` runs `hermes dashboard --host 127.0.0.1 --port 9119 --no-open`; the same Caddy password as the review surface is in front. Chat stays Telegram-first; the dashboard is a browser control plane, not a second scoring system.
+The web dashboard is published at `https://hermes.<RADAR_WEB_DOMAIN>/` (override with `HERMES_WEB_DOMAIN`). TLS and the password stay in Caddy on the box — `deploy/install.sh` does not overwrite an existing Caddyfile. `hermes-dashboard.service` runs `hermes dashboard --host 127.0.0.1 --port 9119 --no-open` and the installer builds the SPA if `web_dist` is missing, so the URL is not an empty shell. Chat stays Telegram-first; the dashboard is a browser control plane, not a second scoring system.
 
 Finally, in Telegram, message the bot `/sethome` so scheduled deliveries know where to go.
 

@@ -43,7 +43,7 @@ install -d -o "$APP_USER" -g "$APP_USER" -m 700 "$SECRETS_DIR"
 
 say "system packages"
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv git sqlite3 logrotate
+apt-get install -y -qq python3 python3-venv git sqlite3 logrotate curl
 
 # The clock the timers run against. OnCalendar carries an explicit Europe/London
 # suffix as well, so this is belt and braces rather than the only defence.
@@ -180,26 +180,36 @@ HERMES_USER="${HERMES_USER:-}"
 HERMES_HOME="${HERMES_HOME:-}"
 HERMES_BIN="${HERMES_BIN:-}"
 
-# Prefer a real ~/.hermes under /home over root: founder-radar-update.timer
-# re-runs this script as root, so SUDO_USER is empty and the old fallback
-# copied the skill into /root/.hermes while the agent ran as someone else.
-for home in /home/*; do
-  [ -d "$home/.hermes" ] || continue
-  HERMES_HOME="$home"
-  HERMES_USER="$(stat -c '%U' "$home")"
-  break
-done
-if [ -z "$HERMES_HOME" ] && [ -n "${SUDO_USER:-}" ]; then
-  sudo_home="$(getent passwd "$SUDO_USER" | cut -d: -f6 || true)"
-  if [ -n "$sudo_home" ] && [ -d "$sudo_home/.hermes" ]; then
-    HERMES_USER="$SUDO_USER"
-    HERMES_HOME="$sudo_home"
+# Prefer a home that actually has the agent over "first /home/* with
+# .hermes". The updater runs as root (SUDO_USER empty), so a leftover
+# empty ~/.hermes on another account used to steal the dashboard User=.
+pick_hermes_home() {
+  local home owner
+  for home in /home/* /root; do
+    [ -d "$home/.hermes" ] || continue
+    if [ -x "$home/.local/bin/hermes" ] || [ -d "$home/.hermes/hermes-agent" ]; then
+      owner="$(stat -c '%U' "$home")"
+      HERMES_HOME="$home"
+      HERMES_USER="$owner"
+      return 0
+    fi
+  done
+  for home in /home/* /root; do
+    [ -d "$home/.hermes" ] || continue
+    HERMES_HOME="$home"
+    HERMES_USER="$(stat -c '%U' "$home")"
+    return 0
+  done
+  if [ -n "${SUDO_USER:-}" ]; then
+    local sudo_home
+    sudo_home="$(getent passwd "$SUDO_USER" | cut -d: -f6 || true)"
+    if [ -n "$sudo_home" ] && [ -d "$sudo_home/.hermes" ]; then
+      HERMES_USER="$SUDO_USER"
+      HERMES_HOME="$sudo_home"
+    fi
   fi
-fi
-if [ -z "$HERMES_HOME" ] && [ -d /root/.hermes ]; then
-  HERMES_USER=root
-  HERMES_HOME=/root
-fi
+}
+pick_hermes_home
 
 if [ -n "$HERMES_HOME" ] && [ -x "$HERMES_HOME/.local/bin/hermes" ]; then
   HERMES_BIN="$HERMES_HOME/.local/bin/hermes"
@@ -255,6 +265,44 @@ if [ -n "$HERMES_USER" ] || [ -n "$hermes_domain" ] || [ -n "${HERMES_BIN:-}" ];
   write_hermes_env "127.0.0.1:9119"
 fi
 
+build_hermes_spa() {
+  local agent_dir="$1"
+  [ -f "$agent_dir/web/package.json" ] || return 0
+  if ! command -v npm >/dev/null 2>&1; then
+    say "installing nodejs so the Hermes dashboard UI can be built"
+    apt-get install -y -qq nodejs npm || return 1
+  fi
+  command -v npm >/dev/null 2>&1 || return 1
+  say "building hermes dashboard frontend"
+  sudo -H -u "$HERMES_USER" env HOME="$HERMES_HOME" \
+    bash -c "cd \"$agent_dir/web\" && npm install --no-audit --no-fund && npm run build"
+}
+
+probe_hermes_dashboard() {
+  local tries="${1:-90}" i=0 code=""
+  dashboard_ok=0
+  : > /tmp/hermes-dash-probe.body
+  while [ "$i" -lt "$tries" ]; do
+    code="$(curl -sS --max-time 2 -o /tmp/hermes-dash-probe.body \
+      -w '%{http_code}' -H 'Host: 127.0.0.1:9119' \
+      http://127.0.0.1:9119/ 2>/dev/null || true)"
+    if [ -n "$code" ] && [ "$code" != "000" ]; then
+      if grep -qi 'Frontend not built' /tmp/hermes-dash-probe.body 2>/dev/null; then
+        say "error: dashboard SPA is not built — UI would be blank"
+        dashboard_ok=0
+        return 1
+      fi
+      dashboard_ok=1
+      say "hermes dashboard listening on 127.0.0.1:9119 (HTTP $code)"
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 1
+  done
+  say "error: hermes dashboard did not answer on 127.0.0.1:9119"
+  return 1
+}
+
 if [ -n "${HERMES_BIN:-}" ] && [ -n "${HERMES_USER:-}" ]; then
   agent_dir="$HERMES_HOME/.hermes/hermes-agent"
   if [ -x "$agent_dir/.venv/bin/pip" ]; then
@@ -265,18 +313,8 @@ if [ -n "${HERMES_BIN:-}" ] && [ -n "${HERMES_USER:-}" ]; then
   fi
   dist="$agent_dir/hermes_cli/web_dist/index.html"
   if [ -f "$agent_dir/web/package.json" ] && [ ! -f "$dist" ]; then
-    if ! command -v npm >/dev/null 2>&1; then
-      say "installing nodejs so the Hermes dashboard UI can be built"
-      apt-get install -y -qq nodejs npm || \
-        say "nodejs/npm not available — dashboard UI may be blank"
-    fi
-    if command -v npm >/dev/null 2>&1; then
-      say "building hermes dashboard frontend"
-      if ! sudo -H -u "$HERMES_USER" env HOME="$HERMES_HOME" \
-          bash -c "cd \"$agent_dir/web\" && npm install --no-audit --no-fund && npm run build"; then
-        say "frontend build failed — dashboard may self-heal on first start"
-      fi
-    fi
+    build_hermes_spa "$agent_dir" || \
+      say "frontend build failed — will probe and retry"
   fi
   mkdir -p "$UNIT_DIR/hermes-dashboard.service.d"
   {
@@ -290,27 +328,43 @@ if [ -n "${HERMES_BIN:-}" ] && [ -n "${HERMES_USER:-}" ]; then
     printf 'ReadWritePaths=%s/.hermes\n' "$HERMES_HOME"
   } > "$UNIT_DIR/hermes-dashboard.service.d/user.conf"
   systemctl daemon-reload
-  systemctl enable --now hermes-dashboard.service || \
+  # Restart, not only start: a previous blank SPA or stale env stays
+  # loaded until the unit is bounced.
+  systemctl enable hermes-dashboard.service
+  systemctl restart hermes-dashboard.service || \
     say "hermes-dashboard.service failed to start — see journalctl -u hermes-dashboard"
+  if ! probe_hermes_dashboard 90; then
+    if [ -f "$agent_dir/web/package.json" ]; then
+      say "retrying hermes dashboard frontend build"
+      if build_hermes_spa "$agent_dir"; then
+        systemctl restart hermes-dashboard.service || true
+        probe_hermes_dashboard 90 || true
+      fi
+    fi
+  fi
 else
   say "hermes binary not found — dashboard stays unpublished on :9119"
+  dashboard_ok=0
 fi
 
-# If the dashboard unit is not actually listening, Caddy still publishes
-# hermes.<host> (so TLS works) but falls back to the review surface.
 dashboard_upstream="127.0.0.1:8787"
-if command -v systemctl >/dev/null 2>&1 \
-    && systemctl is-active --quiet hermes-dashboard.service 2>/dev/null; then
-  dashboard_upstream="127.0.0.1:9119"
-elif [ -n "${HERMES_BIN:-}" ]; then
-  # Unit may still be coming up; prefer 9119 when we installed it.
+if [ "${dashboard_ok:-0}" -eq 1 ]; then
   dashboard_upstream="127.0.0.1:9119"
 fi
 if [ -f "$HERMES_ENV_FILE" ]; then
   write_hermes_env "$dashboard_upstream"
 fi
 
-if [ -n "$web_domain" ] && [ "$web_hash_set" -eq 1 ]; then
+# Caddy is configured on the box separately. Never overwrite an existing
+# Caddyfile or force a reload — that is how a working hermes.<host> cert
+# gets replaced with a site block that has no hostname. First boot still
+# writes the template when no Caddyfile exists yet.
+if [ -f /etc/caddy/Caddyfile ]; then
+  say "leaving existing /etc/caddy/Caddyfile in place"
+  if [ "${dashboard_ok:-0}" -eq 1 ]; then
+    say "hermes dashboard on 127.0.0.1:9119 (Caddy already fronts it)"
+  fi
+elif [ -n "$web_domain" ] && [ "$web_hash_set" -eq 1 ]; then
   if ! command -v caddy >/dev/null 2>&1; then
     say "installing caddy"
     apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
@@ -321,8 +375,7 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
       > /etc/apt/sources.list.d/caddy-stable.list
     apt-get update -qq && apt-get install -y -qq caddy
   fi
-  umask 022
-  cat "$HERE/Caddyfile" > /etc/caddy/Caddyfile
+  install -m 644 "$HERE/Caddyfile" /etc/caddy/Caddyfile
   if [ -n "$hermes_domain" ] && [ "$hermes_domain" != "$web_domain" ]; then
     printf '\n' >> /etc/caddy/Caddyfile
     cat "$HERE/Caddyfile.hermes" >> /etc/caddy/Caddyfile
@@ -357,6 +410,13 @@ say "database"
 # manual CLI runs while the timers write the real one.
 cd "$ROOT"
 sudo -u "$APP_USER" "$VENV/bin/founder-radar" db migrate
+
+if [ -n "${HERMES_BIN:-}" ] && [ -n "${HERMES_USER:-}" ] && [ "${dashboard_ok:-0}" -ne 1 ]; then
+  echo "hermes dashboard did not become ready on 127.0.0.1:9119" >&2
+  systemctl --no-pager --full status hermes-dashboard.service || true
+  journalctl -u hermes-dashboard.service --no-pager -n 80 || true
+  exit 1
+fi
 
 say "done. next:"
 say "  sudo -u $APP_USER founder-radar doctor"
