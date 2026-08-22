@@ -210,7 +210,8 @@ Plus `radar/fetch/robots.py` (Protego, 24 h cache, fail-closed on 5xx) and the l
 
 - [ ] The digest renders correctly for a full day, a quiet day and a zero day
 - [ ] `test_digest_delivered_when_hermes_is_down` passes with Hermes stopped
-- [ ] All nine Telegram commands work
+- [ ] All ten Telegram commands work
+- [ ] `/fix` runs `founder-radar repair --apply`, then the worktree / review / test / `hermes-ship.sh` loop when a code fix is needed
 - [ ] `/run northstar` performs a fund-scoped run
 - [ ] The timer fires on schedule and `Persistent=true` catches up after a reboot
 - [ ] The heartbeat alerts when a run is stale

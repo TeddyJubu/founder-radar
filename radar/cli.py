@@ -350,11 +350,49 @@ def db_restore(ctx, src):
     click.echo(f"restored {ctx.obj['db_path']} from {src}")
 
 
-# -------------------------------------------------------------------- doctor
+# -------------------------------------------------------------------- doctor / repair
 
-REQUIRED_ENV = ("COMPANIES_HOUSE_API_KEY",)
-OPTIONAL_ENV = ("LLM_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-                "GOOGLE_SA_JSON", "SHEET_ID", "RADAR_USER_AGENT")
+
+@cli.command()
+@click.option("--apply", is_flag=True,
+              help="Apply safe remediations (migrate, prune backups, restart web).")
+@click.option("--run", "start_run", is_flag=True,
+              help="Start a scan if the last successful run is stale. Live box only.")
+@click.option("--auto", "auto_mode", is_flag=True,
+              help="Apply remediations and write a Hermes request file if a "
+                   "code-level fix is still needed.")
+@click.option("--request-file", default=None,
+              help="Where --auto writes the Hermes hand-off JSON.")
+@click.pass_context
+def repair(ctx, apply, start_run, auto_mode, request_file):
+    """Diagnose the box and optionally apply safe remediations.
+
+    The complete interface Hermes uses when something breaks on the VPS
+    (FR-9.6, FR-9.7). Scoring, gates and git history are out of scope —
+    those stay in `radar/score/` and `deploy/update-from-main.sh`.
+    """
+    from radar.ops.repair import infer_root, run_repair
+
+    apply = apply or auto_mode
+    db_path = Path(ctx.obj["db_path"])
+    root = infer_root(db_path)
+    default_request = root / "logs" / "hermes-repair.requested"
+    handoff = Path(request_file) if request_file else (
+        default_request if auto_mode else None
+    )
+
+    # Do not auto-migrate here: an empty schema is a repair finding, and
+    # `--apply` is what creates the tables. `_db()` would hide the bug.
+    conn = Db(db_path)
+    report = run_repair(
+        conn, apply=apply, start_run=start_run,
+        root=root, db_path=db_path, request_file=handoff,
+    )
+    if ctx.obj["json"]:
+        _emit(report.as_dict(), True)
+    else:
+        click.echo(report.as_text(), nl=False)
+    sys.exit(EXIT_OK if report.healthy else EXIT_PARTIAL)
 
 
 @cli.command()
@@ -365,6 +403,8 @@ def doctor(ctx):
     Checks keys, database, disk and sheet access, and prints a pass/fail table.
     Never raises — a diagnostic that crashes is useless.
     """
+    from radar.ops.repair import OPTIONAL_ENV, REQUIRED_ENV
+
     checks: list[tuple[str, bool, str]] = []
 
     for name in REQUIRED_ENV:

@@ -116,9 +116,10 @@ Managed Linux VPS (Ubuntu, 1 vCPU / 4 GB)
 │           ├── renders the Google Sheet       (a view)
 │           └── sends the digest to Telegram
 │
-└── Hermes Agent (always on, Telegram only)
-      └── the chat surface: /today, /run, /why, /status
-          It calls the same command-line tool. It holds no logic.
+└── Hermes Agent (always on, Telegram + VPS repair)
+      └── /today, /run, /why, /status, /fix
+          Queries call the CLI. Bugs run `founder-radar repair`, then a
+          playbook that is not allowed to change scores.
 ```
 
 If Hermes stops, the pipeline still runs and the digest still arrives via a direct Telegram fallback. If the AI provider is down, the pipeline still runs using a plain-text fallback extractor and flags those records for review. **Nothing in this system has a single point of failure that stops the daily run.**

@@ -243,6 +243,7 @@ def check(
         return result
 
     body = "📡 UK Founder Radar — alert\n\n" + "\n".join(alerts)
+    body += "\n\nReply “fix it” or /fix — Hermes on the VPS will try to repair this."
     if sender is None:
         from radar.notify.telegram import send_message as sender  # noqa: PLC0415
     try:

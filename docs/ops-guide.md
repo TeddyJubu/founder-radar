@@ -131,8 +131,7 @@ founder-radar sync-sheet
 4. Use Telegram for the digest and remote `/run` / `/status` when away from the
    browser.
 
-If something looks empty or wrong: `founder-radar doctor`, then check the
-Sources and Run Log tabs in the sheet.
+If something looks empty or wrong: in Telegram send `/fix` (or “fix it”). You do not need to SSH, pick a branch, or merge — Hermes will look, and message you when it is done or if it could not finish. On the box, the same door is `founder-radar repair --apply`, then `founder-radar doctor`. Check the Sources and Run Log tabs in the sheet.
 
 ---
 

@@ -283,48 +283,17 @@ Loosen it in Settings if you want more volume.
 | `/sheet` | Link to the spreadsheet | — |
 | `/week` | This week's new shortlist entries | `founder-radar digest --week` |
 | `/help` | The command list in plain English | — |
+| `/fix` | Diagnose and repair this box *(FR-9.7)* | `founder-radar repair --apply` |
 
 Only allow-listed Telegram user IDs may issue commands (`TELEGRAM_ALLOWED_USERS`).
 
-### The Hermes skill — thirty lines, no logic
+### The Hermes skill — chat plus a VPS repair playbook
 
-`~/.hermes/skills/founder-radar/SKILL.md`
+`~/.hermes/skills/founder-radar/SKILL.md` maps chat to CLI commands and, when something is broken, to `founder-radar repair --apply` plus `references/workflow.md`.
 
-```markdown
----
-name: founder-radar
-description: UK startup scouting for four VC funds
-metadata:
-  hermes:
-    requires_toolsets: [terminal]
----
-# Founder Radar
+Scoring still does not live there. Operational remediations are Python (`radar/ops/repair.py`) so they can be unit-tested offline. Adapter/layout/crash fixes are the one thing the on-box agent is allowed to edit: in a git worktree on `hermes/fix-*`, reviewed and tested by **other** sub-agents, then merged only by `deploy/hermes-ship.sh`. The person on Telegram is not an engineer and is never asked to merge.
 
-## When to use
-Any question about startups found, fund matches, scores, or running a scan.
-
-## Procedure
-Map the user's intent to one command and run it. Return the output as-is —
-it is already formatted for Telegram. Never compute scores yourself.
-
-| Intent | Command |
-|---|---|
-| today's list, what's new | `founder-radar digest --today` |
-| run it now, scan now | `founder-radar run` |
-| just Northstar / DSW / Outward / Anticus | `founder-radar run --fund <key>` |
-| top matches for a fund | `founder-radar fund <key>` |
-| why this company, explain X | `founder-radar show "<name>"` |
-| is it working, last run, cost | `founder-radar status` |
-| this week | `founder-radar digest --week` |
-
-Fund keys: northstar · dsw · outward · anticus
-
-## Pitfalls
-- Never invent a score or a company. If the command returns nothing, say so.
-- A run takes several minutes. Say "running, I'll message you when it's done."
-```
-
-**That file is the entire Hermes footprint.** Delete it and one systemd unit, and the system still works — it just loses the chat surface.
+`install.sh` copies the whole skill directory. Deleting it and `founder-radar-repair.timer` loses chat repair; `founder-radar repair` and the pipeline keep working.
 
 ---
 
@@ -347,6 +316,7 @@ founder-radar review                    # work the fuzzy-match review queue
 founder-radar forget "person name"      # GDPR erasure + suppression
 founder-radar db backup|restore|migrate
 founder-radar doctor                    # check keys, quotas, disk, sheet access
+founder-radar repair [--apply] [--run]  # diagnose; apply safe remediations
 ```
 
 Four flags worth knowing:
@@ -355,6 +325,7 @@ Four flags worth knowing:
 - `--no-llm` — heuristic extraction only. Zero AI cost. Useful for debugging and for proving the fallback works.
 - `--source KEY` — run one adapter in isolation. The fastest way to debug a broken source.
 - `founder-radar doctor` — run this first when anything looks wrong. It checks every key, every quota, disk space and sheet access, and prints a clear pass/fail table.
+- `founder-radar repair --apply` — the VPS repair door. Migrates an empty schema, prunes old backups, restarts a dead web unit. Hermes on the box runs this before editing any file.
 
 Exit codes: `0` success · `1` partial (some sources failed) · `2` fatal.
 `--json` on any command emits machine-readable output.

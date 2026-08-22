@@ -46,9 +46,9 @@
                        └───────────────────────────────────┘
 
   ┌───────────────────────────────────────────────────────────────────────┐
-  │  Hermes Agent  (systemd service, always on, Telegram adapter only)    │
-  │  ~/.hermes/skills/founder-radar/SKILL.md  → maps chat to CLI commands │
-  │  HOLDS NO LOGIC. If it dies, the pipeline is unaffected.              │
+  │  Hermes Agent  (systemd service, Telegram adapter + VPS repair)       │
+  │  ~/.hermes/skills/founder-radar/  → chat → CLI, and a repair playbook │
+  │  Scoring stays in Python. If Hermes dies, the pipeline is unaffected. │
   └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -80,13 +80,14 @@ Turning a paragraph of English into a structured record.
 
 ### Layer 3 — The Front Desk (Hermes Agent)
 
-Talking to Aryan on Telegram.
+Talking to Aryan on Telegram, and repairing the box when something breaks.
 
 - Translates "show me the Northstar ones" into `founder-radar fund northstar`
-- Contains no rules, no thresholds, no scoring, no data
-- Removable in one file and one systemd unit if it proves flaky
+- Translates "it's broken" / `/fix` into `founder-radar repair --apply`, then — only if a code fix is still needed — the worktree → review sub-agent → test sub-agent → `hermes-ship.sh` loop in `references/workflow.md`. The person chatting is not asked to SSH or merge.
+- Contains no scoring, no thresholds, no gates — those stay Layer 1
+- Removable: delete the skill and `founder-radar-repair.timer`. The pipeline and the `repair` CLI remain.
 
-**The rule, stated once:** *the AI may read prose into a record, and may turn a sentence into a command. It may never decide whether a company passes a gate, what it scores, whether it is a duplicate, or what lands in the sheet.*
+**The rule, stated once:** *the AI may read prose into a record, may turn a sentence into a command, and may repair operational and adapter bugs on the VPS. It may never decide whether a company passes a gate, what it scores, whether it is a duplicate, or what lands in the sheet.*
 
 Why this matters in practice: when Aryan asks "why did this company drop off my shortlist yesterday?", the answer must be "you changed the age limit from 36 to 24 months in Settings, and it's 30 months old" — not "the model saw it differently". Scoring must be arithmetic he can check.
 
@@ -107,7 +108,7 @@ Three options were assessed. The decision is a **hybrid**, but a specific one.
 
 **Why not all-Hermes.** Hermes's memory is 2,200 characters of markdown — it cannot be a company database. There is no Google Sheets toolset, so the Python gets written regardless. A Hermes skill is a prompt with no signature and no return value, so there is nothing to unit-test. And every scheduled run re-sends the full system prompt, tool schemas and skill list, paying tokens to do arithmetic.
 
-**Why not all-Python.** It is a perfectly good fallback, but it is not actually "no AI" — the article-to-record step still needs a model. What it gives up is the Telegram surface: allow-lists, command routing, retries, formatting, voice notes. That is a few hundred lines Teddy would then own forever, producing a bot that only does what was hardcoded. Hermes buys it for a thirty-line skill file.
+**Why not all-Python.** It is a perfectly good fallback, but it is not actually "no AI" — the article-to-record step still needs a model. What it gives up is the Telegram surface: allow-lists, command routing, retries, formatting, voice notes, and an on-box repair agent. That is a few hundred lines Teddy would then own forever. Hermes buys the chat surface and the VPS repair loop; scoring stays Python.
 
 **Two deliberate departures from a naive hybrid:**
 
@@ -115,7 +116,7 @@ Three options were assessed. The decision is a **hybrid**, but a specific one.
 
 2. **Extraction calls the provider SDK directly, not `hermes -z`.** Extraction is exactly where a guaranteed JSON schema, a controlled temperature, owned retries, per-record cost accounting and fixture-replay tests are needed. Hermes offers none of those and returns free text that would have to be regex-parsed. A direct SDK call with a Pydantic schema is about forty lines.
 
-**Escape hatch:** if the Hermes gateway proves unreliable in the first two weeks, removing it costs one skill file and one systemd unit. The pipeline never knew it was there. That is the real reason the boundary sits exactly here.
+**Escape hatch:** if the Hermes gateway proves unreliable, removing it costs the skill directory and the repair timer. `founder-radar repair` still runs from systemd. The pipeline never knew the chat surface was there.
 
 ---
 
@@ -238,7 +239,9 @@ founder-radar/
 │   │   └── heartbeat.py
 │   └── pipeline.py                 # orchestrates the seven stages
 ├── hermes/
-│   └── skills/founder-radar/SKILL.md   # ~30 lines. Chat → CLI mapping.
+│   └── skills/founder-radar/
+│       ├── SKILL.md                # chat → CLI, plus the bug-fix procedure
+│       └── references/repair.md    # VPS playbook Hermes follows when repairing
 ├── deploy/
 │   ├── founder-radar.service
 │   ├── founder-radar.timer
@@ -288,8 +291,9 @@ The system is designed so that **no single failure stops the daily run.**
 | Google Sheets API down | Rows stay in SQLite with `synced = 0`, next run upserts them | A late sheet, no lost data |
 | Hermes gateway down | Digest goes out via direct Bot API call | Digest arrives; chat commands don't work |
 | Settings cell has a typo | Last known-good config used | Red error text in the `Settings` tab next to the cell |
-| The whole run dies | Heartbeat timer fires at +26 h | A Telegram alert |
-| Disk fills | Pre-run check aborts cleanly with a Telegram alert | An alert, not a corrupt database |
+| The whole run dies | Heartbeat at +26 h, then `founder-radar-repair.timer` at 09:05 (Hermes if still a code bug) | A Telegram alert, then a repair attempt |
+| Disk fills | Pre-run check aborts; repair prunes old backups; Hermes if still tight | An alert, not a corrupt database |
+| Fatal scan (exit 2) | `OnFailure=` starts `founder-radar-repair.service` | Hermes diagnoses from `error.log` |
 
 Two properties make this work: **every write is idempotent** (a retry can never double-write), and **every stage records what it did** (so a partial run resumes rather than restarts).
 
@@ -334,7 +338,7 @@ Also required, and cheap:
 | Claude Haiku 4.5 | pinned snapshot | Strict JSON schema support confirmed; ~£2.50/month at this volume. Provider is behind an `LLMClient` protocol, so Gemini Flash-Lite (10× cheaper) is a config change. **Pin a dated model ID, never an alias** — an alias silently rolls the model and turns golden tests into flaky tests. |
 | Playwright | latest | Opt-in per source only. Budget ~300 MB and 1–2 s per page against 5 MB and 50 ms for a plain request. Expect to need it for at most two sources. |
 | systemd timer | — | Survives Hermes upgrades and daemon crashes. |
-| Hermes Agent | 0.20.x | Telegram surface only. `hermes send` works with no gateway running, which is the fallback path. |
+| Hermes Agent | 0.20.x | Telegram surface plus on-box repair. `hermes send` works with no gateway running, which is the digest fallback path. Scoring stays in Python. |
 
 ---
 

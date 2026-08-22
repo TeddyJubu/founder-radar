@@ -25,7 +25,7 @@ The spreadsheet identifier is supplied through the environment and must remain a
 ```bash
 # --- user and directories ---
 sudo adduser --system --group --home /opt/founder-radar radar
-sudo mkdir -p /opt/founder-radar/{app,data,secrets,backups,logs}
+sudo mkdir -p /opt/founder-radar/{app,data,secrets,backups,logs,worktrees}
 sudo chown -R radar:radar /opt/founder-radar
 sudo chmod 700 /opt/founder-radar/secrets
 
@@ -161,7 +161,7 @@ find /opt/founder-radar/backups -name 'radar-*.db' -mtime +14 -delete
 
 ---
 
-## 5. Hermes Agent — Telegram only
+## 5. Hermes Agent — Telegram and VPS repair
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-browser
@@ -177,14 +177,36 @@ hermes config set telegram.allowed_users <aryan-user-id>
 sudo hermes gateway install --system                # systemd, starts at boot
 ```
 
-Then copy the skill:
+Then copy the skill (or re-run `deploy/install.sh`, which does this and writes `/opt/founder-radar/hermes.env`):
 
 ```bash
-mkdir -p ~/.hermes/skills/founder-radar
-cp /opt/founder-radar/app/hermes/skills/founder-radar/SKILL.md ~/.hermes/skills/founder-radar/
+mkdir -p ~/.hermes/skills
+cp -a /opt/founder-radar/app/hermes/skills/founder-radar ~/.hermes/skills/
 ```
 
 Finally, in Telegram, message the bot `/sethome` so scheduled deliveries know where to go.
+
+**When a bug appears**, Hermes on this box is the repair agent. systemd is the trigger, not Hermes cron:
+
+- `founder-radar-repair.timer` at 09:05, after the heartbeat
+- `OnFailure=` of `founder-radar.service` (fatal exit 2 only; partial is a normal Tuesday)
+- Telegram: `/fix` or “fix it”
+
+Both paths run `deploy/hermes-repair.sh`: `founder-radar repair --apply` first (migrate, prune backups, restart web), then `hermes chat --yolo -s founder-radar` if a code-level fix is still needed. The person who typed `/fix` is **not** technical: Hermes must not ask them to SSH, pick a branch, or merge.
+
+A code fix follows `hermes/skills/founder-radar/references/workflow.md` **in order**, one step at a time (4 GB box — never review and test in parallel, never while `founder-radar.service` is active):
+
+1. Create `/opt/founder-radar/worktrees/fix-…` on branch `hermes/fix-*`. Do not edit live `main` by hand.
+2. Implement and commit in that worktree.
+3. A **different** sub-agent reviews (`review-prompt.md`) and must output `VERDICT: APPROVE`.
+4. A **different** sub-agent tests the worktree (`test-prompt.md`) and must output `VERDICT: PASS`.
+5. Only then: `sudo bash /opt/founder-radar/app/deploy/hermes-ship.sh <worktree>`.
+
+`hermes-ship.sh` is the machine gate. It re-runs pytest against the worktree, refuses a `radar/score/` or secrets diff, fast-forwards `/opt/founder-radar/app` `main`, tries `git push origin main`, re-runs `install.sh`, and deletes the worktree. If it exits non-zero, live `main` was not changed. Scoring stays off-limits. A missing `hermes` binary is not a failed timer — ops remediations still run.
+
+`deploy/update-from-main.sh` **keeps** a local `main` that is ahead of GitHub (a VPS-shipped fix waiting to push) instead of failing `--ff-only`. Diverged histories still refuse.
+
+Do not start Hermes while the daily scan is active (MemoryMax 1G on the scan, 800M on repair). The script no-ops the agent in that case and retries next cycle. A 6-hour cooldown stops an OnFailure loop. Review and test sub-agents are sequential for the same reason.
 
 **Digest delivery with fallback:**
 
@@ -265,7 +287,7 @@ Check the AI spend. Re-verify one or two adapters against live pages.
 
 | Symptom | First move |
 |---|---|
-| No digest arrived | `systemctl status founder-radar.timer` then `tail /opt/founder-radar/logs/error.log` |
+| No digest arrived | In Telegram: `/fix` or “fix it”. Hermes looks, and messages when it is done. (On the box: `founder-radar repair --apply`, then `systemctl status founder-radar.timer`.) |
 | Digest arrived but is empty | Normal on a quiet day. Confirm with `founder-radar status` — if sources are ✅ and gates rejected everything, it worked. |
 | One source shows ⚠️ | `founder-radar sources --test <key>` — prints the raw response and the parse result |
 | Source returns 0 but says OK | Layout change. `founder-radar sources --sniff <url>` to find the new endpoint. **This is the dangerous failure — it looks like a quiet week.** |

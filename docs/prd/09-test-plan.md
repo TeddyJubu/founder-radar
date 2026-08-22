@@ -691,6 +691,17 @@ def test_every_telegram_command_maps_to_a_cli_command():
     for cmd in parse_skill_commands("hermes/skills/founder-radar/SKILL.md"):
         assert cli_has_command(cmd), f"{cmd} is not a real CLI command"
 
+def test_repair_apply_migrates_an_empty_database(tmp_db):
+    run_cli("repair --apply")
+    assert tables(tmp_db), "empty schema must be created, not just reported"  # FR-9.7
+
+def test_skill_forbids_scoring_edits():
+    skill = read("hermes/skills/founder-radar/SKILL.md")
+    workflow = read("hermes/skills/founder-radar/references/workflow.md")
+    assert "Never edit" in skill and "radar/score/" in skill                  # FR-9.7
+    assert "hermes-ship.sh" in workflow and "VERDICT: APPROVE" in workflow
+    assert "VERDICT: PASS" in workflow
+
 def test_telegram_allowlist_rejects_unknown_user(bot):
     r = bot.handle(update(user_id=999999, text="/run"))
     assert r.status == "denied" and not r.ran_pipeline                # FR-8.4
