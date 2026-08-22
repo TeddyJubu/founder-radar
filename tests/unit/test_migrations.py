@@ -84,6 +84,14 @@ def test_migration_003_rekeys_legacy_review_entries():
     assert db.get_meta("migration:003_rekey_review_queue.sql") == "003_rekey_review_queue.sql"
 
 
+def test_migration_004_creates_today_check(db):
+    """The Hermes Today QA table is present on a fresh migrate and recorded."""
+    assert "today_check" in db.tables()
+    cols = {r["name"] for r in db.execute("PRAGMA table_info(today_check)")}
+    assert {"company_id", "snapshot_hash", "verdict", "reason", "checker"} <= cols
+    assert db.get_meta("migration:004_today_check.sql") == "004_today_check.sql"
+
+
 def test_migration_003_collapses_a_pair_queued_twice():
     """A pair re-queued after the fix has two entries — one under the legacy
     random key, one under the deterministic key. The legacy one is redundant:
@@ -139,3 +147,11 @@ def test_migration_003_leaves_malformed_entries_alone():
     db.migrate()
 
     assert db.get_meta(malformed) == "not json at all"
+
+
+def test_migration_004_creates_today_check(db):
+    """The Hermes Today QA table is present on a fresh migrate and recorded."""
+    assert "today_check" in db.tables()
+    cols = {r["name"] for r in db.execute("PRAGMA table_info(today_check)")}
+    assert {"company_id", "snapshot_hash", "verdict", "reason", "checker"} <= cols
+    assert db.get_meta("migration:004_today_check.sql") == "004_today_check.sql"

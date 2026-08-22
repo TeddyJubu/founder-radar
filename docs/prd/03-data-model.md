@@ -337,6 +337,26 @@ CREATE TABLE user_field (
 
 **The pipeline reads these from the sheet before rendering and never overwrites them.** They are also the labelled data that makes threshold tuning possible: `verdict` ∈ `{worth contacting, not for me, unsure}`.
 
+### `today_check` — Hermes Today QA
+
+```sql
+CREATE TABLE today_check (
+  company_id     TEXT NOT NULL REFERENCES company(id),
+  snapshot_hash  TEXT NOT NULL,
+  verdict        TEXT NOT NULL,   -- pass | reject
+  reason         TEXT,
+  summary        TEXT,
+  checker        TEXT NOT NULL,   -- hermes | rules | skip
+  prompt_version TEXT NOT NULL,
+  raw_text       TEXT,
+  checked_at     TEXT NOT NULL,
+  PRIMARY KEY (company_id, snapshot_hash)
+);
+```
+
+A reject hides the company from Today, the digest, and the sheet tab. It does
+not rewrite `score`. The latest row by `checked_at` is what the surfaces read.
+
 ### `merge_event` — every merge is reversible
 
 ```sql

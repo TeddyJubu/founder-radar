@@ -2,10 +2,10 @@
 
 **What happens, in order, when `founder-radar run` executes.**
 
-Seven stages. Each has a defined input, output, failure behaviour and test. A stage never raises into the stage above it — failures are recorded and the run continues.
+Seven stages plus a Today QA veto. Each has a defined input, output, failure behaviour and test. A stage never raises into the stage above it — failures are recorded and the run continues.
 
 ```
-① CONFIG → ② FETCH → ③ EXTRACT → ④ RESOLVE → ⑤ ENRICH → ⑥ GATE+SCORE → ⑦ RENDER
+① CONFIG → ② FETCH → ③ EXTRACT → ④ RESOLVE → ⑤ ENRICH → ⑥ GATE+SCORE → ⑥½ TODAY QA → ⑦ RENDER
 ```
 
 ---
@@ -86,7 +86,7 @@ def fetch_all(cfg, ctx) -> list[RawItem]:
 
 ## Stage ③ — Extract
 
-**The only place an AI model is used. Boxed on all six sides.**
+**The first of two boxed AI calls.** Article prose → structured record.
 
 ### 3.1 Pre-filter — free gates first
 
@@ -408,6 +408,22 @@ Two properties this stage must have, and they are testable:
 
 ---
 
+## Stage ⑥½ — Today QA
+
+**A Hermes subagent looks at each company already selected for Today. It may only remove.**
+
+Scoring has finished. The morning queue is a short list of names. For each one, the pipeline spawns an isolated Hermes pass (`hermes chat -Q --query-file -`, the Today-check brief, one card) and asks: *is this the wrong company to put on Today's list?*
+
+Wrong means already VC-backed, IPO / late-stage, parent or investor, the wrong legal entity, or a city that cannot be the winning vehicle's region (Oxford offered as Yorkshire). A `VERDICT: REJECT` hides the card from Today, the digest, and the sheet tab. Scores are not rewritten. A missing check is not a reject.
+
+If Hermes is down, a small deterministic pre-check still catches IPO copy and golden-triangle cities routed to northern vehicles. Anything it cannot prove stays on the list — a quiet Hermes day must not empty Today.
+
+`--no-llm` skips the subagent but still runs the pre-check. `founder-radar today-qa` re-runs the same pass on demand.
+
+**Test:** `test_today_qa_hides_a_rejected_company` — a scripted REJECT cannot occupy Today or the digest, and the score row is unchanged.
+
+---
+
 ## Stage ⑦ — Render
 
 **Write the sheet with the minimum possible number of API calls, then send the digest.**
@@ -462,6 +478,7 @@ def render(cfg, sh, ws):                       # sh = Spreadsheet, ws = Workshee
 | ④ Resolve | Ambiguous pairs go to the review queue | ✅ |
 | ⑤ Enrich | Deferred to the next run via the queue | ✅ |
 | ⑥ Score | Cannot fail — pure functions over validated input | ✅ |
+| ⑥½ Today QA | Hermes down → rules-only; a bad verdict is skipped, not a reject | ✅ |
 | ⑦ Render | Rows stay `synced = 0`; next run upserts idempotently | ✅ |
 
 **There is no failure mode in this pipeline that stops the daily run.** That is a design requirement, not an aspiration, and the chaos tests in `09-test-plan.md` prove it.

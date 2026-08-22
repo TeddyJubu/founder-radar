@@ -180,8 +180,10 @@ sudo hermes gateway install --system                # systemd, starts at boot
 Then copy the skill:
 
 ```bash
-mkdir -p ~/.hermes/skills/founder-radar
+mkdir -p ~/.hermes/skills/founder-radar/references
 cp /opt/founder-radar/app/hermes/skills/founder-radar/SKILL.md ~/.hermes/skills/founder-radar/
+cp /opt/founder-radar/app/hermes/skills/founder-radar/references/today-check.md \
+  ~/.hermes/skills/founder-radar/references/
 ```
 
 Finally, in Telegram, message the bot `/sethome` so scheduled deliveries know where to go.

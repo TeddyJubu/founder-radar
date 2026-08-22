@@ -41,9 +41,6 @@ log = logging.getLogger(__name__)
 # already decided, and re-litigating them is what the Companies tab is for.
 REVIEWABLE = ("shortlist", "watchlist")
 REGISTRY_ROUTES = ("registry", "", None)
-VENTURE_SIGNAL_KINDS = (
-    "share_issue", "grant_award", "spinout", "press", "news", "competition_win",
-)
 TRACK_A_ROUTES = ("news", "grant", "spinout", "accelerator")
 
 # Today diagnostics deliberately expose counts, not row-level data. The first
@@ -67,6 +64,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "reviewed_today": "Already reviewed today",
     "display_limit": "Beyond today's display limit",
     "registry_without_venture_signal": "Companies House only, no venture signal",
+    "hermes_rejected": "Failed the final Hermes company check",
 }
 TODAY_DIAGNOSTIC_ORDER = tuple(TODAY_DIAGNOSTIC_LABELS)
 
@@ -119,38 +117,11 @@ def _row_company_id(row: sqlite3.Row) -> str:
     return row["id"]
 
 
-def _has_non_ch_source(conn: sqlite3.Connection, company_id: str) -> bool:
-    rows = conn.execute(
-        "SELECT source_key, source_url FROM company_source WHERE company_id = ?",
-        (company_id,),
-    )
-    return any(
-        row["source_key"] != "companies_house" and _is_http_url(row["source_url"])
-        for row in rows
-    )
-
-
 def _has_registry_venture_signal(conn: sqlite3.Connection, company_id: str) -> bool:
     """True when a Companies House card has a real venture signal, not just a Ltd."""
-    if _has_non_ch_source(conn, company_id):
-        return True
-    row = conn.execute(
-        "SELECT has_share_issue, is_university_spinout, news_mention_count "
-        "FROM company WHERE id = ?",
-        (company_id,),
-    ).fetchone()
-    if row is not None:
-        if row["has_share_issue"] or row["is_university_spinout"]:
-            return True
-        if (row["news_mention_count"] or 0) > 0:
-            return True
-    placeholders = ",".join("?" * len(VENTURE_SIGNAL_KINDS))
-    found = conn.execute(
-        f"SELECT 1 FROM signal WHERE company_id = ? AND kind IN ({placeholders}) "
-        "LIMIT 1",
-        (company_id, *VENTURE_SIGNAL_KINDS),
-    ).fetchone()
-    return found is not None
+    from radar.qa.today import has_registry_venture_signal
+
+    return has_registry_venture_signal(conn, company_id)
 
 
 def _row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
@@ -247,6 +218,11 @@ def _today_block_reason(
             return "geography_mismatch"
         if "geography" in (verdict.unverified_rules or ()):
             return "geography_unverified"
+
+    from radar.qa.today import is_rejected
+
+    if is_rejected(conn, _row_company_id(row)):
+        return "hermes_rejected"
     return None
 
 

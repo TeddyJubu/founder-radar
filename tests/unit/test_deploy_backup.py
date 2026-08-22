@@ -134,6 +134,7 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "founder-radar-update.service" in installer
     assert "enable --now founder-radar-update.timer" in installer
     assert "chmod 755" in installer and "update-from-main.sh" in installer
+    assert "references/today-check.md" in installer
     # pip as radar from /root dies on an editable path hook. Pin the fix.
     assert 'cd "$APP_DIR"' in installer
     assert 'sudo -H -u "$APP_USER"' in installer

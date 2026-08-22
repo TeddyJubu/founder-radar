@@ -22,7 +22,7 @@
   │       ↓        validate → on error, use last known good, report back  │
   │  ② FETCH       14 source adapters, isolated, polite, cached           │
   │       ↓        Track A: signals   ·   Track B: Companies House        │
-  │  ③ EXTRACT     ← THE ONLY AI CALL. Article prose → structured record  │
+  │  ③ EXTRACT     ← boxed AI #1. Article prose → structured record       │
   │       ↓        schema-enforced · evidence-quoted · cached by hash     │
   │  ④ RESOLVE     normalise → match ladder → merge → provenance          │
   │       ↓                                                               │
@@ -30,6 +30,8 @@
   │       ↓                                                               │
   │  ⑥ GATE+SCORE  hard gates → Fund Fit per vehicle → Discovery Edge     │
   │       ↓        100% deterministic. No AI. Fully unit-tested.          │
+  │  ⑥½ TODAY QA   Hermes subagent veto — wrong company off Today         │
+  │       ↓        cannot add, score, or merge. Fail-open if Hermes down  │
   │  ⑦ RENDER      SQLite → Google Sheet (minimal diff) → digest          │
   └───────────────────────────────────────────────────────────────────────┘
         │                    │                         │
@@ -68,15 +70,16 @@ Fetching, filtering, gating, matching, scoring, de-duplicating, rendering.
 - 100% unit-testable offline in under a minute
 - **This is where all the value is, and it is boring on purpose.**
 
-### Layer 2 — The Reader (one AI call, tightly boxed)
+### Layer 2 — The Reader (two boxed AI calls)
 
-Turning a paragraph of English into a structured record.
+Turning a paragraph of English into a structured record, and — after scoring —
+asking a Hermes subagent whether a selected Today card is the *wrong company*.
 
-- One function, one schema, one prompt, one version constant
-- Output validated by Pydantic before it touches anything
-- Every extracted fact carries a verbatim quote that must appear in the source
-- Cached by content hash — the same article is never paid for twice
-- Has a deterministic fallback so the pipeline never stops when the provider does
+- Extraction: one function, one schema, one prompt, one version constant
+- Today QA: one brief, one card, `VERDICT: PASS|REJECT`. Veto only.
+- Output validated before it touches anything
+- Cached by content hash — the same card is never paid for twice
+- Has a deterministic fallback so the pipeline never stops when Hermes is down
 
 ### Layer 3 — The Front Desk (Hermes Agent)
 
@@ -86,7 +89,9 @@ Talking to Aryan on Telegram.
 - Contains no rules, no thresholds, no scoring, no data
 - Removable in one file and one systemd unit if it proves flaky
 
-**The rule, stated once:** *the AI may read prose into a record, and may turn a sentence into a command. It may never decide whether a company passes a gate, what it scores, whether it is a duplicate, or what lands in the sheet.*
+**The rule, stated once:** *the AI may read prose into a record, turn a sentence into a command, and veto a Today card after scoring. It may never decide whether a company passes a gate, what it scores, whether it is a duplicate, or add a company to the sheet.*
+
+Today QA stores the reject reason, so "why did this drop off Today?" is still a sentence a human can check — "Hermes Today QA: already_backed — Parkwalk portfolio" — not "the model felt differently". Scoring stays arithmetic.
 
 Why this matters in practice: when Aryan asks "why did this company drop off my shortlist yesterday?", the answer must be "you changed the age limit from 36 to 24 months in Settings, and it's 30 months old" — not "the model saw it differently". Scoring must be arithmetic he can check.
 
@@ -233,10 +238,12 @@ founder-radar/
 │   │   ├── sheet.py                # gspread, batched, minimal diff
 │   │   ├── formatting.py           # one batchUpdate with every format request
 │   │   └── digest.py               # the Telegram message
+│   ├── qa/
+│   │   └── today.py                # Hermes Today QA subagent — veto only
 │   ├── notify/
 │   │   ├── telegram.py             # hermes send, with direct Bot API fallback
 │   │   └── heartbeat.py
-│   └── pipeline.py                 # orchestrates the seven stages
+│   └── pipeline.py                 # orchestrates the stages
 ├── hermes/
 │   └── skills/founder-radar/SKILL.md   # ~30 lines. Chat → CLI mapping.
 ├── deploy/

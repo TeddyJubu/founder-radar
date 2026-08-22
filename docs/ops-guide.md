@@ -41,6 +41,8 @@ is rendered by it; the prototype reads the same database.
 | **Dashboard** | Month-by-month history of dated events and kept companies | Read-only page **`/dashboard`** |
 
 - On **Today**, press **1** (Worth contacting) or **2** (Unsure) → saved immediately.
+- After scoring, a Hermes subagent reviews each selected company and drops
+  already-backed, IPO / late-stage, or wrong-region cards before they appear.
 - **3** (Not for me) is stored for tuning but **never** listed on Kept.
 - The **Kept** badge on Today is `COUNT` of those two verdicts.
 - **Dashboard** shows first-seen, incorporation, signal, and decision dates;

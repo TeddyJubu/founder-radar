@@ -36,7 +36,7 @@ The root cause is worth naming once, because every design decision downstream fo
 | 2 | [02-architecture.md](02-architecture.md) | How the system is put together and why | Implementer |
 | 3 | [03-data-model.md](03-data-model.md) | Database schema, every table and field | Implementer |
 | 4 | [04-sources.md](04-sources.md) | Every data source, verified, with exact URLs | Implementer |
-| 5 | [05-pipeline.md](05-pipeline.md) | The seven stages of a daily run | Implementer |
+| 5 | [05-pipeline.md](05-pipeline.md) | The stages of a daily run | Implementer |
 | 6 | [06-scoring.md](06-scoring.md) | Fund criteria, gates, weights, explanations | Teddy, Aryan, implementer |
 | 7 | [07-interfaces.md](07-interfaces.md) | Google Sheet layout, Telegram, command line | Everyone |
 | 8 | [08-deployment.md](08-deployment.md) | Server setup, secrets, cost, daily runbook | Implementer, Teddy |
@@ -83,7 +83,7 @@ These are cheap, exact, high-precision rejects. Applying them before scoring rem
 
 ### 5. The computer does arithmetic, the AI does reading
 
-The only place an AI model is used is turning a paragraph of English into a structured record — "this article is about Acme Robotics, a Newcastle spinout, pre-seed, robotics". Every decision that matters is plain code:
+AI is used in two boxed places: turning a paragraph of English into a structured record, and a Hermes subagent veto on Today's list after scoring. Every decision that matters for *scores* is still plain code:
 
 | Job | Done by |
 |---|---|

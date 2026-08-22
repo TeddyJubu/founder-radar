@@ -310,6 +310,7 @@ it is already formatted for Telegram. Never compute scores yourself.
 | Intent | Command |
 |---|---|
 | today's list, what's new | `founder-radar digest --today` |
+| re-check today's list | `founder-radar today-qa` |
 | run it now, scan now | `founder-radar run` |
 | just Northstar / DSW / Outward / Anticus | `founder-radar run --fund <key>` |
 | top matches for a fund | `founder-radar fund <key>` |
@@ -324,7 +325,7 @@ Fund keys: northstar · dsw · outward · anticus
 - A run takes several minutes. Say "running, I'll message you when it's done."
 ```
 
-**That file is the entire Hermes footprint.** Delete it and one systemd unit, and the system still works — it just loses the chat surface.
+**That skill, plus `references/today-check.md`, is the Hermes footprint.** Delete them and one systemd unit, and the system still works — it just loses the chat surface. Today's list is still QA-filtered by the pipeline.
 
 ---
 
@@ -339,6 +340,7 @@ founder-radar status                    # last run, source health, cost
 founder-radar show "company name"       # full record, signals, score breakdown
 founder-radar fund northstar [--top 10]
 founder-radar digest [--today|--week|--date YYYY-MM-DD] [--send]
+founder-radar today-qa [--no-hermes]    # Hermes subagent veto on Today's list
 founder-radar rescore [--all]           # recompute after a weights change
 founder-radar sync-sheet                # re-render without fetching
 founder-radar sources [--list|--test KEY|--sniff URL]
