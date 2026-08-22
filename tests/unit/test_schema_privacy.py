@@ -34,6 +34,7 @@ def test_migration_creates_every_table(db):
         "merge_event", "run", "run_source", "fetch_log", "llm_cache",
         "quarantine", "config_snapshot", "postcode_region", "placeholder_name",
         "formation_agent_address", "suppression", "sheet_row_state", "_meta",
+        "today_check",
     }
     assert expected <= db.tables()
 

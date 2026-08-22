@@ -350,10 +350,14 @@ _ENTRY_SQL = """
 
 def _shortlist(db, start: date, end: date) -> list[dict]:
     """One row per company — its best-scoring fund wins the digest slot."""
+    from radar.qa.today import is_rejected
+
     seen: set[str] = set()
     out: list[dict] = []
     for row in db.query(_ENTRY_SQL, (SHORTLIST_TIER, start.isoformat(), end.isoformat())):
         if row["company_id"] in seen:
+            continue
+        if is_rejected(db, row["company_id"]):
             continue
         seen.add(row["company_id"])
         out.append(dict(row))

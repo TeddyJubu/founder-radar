@@ -212,6 +212,23 @@ CREATE TABLE IF NOT EXISTS daily_review (
 CREATE INDEX IF NOT EXISTS ix_daily_review_date
     ON daily_review(review_date);
 
+-- Hermes Today QA: a veto-only check on companies selected for Today.
+-- Scoring is untouched. A reject hides the card; a missing row is not a reject.
+CREATE TABLE IF NOT EXISTS today_check (
+  company_id     TEXT NOT NULL REFERENCES company(id),
+  snapshot_hash  TEXT NOT NULL,
+  verdict        TEXT NOT NULL,   -- pass | reject
+  reason         TEXT,            -- already_backed | late_stage | ipo | ...
+  summary        TEXT,
+  checker        TEXT NOT NULL,   -- hermes | rules | skip
+  prompt_version TEXT NOT NULL,
+  raw_text       TEXT,
+  checked_at     TEXT NOT NULL,
+  PRIMARY KEY (company_id, snapshot_hash)
+);
+CREATE INDEX IF NOT EXISTS ix_today_check_company
+    ON today_check(company_id, checked_at);
+
 CREATE TABLE IF NOT EXISTS merge_event (
   id             INTEGER PRIMARY KEY,
   winner_id      TEXT NOT NULL,

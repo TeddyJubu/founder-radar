@@ -67,6 +67,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "reviewed_today": "Already reviewed today",
     "display_limit": "Beyond today's display limit",
     "registry_without_venture_signal": "Companies House only, no venture signal",
+    "hermes_rejected": "Failed the final Hermes company check",
 }
 TODAY_DIAGNOSTIC_ORDER = tuple(TODAY_DIAGNOSTIC_LABELS)
 
@@ -247,6 +248,11 @@ def _today_block_reason(
             return "geography_mismatch"
         if "geography" in (verdict.unverified_rules or ()):
             return "geography_unverified"
+
+    from radar.qa.today import is_rejected
+
+    if is_rejected(conn, _row_company_id(row)):
+        return "hermes_rejected"
     return None
 
 

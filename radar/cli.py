@@ -227,6 +227,40 @@ def digest(ctx, period, on_date, send):
     _emit(text, ctx.obj["json"])
 
 
+@cli.command("today-qa")
+@click.option("--no-hermes", is_flag=True,
+              help="Rules only — skip the Hermes subagent")
+@click.pass_context
+def today_qa(ctx, no_hermes):
+    """Re-run the Hermes Today QA subagent on the current shortlist.
+
+    Veto only: a reject hides the card from Today. Scores are not rewritten.
+    """
+    from radar.config.loader import load_runtime_config
+    from radar.qa.today import run_today_qa
+
+    db = _db(ctx)
+    cfg, _, warnings = load_runtime_config(db)
+    report = run_today_qa(db, cfg, use_hermes=not no_hermes)
+    payload = {
+        "checked": report.checked,
+        "passed": report.passed,
+        "rejected": report.rejected,
+        "cached": report.cached,
+        "skipped": report.skipped,
+        "warnings": [*warnings, *report.warnings],
+    }
+    if ctx.obj["json"]:
+        _emit(payload, True)
+        return
+    click.echo(
+        f"today QA: {report.checked} checked, {report.passed} pass, "
+        f"{report.rejected} rejected, {report.cached} cached"
+    )
+    for line in payload["warnings"]:
+        click.echo(line)
+
+
 # ---------------------------------------------------------------- the sheet
 
 
@@ -382,6 +416,12 @@ def doctor(ctx):
         checks.append(("schema version", version is not None, str(version)))
     except Exception as exc:                    # noqa: BLE001 - diagnostics must not crash
         checks.append(("database", False, str(exc)))
+
+    hermes = shutil.which("hermes")
+    checks.append((
+        "hermes binary", bool(hermes),
+        hermes or "optional — Today QA falls back to rules only",
+    ))
 
     try:
         usage = shutil.disk_usage(db_path.parent if db_path.parent.exists() else Path("."))

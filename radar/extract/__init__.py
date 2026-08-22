@@ -1,4 +1,4 @@
-"""Stage ③ — EXTRACT. The only place an AI model is used, boxed on all six sides.
+"""Stage ③ — EXTRACT. Boxed AI #1: article prose → structured record.
 
     from radar.extract import extract, ExtractContext
     record = extract(raw_item, ExtractContext(llm=client, db=db))

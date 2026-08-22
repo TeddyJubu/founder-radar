@@ -188,21 +188,23 @@ fi
 
 # ------------------------------------------------------------------ 5. hermes
 #
-# The entire Hermes footprint: one skill file. Deleting it and one unit costs
-# the system nothing but the chat surface (02-architecture §3).
+# Skill file plus the Today QA subagent brief. Deleting them and one unit
+# costs the system nothing but the chat surface (02-architecture §3).
 
 say "hermes skill"
 HERMES_HOME="${HERMES_HOME:-$(getent passwd "${SUDO_USER:-root}" | cut -d: -f6)}"
 if [ -d "$HERMES_HOME/.hermes" ]; then
-  install -d "$HERMES_HOME/.hermes/skills/founder-radar"
+  install -d "$HERMES_HOME/.hermes/skills/founder-radar/references"
   install -m 644 "$APP_DIR/hermes/skills/founder-radar/SKILL.md" \
     "$HERMES_HOME/.hermes/skills/founder-radar/SKILL.md"
+  install -m 644 "$APP_DIR/hermes/skills/founder-radar/references/today-check.md" \
+    "$HERMES_HOME/.hermes/skills/founder-radar/references/today-check.md"
   if [ -n "${SUDO_USER:-}" ]; then
     chown -R "$SUDO_USER" "$HERMES_HOME/.hermes/skills/founder-radar"
   fi
 else
   say "no ~/.hermes yet — install Hermes, then copy"
-  say "  $APP_DIR/hermes/skills/founder-radar/SKILL.md"
+  say "  $APP_DIR/hermes/skills/founder-radar/"
   say "  to ~/.hermes/skills/founder-radar/"
 fi
 

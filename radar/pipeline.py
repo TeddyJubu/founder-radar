@@ -1,7 +1,7 @@
-"""The pipeline — seven stages, in order (05-pipeline).
+"""The pipeline — seven stages plus Today QA, in order (05-pipeline).
 
 ```
-① CONFIG → ② FETCH → ③ EXTRACT → ④ RESOLVE → ⑤ ENRICH → ⑥ GATE+SCORE → ⑦ RENDER
+① CONFIG → ② FETCH → ③ EXTRACT → ④ RESOLVE → ⑤ ENRICH → ⑥ GATE+SCORE → ⑥½ TODAY QA → ⑦ RENDER
 ```
 
 This is the only module that knows the order. Each stage is a call into its own
@@ -10,9 +10,9 @@ and the run continues (05-pipeline, failure summary). The CLI (`radar.cli`)
 and the tests drive everything through here.
 
 Every parameter the tests need is injectable: `config`, `http`, `gateway`,
-`now`, `use_llm`. With nothing injected, `run_pipeline` does the real thing —
-reads the sheet, hits the network, renders. With a mock `http` and no gateway,
-the same function is the chaos-test harness.
+`now`, `use_llm`, `today_checker`. With nothing injected, `run_pipeline` does
+the real thing — reads the sheet, hits the network, renders. With a mock
+`http` and no gateway, the same function is the chaos-test harness.
 
 Stage ⑥ is the product. `evaluate()` is a pure function of `(company, config)`:
 no AI, no network, byte-identical for identical inputs. It is separated here
@@ -1152,6 +1152,7 @@ def run_pipeline(
     http: Any = None,
     gateway: Any = None,
     llm: Any = None,
+    today_checker: Any = None,
     now: date | None = None,
     mode: str = "daily",
 ) -> RunResult:
@@ -1262,6 +1263,21 @@ def run_pipeline(
             )
             if tier == "shortlist":
                 result.shortlisted += 1
+
+        # Today QA — veto only. Scoring is already written; a reject hides
+        # the card from Today / digest / the sheet without touching `score`.
+        if not dry_run:
+            try:
+                from radar.qa.today import run_today_qa
+
+                qa = run_today_qa(
+                    db, cfg, checker=today_checker, use_hermes=use_llm,
+                )
+                result.warnings.extend(qa.warnings)
+            except Exception as exc:  # noqa: BLE001 — one stage, not the run
+                result.warnings.append(
+                    f"today QA skipped: {type(exc).__name__}: {exc}")
+                log.warning("today QA failed (%s)", type(exc).__name__)
 
         gated = db.scalar(
             """SELECT COUNT(DISTINCT company_id) FROM score

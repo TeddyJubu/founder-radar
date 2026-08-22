@@ -43,7 +43,7 @@ founder-radar digest --today
 
 ## The daily run
 
-Seven stages, every morning at 06:30 Europe/London, driven by a systemd timer.
+Seven stages plus a Today QA veto, every morning at 06:30 Europe/London.
 
 | # | Stage | AI? | Network? | Deterministic? |
 |---|---|---|---|---|
@@ -53,16 +53,19 @@ Seven stages, every morning at 06:30 Europe/London, driven by a systemd timer.
 | ④ | **Resolve** — normalise, match ladder, merge, provenance | No | No | **Yes** |
 | ⑤ | **Enrich** — officers, filings, postcode → region | No | Yes | Yes given inputs |
 | ⑥ | **Gate + score** — derive, gate, fund fit, discovery edge | No | **No** | **Yes** |
+| ⑥½ | **Today QA** — Hermes subagent veto on the morning list | **Yes** | Yes | Cached → yes |
 | ⑦ | **Render** — sheet (minimal diff) then Telegram digest | No | Yes | **Yes** |
 
 Stage ⑥ is the important row: **no AI and no network.** It is a pure function of the
 database and the configuration, which is what makes re-scoring five thousand
 companies take milliseconds and every score reproducible from a `config_hash`.
 
-**The rule, stated once:** the AI may read prose into a record, and may turn a chat
-sentence into a command. It may never decide whether a company passes a gate, what
-it scores, whether it is a duplicate, or what lands in the sheet. When the client
-asks "why did this drop off my list?", the answer has to be a number he can check.
+**The rule, stated once:** the AI may read prose into a record, turn a chat
+sentence into a command, and veto a Today card after scoring. It may never
+decide whether a company passes a gate, what it scores, whether it is a
+duplicate, or *add* a company to the sheet. When the client asks "why did this
+drop off my list?", the answer has to be a number — or a stored QA reason —
+he can check.
 
 ## Two ways in
 
@@ -104,6 +107,7 @@ founder-radar status
 founder-radar show "company name"
 founder-radar fund northstar [--top 10]
 founder-radar digest [--today|--week|--date YYYY-MM-DD] [--send]
+founder-radar today-qa [--no-hermes]
 founder-radar rescore [--all]
 founder-radar sync-sheet
 founder-radar sources [--list|--test KEY|--sniff URL]
@@ -122,11 +126,12 @@ Exit codes: `0` success · `1` partial (some sources failed) · `2` fatal.
 ```
 radar/
   cli.py            THE interface. Everything goes through here.
-  pipeline.py       orchestrates the seven stages
+  pipeline.py       orchestrates the stages
   config/           Pydantic models, sheet loader, seeded defaults
   sources/          one file per adapter, all behind one protocol
   fetch/            http, robots, rate limiting, layout-change detection
-  extract/          the one AI call, its cache, its fallback, its grounding check
+  extract/          article → record: cache, fallback, grounding check
+  qa/               Hermes Today QA subagent — veto only
   resolve/          normalise, match ladder, merge, provenance
   enrich/           Companies House officers/filings, postcode → region
   score/            derive, gates, fund fit, discovery edge, tiering, explain
