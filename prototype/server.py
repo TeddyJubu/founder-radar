@@ -1093,6 +1093,98 @@ def _ch_verification_payload(
     }
 
 
+# Discovery Edge components live on the same score_id. Fund-bar copy only
+# uses Fund Fit attributes so a Fresh factor cannot be read as "why DSW is 82%".
+_EDGE_COMPONENT_KEYS = frozenset({
+    "press_coverage", "age", "disclosed_funding", "discovery_route",
+})
+_FIT_POSITIVE_AT = 0.6
+_FIT_NEGATIVE_AT = 0.34
+_FUND_REJECT_WHY = {
+    "max_company_age_months": "Too old for this fund",
+    "max_total_funding_gbp": "Already raised more than this fund allows",
+    "max_stage": "Later stage than this fund backs",
+    "already_on_vc_portfolio": "Already on a tracked VC portfolio",
+    "min_uk_presence": "UK presence not confirmed",
+    "no_eligible_vehicle": "No vehicle at this fund will take it",
+    "geography_mismatch": "Outside this fund's region",
+    "geography_unverified": "Region not confirmed for this fund",
+}
+
+
+def _short_evidence(value: str | None, limit: int = 48) -> str:
+    text = " ".join(str(value or "").split())
+    if not text or text.lower() in {"unknown", "age unknown", "funding unknown"}:
+        return ""
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1].rsplit(" ", 1)[0] or text[: limit - 1]
+    return cut.rstrip(".,;:") + "…"
+
+
+def _fund_fit_why(
+    conn: sqlite3.Connection,
+    score_id: int | None,
+    *,
+    tier: str,
+    reject_reason: str | None,
+) -> str:
+    """One line of existing component evidence — not a new score.
+
+    The four fund bars were being read as slices of 100%. Naming the strongest
+    fit (and the strongest miss) is how a reader sees they are four different
+    mandates. Unknown stays unknown; a missing component row is not a 0.
+    """
+    if tier == "reject":
+        key = (reject_reason or "").strip()
+        return _FUND_REJECT_WHY.get(key, key.replace("_", " ") or "Not eligible for this fund")
+    if tier == "unscored" or score_id is None:
+        return "Not scored against this fund yet"
+
+    rows = conn.execute(
+        """SELECT key, label, sub_score, weight, evidence
+             FROM score_component WHERE score_id = ?""",
+        (score_id,),
+    ).fetchall()
+    fit = [row for row in rows if row["key"] not in _EDGE_COMPONENT_KEYS]
+    if not fit:
+        return "Scored on this fund's own criteria"
+
+    def contribution(row: sqlite3.Row) -> float:
+        score = row["sub_score"]
+        if score is None:
+            return -1.0
+        return float(row["weight"] or 0) * float(score)
+
+    known = [row for row in fit if row["sub_score"] is not None]
+    positives = sorted(
+        (row for row in known if row["sub_score"] >= _FIT_POSITIVE_AT),
+        key=contribution,
+        reverse=True,
+    )
+    negatives = sorted(
+        (row for row in known if row["sub_score"] <= _FIT_NEGATIVE_AT),
+        key=lambda row: float(row["weight"] or 0) * (1.0 - float(row["sub_score"])),
+        reverse=True,
+    )
+    unknowns = [row for row in fit if row["sub_score"] is None]
+    parts: list[str] = []
+    if positives:
+        top = positives[0]
+        name = (top["label"] or top["key"] or "criteria").replace("_", " ").lower()
+        evidence = _short_evidence(top["evidence"])
+        parts.append(f"Fits {name}" + (f" ({evidence})" if evidence else ""))
+    if negatives:
+        top = negatives[0]
+        name = (top["label"] or top["key"] or "criteria").replace("_", " ").lower()
+        evidence = _short_evidence(top["evidence"])
+        parts.append("weaker on " + name + (f" ({evidence})" if evidence else ""))
+    elif not positives and unknowns:
+        name = (unknowns[0]["label"] or unknowns[0]["key"] or "criteria")
+        parts.append(f"{name.replace('_', ' ')} not known")
+    return "; ".join(parts) if parts else "Scored on this fund's own criteria"
+
+
 def _fund_score_payload(
     conn: sqlite3.Connection,
     company_id: str,
@@ -1124,6 +1216,8 @@ def _fund_score_payload(
     for fund in config.funds:
         row = latest.get(fund.key)
         vehicle = vehicles.get(row["vehicle_key"] or "", {}) if row else {}
+        tier = row["tier"] if row else "unscored"
+        reject_reason = row["reject_reason"] if row else None
         scores.append({
             "fund_key": fund.key,
             "fund_name": fund.name,
@@ -1132,10 +1226,14 @@ def _fund_score_payload(
             # in the breakdown rather than presenting false precision.
             "fit": row["fund_fit_pct"] if row and row["tier"] != "reject" else None,
             "coverage": row["coverage"] if row else None,
-            "tier": row["tier"] if row else "unscored",
-            "reject_reason": row["reject_reason"] if row else None,
+            "tier": tier,
+            "reject_reason": reject_reason,
             "vehicle_key": row["vehicle_key"] if row else None,
             "vehicle_name": vehicle.get("name") if row else None,
+            "why": _fund_fit_why(
+                conn, row["id"] if row else None,
+                tier=tier, reject_reason=reject_reason,
+            ),
         })
     return scores
 

@@ -79,9 +79,13 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Edge tile | `score-edge` | `data-value` (**raw**), `data-band` | labelled **Fresh** in UI; testid unchanged |
 | Score number | `score-value` | | rounded display text; two per card |
 | Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
+| Score definition | `score-def-fit`, `score-def-edge` | | one-line meaning under each number |
+| Score factor | `score-factor` | `data-key`, `data-status` | contributing rule on the tile; not a `criterion` row |
 | Score hint | `score-hint` | | one-line explainer under the tiles |
 | Fund score grid | `fund-scores` | | all four fund-specific Match values, drawn as named bars |
+| Fund scores hint | `fund-scores-hint` | | explains the bars are separate mandates, not shares of 100% |
 | Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank when unscored or rejected |
+| Fund why | `fund-why` | | strongest fit / miss from that fund's `score_component` rows |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
 | Vehicle + cheque | `route-vehicle` | | |
@@ -147,7 +151,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B1 | First card renders | exactly one `card` in the DOM |
 | B2 | Name non-empty | `company-name` text length > 0 |
 | B3 | Both tiles exist | `score-fit` and `score-edge` each present exactly once |
-| B4 | Tiles labelled | `score-fit`'s `score-label` is `Match`; `score-edge`'s is `Fresh` |
+| B4 | Tiles labelled | `score-fit`'s `score-label` is `Match`; `score-edge`'s is `Fresh`; `score-def-fit` mentions fund fit; at least one `score-factor` is visible |
 | B5 | Scores are integers | both `score-value` match `/^\d+$/` |
 | B6 | Fund present | `route-fund` text length > 0 |
 | B7 | Explanation present | `explanation` text length > 20 |
@@ -155,7 +159,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B9 | One current dot | exactly one `progress-dot[data-state="now"]` |
 | B10 | Three buttons | the three `verdict-*` testids each present exactly once |
 | B11 | Bar visible | `verdict-bar` not `hidden` while cards remain |
-| B15 | Four fund matches | exactly four `fund-score` elements; each displayed `data-value` matches the corresponding API `fund_scores[*].fit` |
+| B15 | Four fund matches | exactly four `fund-score` elements; each displayed `data-value` matches the corresponding API `fund_scores[*].fit`; `fund-scores-hint` explains they are not a share of 100%; four `fund-why` lines |
 | B16 | Companies House badge | `ch-verified` exists only for a card whose API `ch_verified` is non-null; its text includes `Verified on Companies House` and the exact incorporation date |
 
 ### B12 — No placeholder leakage *(high value)*

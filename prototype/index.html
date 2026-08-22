@@ -208,15 +208,18 @@ main {
 .score-row { display: flex; gap: var(--s2); }
 .score {
   flex: 1; min-width: 0;
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: var(--s2);
-  padding: 8px 10px;
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 4px;
+  padding: 10px 10px 8px;
   background: var(--fill); border-radius: var(--r-control);
-  cursor: help;
 }
 .score-fit {
   background: color-mix(in srgb, var(--blue) 8%, var(--fill));
   border: 0.5px solid color-mix(in srgb, var(--blue) 18%, transparent);
+}
+.score-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s2);
 }
 .score .n {
   font-size: 22px; line-height: 26px; font-weight: 600;
@@ -226,6 +229,27 @@ main {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-2); text-transform: uppercase; letter-spacing: 0.4px;
 }
+.score-def {
+  margin: 0;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-2);
+}
+.score-factors {
+  list-style: none; margin: 4px 0 0; padding: 0;
+}
+.score-factor {
+  display: flex; justify-content: space-between; gap: var(--s2);
+  padding: 4px 0 0;
+  border-top: 0.5px solid var(--separator);
+  margin-top: 4px;
+  font-size: var(--caption); line-height: 16px;
+  color: var(--label);
+}
+.score-factor .sf-val {
+  color: var(--label-2); text-align: right;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.score-factor[data-status="missed"] .sf-val { color: var(--red); }
 .score-hint {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-3);
@@ -234,10 +258,20 @@ main {
   width: 100%;
   display: flex; flex-direction: column; gap: 8px;
 }
+.fund-scores-head h3 {
+  margin: 0;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font-weight: 590; color: var(--label);
+}
+.fund-scores-hint {
+  margin: 3px 0 2px;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-2);
+}
 .fund-score {
   min-width: 0; padding: 8px 10px 10px;
   background: var(--fill); border: 0.5px solid var(--separator);
-  border-radius: var(--r-control); cursor: help;
+  border-radius: var(--r-control);
 }
 .fund-score.best {
   background: color-mix(in srgb, var(--blue) 8%, var(--fill));
@@ -246,6 +280,10 @@ main {
 .fund-score-top {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: var(--s2);
+}
+.fund-score-name {
+  min-width: 0;
+  display: flex; align-items: baseline; gap: 8px;
 }
 .fund-score .n {
   flex: none;
@@ -277,6 +315,17 @@ main {
   color: var(--label-3);
 }
 .fund-note strong { color: var(--label); font-weight: 500; }
+.fund-why {
+  margin: 5px 0 0;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-2);
+}
+.fund-tag {
+  flex: none;
+  font-size: 10px; line-height: 14px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--blue);
+}
 .fund-score.high .n { color: var(--green); }
 .fund-score.mid .n { color: var(--label); }
 .fund-score.low .n { color: var(--orange); }
@@ -856,6 +905,24 @@ function ledRows(components) {
   }).join("");
 }
 
+function renderScoreFactors(components, keys) {
+  const items = (Array.isArray(components) ? components : [])
+    .filter(comp => keys.has(comp.key))
+    .sort(ledSort)
+    .slice(0, 4);
+  if (!items.length) return "";
+  return `<ul class="score-factors" data-testid="score-factors">${items.map(comp => {
+    const status = ledStatus(comp);
+    const meta = CRITERION[comp.key] || {};
+    const name = meta.name || comp.label || comp.key;
+    return `<li class="score-factor" data-testid="score-factor"
+                data-key="${esc(comp.key)}" data-status="${status}">
+              <span class="sf-name">${esc(name)}</span>
+              <span class="sf-val">${esc(ledValue(comp, status))}</span>
+            </li>`;
+  }).join("")}</ul>`;
+}
+
 // Decided rules first, unknowns last: what we established outranks what we
 // failed to. Within each, the heavier weight leads.
 function ledSort(a, b) {
@@ -924,6 +991,10 @@ function renderFundScores(c) {
         `<strong>${esc(a.fund_key)}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</p>`
     : "";
   return `<div class="fund-scores" data-testid="fund-scores" aria-label="Match score by fund">
+    <div class="fund-scores-head">
+      <h3>Fit with each fund</h3>
+      <p class="fund-scores-hint" data-testid="fund-scores-hint">Each bar is this company against that fund's own rules — not a share of 100%. Send to mixes fund fit with how new it is, so the tallest bar is not always the route.</p>
+    </div>
     ${scores.map(s => {
       const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
       const hasFit = Number.isFinite(value);
@@ -932,23 +1003,28 @@ function renderFundScores(c) {
         ? "" : ` · ${Math.round(Number(s.coverage) * 100)}% evidence`;
       const status = s.tier === "reject"
         ? ` · ${s.reject_reason || "not eligible"}` : "";
-      const title = `${s.fund_name || s.fund_key}: ${display} match${coverage}${status}`;
+      const why = String(s.why || "").trim();
+      const title = `${s.fund_name || s.fund_key}: ${display} match${coverage}${status}${why ? " — " + why : ""}`;
       const tone = hasFit ? band(value, 70, 45) : "low";
-      const best = s.fund_key === c.fund ? " best" : "";
+      const best = s.fund_key === c.fund;
       const width = hasFit ? Math.max(0, Math.min(100, Math.round(value))) : 0;
-      return `<div class="fund-score ${tone}${best}" data-testid="fund-score"
+      return `<div class="fund-score ${tone}${best ? " best" : ""}" data-testid="fund-score"
                    data-fund="${esc(s.fund_key)}"
                    data-value="${hasFit ? esc(s.fit) : ""}"
                    data-coverage="${s.coverage == null ? "" : esc(s.coverage)}"
                    data-tier="${esc(s.tier || "unscored")}"
                    title="${esc(title)}">
                  <div class="fund-score-top">
-                   <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+                   <div class="fund-score-name">
+                     <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+                     ${best ? `<span class="fund-tag">Send to</span>` : ""}
+                   </div>
                    <div class="n">${display}</div>
                  </div>
                  <div class="fund-bar" aria-hidden="true">
                    <span class="fund-bar-fill" style="width:${width}%"></span>
                  </div>
+                 ${why ? `<p class="fund-why" data-testid="fund-why">${esc(why)}</p>` : ""}
                </div>`;
     }).join("")}
     ${also}
@@ -1185,6 +1261,8 @@ function render() {
   // reordering can never silently assert Fresh against Match.
   const matchTitle = "Match — how strongly this company fits this fund's criteria. Unknown fields are skipped, never guessed.";
   const freshTitle = "Fresh — how likely it is the fund hasn't already seen this (age, tracked press, disclosed funding, discovery route). Unknown funding stays mid, not perfect.";
+  const fundName = c.fund_name || c.fund || "this fund";
+  const fitKeys = new Set((c.components || []).map(x => x.key).filter(k => !EDGE_KEYS.has(k)));
   main.innerHTML = `${renderDiagnostics()}
     <article class="card ${thin ? "thin" : ""}" data-testid="card"
              data-company-id="${esc(c.company_id)}" data-tier="${esc(c.tier)}"
@@ -1207,15 +1285,25 @@ function render() {
             <div class="score score-fit ${band(c.fit, 70, 45)}" data-testid="score-fit"
                  data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}"
                  title="${esc(matchTitle)}">
-              <div class="k" data-testid="score-label">Match</div>
-              <div class="n" data-testid="score-value">${Math.round(c.fit)}</div></div>
+              <div class="score-head">
+                <div class="k" data-testid="score-label">Match</div>
+                <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
+              </div>
+              <p class="score-def" data-testid="score-def-fit">Fund fit with ${esc(fundName)}</p>
+              ${renderScoreFactors(c.components, fitKeys)}
+            </div>
             <div class="score score-edge ${band(c.edge, 70, 45)}" data-testid="score-edge"
                  data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}"
                  title="${esc(freshTitle)}">
-              <div class="k" data-testid="score-label">Fresh</div>
-              <div class="n" data-testid="score-value">${Math.round(c.edge)}</div></div>
+              <div class="score-head">
+                <div class="k" data-testid="score-label">Fresh</div>
+                <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
+              </div>
+              <p class="score-def" data-testid="score-def-edge">How new it looks to them</p>
+              ${renderScoreFactors(c.components, EDGE_KEYS)}
+            </div>
           </div>
-          <div class="score-hint" data-testid="score-hint">Match = fund fit · Fresh = new to them</div>
+          <div class="score-hint" data-testid="score-hint">Match is fund fit for the Send to fund. Fresh is how new it looks to them.</div>
           ${renderFundScores(c)}
         </div>
       </div>

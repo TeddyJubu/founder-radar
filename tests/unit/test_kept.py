@@ -163,7 +163,62 @@ def test_today_exposes_match_scores_for_all_four_funds(db):
         "northstar": 50.0,
         "anticus": 35.0,
     }
-    assert all("coverage" in score and "tier" in score for score in scores)
+    assert all("coverage" in score and "tier" in score and "why" in score for score in scores)
+    assert all(isinstance(score["why"], str) and score["why"] for score in scores)
+
+
+def test_fund_score_why_names_the_strongest_fit_and_miss(db):
+    """A bar without a reason is how 82% vs 31% reads as a pie chart."""
+    ids = seed_companies(db, count=1, shortlist=1)
+    sid = db.scalar("SELECT id FROM score WHERE company_id = ?", (ids[0],))
+    db.execute(
+        """INSERT INTO score_component (score_id, key, label, sub_score, weight,
+                                        contribution, evidence)
+           VALUES (?,?,?,?,?,?,?)""",
+        (sid, "geography", "Geography", 1.0, 10, 10.0, "North East"),
+    )
+    db.execute(
+        """INSERT INTO score_component (score_id, key, label, sub_score, weight,
+                                        contribution, evidence)
+           VALUES (?,?,?,?,?,?,?)""",
+        (sid, "stage", "Stage", 0.2, 8, 1.6, "growth"),
+    )
+    db.execute(
+        """INSERT INTO score_component (score_id, key, label, sub_score, weight,
+                                        contribution, evidence)
+           VALUES (?,?,?,?,?,?,?)""",
+        (sid, "age", "Age", 0.9, 5, 4.5, "11 months"),
+    )
+
+    scores = {
+        row["fund_key"]: row
+        for row in build_today(db.conn)["companies"][0]["fund_scores"]
+    }
+    primary = db.scalar("SELECT fund_key FROM score WHERE id = ?", (sid,))
+    why = scores[primary]["why"].lower()
+    assert "geography" in why and "north east" in why
+    assert "stage" in why and "growth" in why
+    assert "11 months" not in why
+
+
+def test_fund_score_why_explains_a_reject_instead_of_a_zero(db):
+    ids = seed_companies(db, count=1, shortlist=1)
+    from radar.store.db import now_iso
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, reject_reason, explanation,
+              flags, config_hash, scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (ids[0], "outward", None, 12.0, 0.4, 40.0, 12.0, "reject",
+         "max_company_age_months", "x", None, "testhash", "1", now_iso()),
+    )
+    outward = next(
+        row for row in build_today(db.conn)["companies"][0]["fund_scores"]
+        if row["fund_key"] == "outward"
+    )
+    assert outward["fit"] is None
+    assert "too old" in outward["why"].lower()
 
 
 def test_today_uses_latest_score_history_before_picking_primary_route(db):

@@ -171,6 +171,9 @@ def test_b3_b4_both_tiles_named_not_positional(today):
     assert "fund fit" in hint.inner_text().lower()
     assert today.locator(tid("score-fit")).get_attribute("title")
     assert today.locator(tid("score-edge")).get_attribute("title")
+    assert "fund fit" in today.locator(tid("score-def-fit")).inner_text().lower()
+    assert today.locator(tid("score-def-edge")).inner_text().strip()
+    assert today.locator(tid("score-factor")).count() >= 1
 
 
 def test_b5_scores_render_as_integers(today):
@@ -228,6 +231,18 @@ def test_b15_four_fund_match_scores_are_visible(today, api):
     }
     assert displayed == expected
     assert "several funds can match" not in today.locator(tid("fund-scores")).inner_text().lower()
+    hint = today.locator(tid("fund-scores-hint")).inner_text().lower()
+    assert "100" in hint
+    assert "tallest bar" in hint
+    assert today.locator(tid("fund-why")).count() == 4
+    expected_why = {
+        score["fund_key"]: score["why"]
+        for score in api["companies"][0]["fund_scores"]
+    }
+    for i in range(scores.count()):
+        row = scores.nth(i)
+        key = row.get_attribute("data-fund")
+        assert row.locator(tid("fund-why")).inner_text() == expected_why[key]
     if api["companies"][0].get("also_fits"):
         assert today.locator(tid("also-fits")).count() == 1
     else:
