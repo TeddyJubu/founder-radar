@@ -8,11 +8,16 @@
 # ones the pipeline guards against, and it is the failure most likely to
 # happen while nobody is looking.
 #
-# Two values come from the environment, both set in /opt/founder-radar/.env:
+# Values come from /opt/founder-radar/.env (and hermes.env for the dashboard
+# hostname). install.sh writes this file on every deploy, then appends
+# deploy/Caddyfile.hermes so `hermes.<host>` keeps a Let's Encrypt cert.
+# A radar-only Caddyfile is how that hostname started failing TLS.
 #
 #   RADAR_WEB_DOMAIN     radar.example.com
 #   RADAR_WEB_USER       scout
 #   RADAR_WEB_PASS_HASH  bcrypt hash from `caddy hash-password`
+#   HERMES_WEB_DOMAIN    hermes.radar.example.com (optional; defaults to
+#                        hermes.<RADAR_WEB_DOMAIN>)
 #
 # The hash is a hash: it is safe in the env file (mode 600) and is NOT the
 # password. Generate it on the box and never write the plaintext anywhere:

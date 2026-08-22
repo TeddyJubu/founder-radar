@@ -161,7 +161,7 @@ find /opt/founder-radar/backups -name 'radar-*.db' -mtime +14 -delete
 
 ---
 
-## 5. Hermes Agent — Telegram only
+## 5. Hermes Agent — Telegram, plus the web dashboard behind Caddy
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-browser
@@ -177,14 +177,16 @@ hermes config set telegram.allowed_users <aryan-user-id>
 sudo hermes gateway install --system                # systemd, starts at boot
 ```
 
-Then copy the skill:
+Then copy the skill (or re-run `deploy/install.sh`, which does this):
 
 ```bash
 mkdir -p ~/.hermes/skills/founder-radar/references
 cp /opt/founder-radar/app/hermes/skills/founder-radar/SKILL.md ~/.hermes/skills/founder-radar/
 cp /opt/founder-radar/app/hermes/skills/founder-radar/references/today-check.md \
-  ~/.hermes/skills/founder-radar/references/
+   ~/.hermes/skills/founder-radar/references/
 ```
+
+The web dashboard is published at `https://hermes.<RADAR_WEB_DOMAIN>/` (override with `HERMES_WEB_DOMAIN`). `deploy/install.sh` writes that hostname into Caddy on every deploy and reloads Caddy so Let's Encrypt can issue a cert — a radar-only Caddyfile is how the hostname started failing with `ERR_SSL_PROTOCOL_ERROR`. `hermes-dashboard.service` runs `hermes dashboard --host 127.0.0.1 --port 9119 --no-open` and the installer builds the SPA if `web_dist` is missing. Chat stays Telegram-first; the dashboard is a browser control plane, not a second scoring system.
 
 Finally, in Telegram, message the bot `/sethome` so scheduled deliveries know where to go.
 

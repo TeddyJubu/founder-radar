@@ -1,0 +1,32 @@
+# /etc/systemd/system/hermes-dashboard.service
+#
+# The Hermes Agent web UI — `hermes dashboard` — as a long-running service.
+#
+# Binds 127.0.0.1:9119 only. Caddy terminates TLS and enforces the password
+# (install.sh publishes deploy/Caddyfile.hermes for hermes.<host>). User /
+# HOME / ReadWritePaths come from the drop-in install.sh writes for the
+# account that owns ~/.hermes (the updater runs as root, so SUDO_USER is
+# empty).
+
+[Unit]
+Description=Hermes Agent web dashboard
+Documentation=https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/opt/founder-radar/hermes.env
+Environment=TZ=Europe/London
+ExecStart=/opt/founder-radar/app/deploy/hermes-dashboard.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=180
+MemoryMax=400M
+Nice=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

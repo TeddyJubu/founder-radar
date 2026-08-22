@@ -22,6 +22,15 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "deploy" / "backup.sh"
 CADDYFILE = Path(__file__).resolve().parents[2] / "deploy" / "Caddyfile"
+CADDYFILE_HERMES = Path(__file__).resolve().parents[2] / "deploy" / "Caddyfile.hermes"
+HERMES_DASHBOARD_SH = Path(__file__).resolve().parents[2] / "deploy" / "hermes-dashboard.sh"
+HERMES_DASHBOARD_UNIT = Path(__file__).resolve().parents[2] / "deploy" / "hermes-dashboard.service"
+DEPLOY_DIR = Path(__file__).resolve().parents[2] / "deploy"
+DEPLOY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
+UPDATE_SCRIPT = DEPLOY_DIR / "update-from-main.sh"
+UPDATE_TIMER = DEPLOY_DIR / "founder-radar-update.timer"
+UPDATE_SERVICE = DEPLOY_DIR / "founder-radar-update.service"
+INSTALL_SH = DEPLOY_DIR / "install.sh"
 
 
 @pytest.fixture
@@ -73,16 +82,7 @@ def test_backup_script_fails_loudly_without_a_database(tmp_path):
     assert "no database" in out.stderr
 
 
-def test_web_surface_requires_a_password():
-    """Client-issues plan §3.6 (F17) — the login surface.
-
-    The web app is only ever reachable through Caddy basic auth, and the
-    password must exist only as the environment hash — never as a committed
-    bcrypt hash or plaintext (the client could not log in on 16 Aug, and the
-    password-change procedure is the one thing he asked to control himself).
-    """
-    text = CADDYFILE.read_text()
-
+def _assert_caddy_has_no_committed_password(text: str) -> None:
     assert "basic_auth" in text, "the web surface lost its password gate"
     assert "{$RADAR_WEB_USER} {$RADAR_WEB_PASS_HASH}" in text, \
         "the password must come from the environment, not the file"
@@ -91,12 +91,115 @@ def test_web_surface_requires_a_password():
     assert "$2" not in text, "a bcrypt hash leaked into the Caddyfile"
 
 
-DEPLOY_DIR = Path(__file__).resolve().parents[2] / "deploy"
-DEPLOY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
-UPDATE_SCRIPT = DEPLOY_DIR / "update-from-main.sh"
-UPDATE_TIMER = DEPLOY_DIR / "founder-radar-update.timer"
-UPDATE_SERVICE = DEPLOY_DIR / "founder-radar-update.service"
-INSTALL_SH = DEPLOY_DIR / "install.sh"
+def test_web_surface_requires_a_password():
+    """Client-issues plan §3.6 (F17) — the login surface.
+
+    The web app is only ever reachable through Caddy basic auth, and the
+    password must exist only as the environment hash — never as a committed
+    bcrypt hash or plaintext (the client could not log in on 16 Aug, and the
+    password-change procedure is the one thing he asked to control himself).
+    """
+    _assert_caddy_has_no_committed_password(CADDYFILE.read_text())
+
+
+def test_hermes_dashboard_is_published_behind_caddy():
+    """hermes.<host> must keep a TLS cert across radar deploys.
+
+    install.sh used to write a radar-only Caddyfile. HTTP still 308'd the
+    hermes hostname to HTTPS, then the handshake aborted with
+    ERR_SSL_PROTOCOL_ERROR because Caddy had no cert for that SNI. The
+    installer must rewrite Caddy from git every time, append the hermes
+    site, and share the review-surface password. Host is rewritten to the
+    loopback bind so Hermes does not 400 Invalid Host after TLS works.
+    """
+    text = CADDYFILE_HERMES.read_text()
+    _assert_caddy_has_no_committed_password(text)
+    assert "{$HERMES_WEB_DOMAIN}" in text
+    assert "{$HERMES_DASHBOARD_UPSTREAM}" in text
+    assert "flush_interval -1" in text, "Chat WebSockets would buffer"
+    assert "header_up Host 127.0.0.1:9119" in text
+    assert "header_up Host {host}" not in text
+    assert "0.0.0.0" not in text
+
+    unit = HERMES_DASHBOARD_UNIT.read_text()
+    assert "hermes-dashboard.sh" in unit
+    assert "MemoryMax=400M" in unit
+    assert "0.0.0.0" not in unit
+
+    assert HERMES_DASHBOARD_SH.is_file()
+    assert os.access(HERMES_DASHBOARD_SH, os.X_OK), \
+        "hermes-dashboard.sh is not executable"
+
+    installer = INSTALL_SH.read_text()
+    assert 'cat "$HERE/Caddyfile.hermes" >> /etc/caddy/Caddyfile' in installer
+    assert "leaving existing /etc/caddy/Caddyfile in place" not in installer
+    assert "systemctl reload caddy" in installer
+    assert installer.index('cat "$HERE/Caddyfile.hermes"') < \
+        installer.index("systemctl reload caddy")
+    assert 'hermes_domain="hermes.$web_domain"' in installer
+    assert "hermes-dashboard.service" in installer
+    assert "HERMES_DASHBOARD_PUBLIC_URL" in installer
+    assert "npm run build" in installer
+    assert "Frontend not built" in installer
+    assert "probe_hermes_dashboard" in installer
+    assert "hermes.env" in installer
+    # Still never source .env (bcrypt `$2y$` under `set -u`).
+    assert '. "$ENV_FILE"' not in installer
+
+
+def test_caddy_templates_compose_radar_and_hermes_sites():
+    """The files install.sh concatenates must be two named sites, not one."""
+    combined = CADDYFILE.read_text() + "\n" + CADDYFILE_HERMES.read_text()
+    assert "{$RADAR_WEB_DOMAIN}" in combined
+    assert "{$HERMES_WEB_DOMAIN}" in combined
+    assert combined.count("basic_auth") == 2
+    assert "127.0.0.1:8787" in combined
+    assert "127.0.0.1:9119" in combined
+    assert "tls internal" not in combined
+
+
+def test_hermes_dashboard_wrapper_execs_loopback(tmp_path):
+    """The unit must bind loopback with --no-open, never 0.0.0.0."""
+    fake = tmp_path / "hermes"
+    args_path = tmp_path / "args"
+    fake.write_text(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + str(args_path) + "'\n"
+    )
+    fake.chmod(0o755)
+    env_file = tmp_path / "hermes.env"
+    env_file.write_text(
+        "HERMES_BIN=%s\nHERMES_WEB_DOMAIN=hermes.example.test\n" % fake
+    )
+    path = str(tmp_path) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
+    out = subprocess.run(
+        ["bash", str(HERMES_DASHBOARD_SH)],
+        env={**os.environ, "HERMES_ENV_FILE": str(env_file),
+             "ROOT": str(tmp_path), "PATH": path},
+        capture_output=True, text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    args = args_path.read_text()
+    assert "dashboard" in args
+    assert "--host" in args and "127.0.0.1" in args
+    assert "--port" in args and "9119" in args
+    assert "--no-open" in args
+    assert "0.0.0.0" not in args
+
+
+def test_hermes_dashboard_wrapper_fails_without_a_binary(tmp_path):
+    """A green unit that execs nothing is how the URL stays blank."""
+    env_file = tmp_path / "hermes.env"
+    env_file.write_text("HERMES_BIN=/no/such/hermes\nHERMES_HOME=%s\n" % tmp_path)
+    path = str(tmp_path) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
+    out = subprocess.run(
+        ["bash", str(HERMES_DASHBOARD_SH)],
+        env={**os.environ, "HERMES_ENV_FILE": str(env_file),
+             "ROOT": str(tmp_path), "HOME": str(tmp_path),
+             "PATH": path},
+        capture_output=True, text=True,
+    )
+    assert out.returncode != 0
+    assert "not found" in out.stderr
 
 
 def test_deploy_ships_main_without_a_manual_click():
@@ -135,6 +238,9 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "enable --now founder-radar-update.timer" in installer
     assert "chmod 755" in installer and "update-from-main.sh" in installer
     assert "references/today-check.md" in installer
+    assert "hermes-dashboard.sh" in installer
+    assert 'cat "$HERE/Caddyfile.hermes" >> /etc/caddy/Caddyfile' in installer
+    assert "leaving existing /etc/caddy/Caddyfile in place" not in installer
     # pip as radar from /root dies on an editable path hook. Pin the fix.
     assert 'cd "$APP_DIR"' in installer
     assert 'sudo -H -u "$APP_USER"' in installer
@@ -143,6 +249,11 @@ def test_deploy_ships_main_without_a_manual_click():
     # without sourcing the file.
     assert '. "$ENV_FILE"' not in installer
     assert "web_hash_set" in installer
+
+    script = UPDATE_SCRIPT.read_text()
+    assert "hermes-dashboard.service" in script
+    assert "Frontend not built" in script
+    assert "not serving UI" in script
 
     workflow = DEPLOY_WORKFLOW.read_text()
     assert "configured=false" in workflow
