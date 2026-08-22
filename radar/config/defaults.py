@@ -350,7 +350,43 @@ OUTCODE_REGION: dict[str, str] = {
     "HR": "uk_regions", "WR": "uk_regions", "DY": "uk_regions", "WS": "uk_regions",
     "TQ": "uk_regions", "EX": "uk_regions", "PL": "uk_regions", "TR": "uk_regions",
     "DT": "uk_regions", "TA": "uk_regions", "WN": "uk_regions", "PO": "uk_regions",
-    "SG": "uk_regions", "NX": "uk_regions",
+    "SG": "uk_regions",     "NX": "uk_regions",
+}
+
+# Stated HQ city → vocabulary region. Used when a Track A adapter (Oxford
+# Innovation, news extraction) sets `hq_city` without a postcode. Without
+# this, `country=GB` collapses to `uk_wide` and HARD Yorkshire / North East
+# gates pass as unverified — which is how an Oxford spinout was offered as
+# a Finance Yorkshire / North of England match.
+#
+# Keys are lowercase and exact after stripping a leading "city of ".
+CITY_REGION: dict[str, str] = {
+    # North East
+    "newcastle": "north_east", "newcastle upon tyne": "north_east",
+    "durham": "north_east", "sunderland": "north_east", "gateshead": "north_east",
+    "middlesbrough": "north_east", "stockton": "north_east",
+    "stockton-on-tees": "north_east", "hartlepool": "north_east",
+    "darlington": "north_east", "hexham": "north_east",
+    # Yorkshire and The Humber
+    "leeds": "yorkshire", "sheffield": "yorkshire", "york": "yorkshire",
+    "bradford": "yorkshire", "hull": "yorkshire", "kingston upon hull": "yorkshire",
+    "huddersfield": "yorkshire", "halifax": "yorkshire", "wakefield": "yorkshire",
+    "doncaster": "yorkshire", "barnsley": "yorkshire", "rotherham": "yorkshire",
+    "harrogate": "yorkshire", "scunthorpe": "yorkshire", "grimsby": "yorkshire",
+    "ripon": "yorkshire", "selby": "yorkshire",
+    # London
+    "london": "london",
+    # Rest of the UK (including the golden triangle, which is NOT the North)
+    "oxford": "uk_regions", "cambridge": "uk_regions",
+    "manchester": "uk_regions", "birmingham": "uk_regions", "bristol": "uk_regions",
+    "liverpool": "uk_regions", "nottingham": "uk_regions", "leicester": "uk_regions",
+    "edinburgh": "uk_regions", "glasgow": "uk_regions", "cardiff": "uk_regions",
+    "belfast": "uk_regions", "reading": "uk_regions", "southampton": "uk_regions",
+    "brighton": "uk_regions", "coventry": "uk_regions", "milton keynes": "uk_regions",
+    "bath": "uk_regions", "exeter": "uk_regions", "plymouth": "uk_regions",
+    "norwich": "uk_regions", "ipswich": "uk_regions", "swindon": "uk_regions",
+    "preston": "uk_regions", "blackpool": "uk_regions", "aberdeen": "uk_regions",
+    "dundee": "uk_regions", "swansea": "uk_regions", "newport": "uk_regions",
 }
 
 # `region` is populated by postcodes.io for England only; Scotland, Wales and
@@ -405,13 +441,17 @@ SEIS_EIS_EXCLUDED_SECTORS = ["lending"]
 LISTS: dict[str, Any] = {
     "sic_sector": SIC_SECTOR,
     "outcode_region": OUTCODE_REGION,
+    "city_region": CITY_REGION,
     "postcode_country_regions": list(POSTCODE_COUNTRY_REGIONS),
     "value_labels": VALUE_LABELS,
     "discovery_edge": DISCOVERY_EDGE,
     "seis_eis_excluded_sectors": SEIS_EIS_EXCLUDED_SECTORS,
     # DSW's SEIS golden-triangle rule is an outcode-prefix check, not a fuzzy
-    # city match (06-scoring §2.2).
+    # city match (06-scoring §2.2). A *stated* `hq_city` of Oxford / Cambridge
+    # / London is also inside: Track A adapters often set the city without a
+    # postcode, and treating that as unknown let an Oxford spinout through.
     "golden_triangle_outcodes": ["OX", "CB"],
+    "golden_triangle_cities": ["oxford", "cambridge", "london"],
     "sunderland_city_region": ["sunderland", "washington", "houghton-le-spring",
                                "hetton-le-hole", "ryhope", "seaburn"],
     "sunderland_outcodes": ["SR"],

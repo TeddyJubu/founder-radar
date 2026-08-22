@@ -146,6 +146,14 @@ def test_prompt_requires_the_operating_startup_subject():
     assert "investor" in SYSTEM_PROMPT
 
 
+def test_prompt_rejects_ipo_and_late_stage_as_not_a_lead():
+    from radar.extract.llm import SYSTEM_PROMPT
+
+    assert "already_large_company" in SYSTEM_PROMPT
+    assert "IPO" in SYSTEM_PROMPT
+    assert "series_b_plus" in SYSTEM_PROMPT
+
+
 def test_parent_role_record_never_resolves_to_a_company(db, config):
     """Client-issues plan §3.1 (A4) — the parent-company complaint, end to end.
 

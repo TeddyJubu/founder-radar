@@ -239,6 +239,34 @@ def derive_geography(region: str | None, country: str | None, outcode: str | Non
     return "uk_wide"  # UK confirmed, location not resolved
 
 
+_CITY_PREFIX = re.compile(r"^(?:the\s+)?(?:city|county)\s+of\s+", re.I)
+
+
+def _norm_city(name: str | None) -> str:
+    """Lowercase, collapsed whitespace, strip a leading 'city of'."""
+    if not name:
+        return ""
+    return _CITY_PREFIX.sub("", " ".join(str(name).strip().lower().split()))
+
+
+def geography_from_city(city: str | None, config: Any = None) -> str | None:
+    """Stated HQ city → vocabulary region.
+
+    Exact match only (after `_norm_city`). This is not a fuzzy place-name
+    scrape — adapters and the extractor write `hq_city` when a source *says*
+    where the company is based. An Oxford spinout page that sets
+    `hq_city='Oxford'` must not collapse to `uk_wide`.
+    """
+    key = _norm_city(city)
+    if not key:
+        return None
+    table = _lists(config).get("city_region", {})
+    if not isinstance(table, Mapping):
+        from radar.config.defaults import CITY_REGION
+        table = CITY_REGION
+    return table.get(key)
+
+
 def geography_from_outcode(outcode: str | None, config: Any = None) -> str | None:
     """Offline outcode → vocabulary lookup.
 
@@ -265,15 +293,26 @@ def geography_from_outcode(outcode: str | None, config: Any = None) -> str | Non
 
 def is_outside_golden_triangle(company: Any, config: Any = None) -> bool | None:
     """DSW's SEIS rule is an **outcode-prefix check, not a fuzzy city match**
-    (06-scoring §2.2). Returns None when we cannot tell."""
-    prefixes = tuple(_lists(config).get("golden_triangle_outcodes", ("OX", "CB")))
+    (06-scoring §2.2). A *stated* `hq_city` of Oxford / Cambridge / London
+    is also inside: Track A adapters often set the city without a postcode.
+    Returns None when we cannot tell."""
+    lists = _lists(config)
+    prefixes = tuple(lists.get("golden_triangle_outcodes", ("OX", "CB")))
+    triangle_cities = {
+        _norm_city(c) for c in lists.get("golden_triangle_cities",
+                                         ("oxford", "cambridge", "london"))
+    }
     geography = _get(company, "hq_region")
     outcode = outcode_of(_get(company, "hq_postcode"))
+    city = _norm_city(_get(company, "hq_city"))
     if outcode and outcode.upper().startswith(prefixes):
         return False
-    if geography == "london":
+    if geography == "london" or city in triangle_cities:
         return False
     if outcode or (geography and geography != "uk_wide"):
+        return True
+    city_geo = geography_from_city(_get(company, "hq_city"), config)
+    if city_geo and city_geo != "uk_wide":
         return True
     return None
 
@@ -429,19 +468,31 @@ def derive_updates(
     updates: dict[str, Any] = {}
     trace: list[tuple[str, str, str, str]] = []
 
-    # --- geography first: nothing reads it, but it is the cheapest to fill
+    # --- geography first: nothing reads it, but it is the cheapest to fill.
+    # `uk_wide` means "UK confirmed, region not resolved" — a later stated
+    # city or outcode is allowed to refine it. Leaving Oxford as `uk_wide`
+    # is what let HARD Yorkshire / North East vehicles pass as unverified.
     geography = _get(company, "hq_region")
-    if geography is None:
+    if geography is None or geography == "uk_wide":
         outcode = outcode_of(_get(company, "hq_postcode"))
+        refined = None
+        rule = None
+        evidence = None
         if outcode:
-            geography = geography_from_outcode(outcode, config)
-            if geography:
-                trace.append(("geography", geography, "outcode_region", f"outcode {outcode}"))
-        elif _get(company, "country_iso2") == "GB":
-            geography = "uk_wide"
-            trace.append(("geography", geography, "country_gb", "country GB"))
-        if geography:
-            updates["hq_region"] = geography
+            refined = geography_from_outcode(outcode, config)
+            if refined:
+                rule, evidence = "outcode_region", f"outcode {outcode}"
+        if not refined or refined == "uk_wide":
+            city_geo = geography_from_city(_get(company, "hq_city"), config)
+            if city_geo:
+                city = _get(company, "hq_city")
+                refined, rule, evidence = city_geo, "city_region", f"city {city}"
+        if geography is None and not refined and _get(company, "country_iso2") == "GB":
+            refined, rule, evidence = "uk_wide", "country_gb", "country GB"
+        if refined and refined != geography:
+            updates["hq_region"] = refined
+            if rule:
+                trace.append(("geography", refined, rule, evidence or ""))
 
     sector = _get(company, "sector")
     if sector is None:

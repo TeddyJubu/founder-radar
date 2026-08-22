@@ -116,7 +116,11 @@ amount_original with the ISO code in amount_currency and leave \
 amount_raised_gbp null. Put grants and non-dilutive awards in \
 grant_amount_gbp, never in amount_raised_gbp.
 6. sector and stage must be one of the listed values, or null. Never guess a \
-close-enough value.
+close-enough value. pre_seed / seed / series_a for those rounds. series_b_plus \
+or growth for Series B and later, a growth round, or a company approaching an \
+IPO. If the article is about a public company, a stock-market listing, or an \
+IPO, set is_about_single_company false with rejection_reason \
+already_large_company — that is not an early-stage lead.
 7. extraction_confidence is your honest confidence in the whole record: 0.85+ \
 for a clear single-company funding story with named founders, 0.3-0.5 for a \
 thin regional note with few facts.

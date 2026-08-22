@@ -22,7 +22,14 @@ from typing import Any
 
 from radar.config.models import STAGES, Settings, canon_enum
 
-from .derive import _get, _lists, age_months, is_outside_golden_triangle, outcode_of
+from .derive import (
+    _get,
+    _lists,
+    age_months,
+    geography_from_city,
+    is_outside_golden_triangle,
+    outcode_of,
+)
 
 # 06-scoring §1. A gate not listed here has no flag: an unknown stage or an
 # unknown funding total is normal, not a warning.
@@ -216,7 +223,7 @@ def _geography_gate(company: Any, vehicle: Any, config: Any, result: VehicleGate
 
 
 def _geo_rule_verdict(company: Any, rule: str, config: Any) -> bool | None:
-    geography = _get(company, "hq_region")
+    geography = _resolved_geography(company, config)
     lists = _lists(config)
 
     if rule == "outside_golden_triangle":
@@ -235,9 +242,12 @@ def _geo_rule_verdict(company: Any, rule: str, config: Any) -> bool | None:
 
     if rule == "north_england":
         northern = lists.get("north_england_geographies", ["north_east", "yorkshire"])
-        if geography is None:
+        if geography is None or geography == "uk_wide":
+            # UK-confirmed-but-unresolved is not evidence of being in the
+            # North. Treating `uk_wide` as a match is how an Oxford spinout
+            # scored as a North of England company.
             return None
-        return geography in northern or geography == "uk_wide"
+        return geography in northern
 
     if rule == "uk_wide":
         return has_uk_presence(company, config)
@@ -254,6 +264,19 @@ def _geo_rule_verdict(company: Any, rule: str, config: Any) -> bool | None:
         # UK confirmed but not resolved to a region — we cannot tell.
         return None
     return geography == rule
+
+
+def _resolved_geography(company: Any, config: Any) -> str | None:
+    """Region used by HARD geo rules.
+
+    A stored `uk_wide` is "we have not resolved the region", not a place.
+    A stated `hq_city` (Oxford, Leeds, Newcastle) is allowed to refine it
+    so HARD Yorkshire / North East mandates actually bite.
+    """
+    geography = _get(company, "hq_region")
+    if geography not in (None, "uk_wide"):
+        return geography
+    return geography_from_city(_get(company, "hq_city"), config) or geography
 
 
 def _hard_reject(

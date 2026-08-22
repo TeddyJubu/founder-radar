@@ -954,15 +954,31 @@ def _fields_from_structured(
     prose extraction, otherwise an old structured record becomes age-unknown
     and can leak into the review queue.
 
-    A real ``date_of_creation`` always wins. ``existing`` protects a more
-    specific date already supplied by extraction when an item happens to carry
-    both structured and prose evidence.
+    A real ``date_of_creation`` or ``incorporated_on`` always wins.
+    ``existing`` protects a more specific date already supplied by extraction
+    when an item happens to carry both structured and prose evidence.
+
+    Oxford Innovation (and any other TTO adapter) writes ``incorporated_on``
+    — not Companies House's ``date_of_creation``. Dropping that field left
+    every Oxford portfolio card as age-unknown, which is how already-backed
+    spinouts occupied Today.
     """
     fields: dict[str, Any] = {}
     if structured.get("company_number"):
         fields["companies_house_no"] = structured["company_number"]
-    if structured.get("date_of_creation"):
-        fields["incorporated_on"] = structured["date_of_creation"]
+    incorporated = _structured_date(
+        structured.get("date_of_creation") or structured.get("incorporated_on")
+    )
+    if incorporated:
+        fields["incorporated_on"] = incorporated
+        if structured.get("age_source"):
+            fields["age_source"] = structured["age_source"]
+        elif not (existing or {}).get("age_source"):
+            fields["age_source"] = "source_stated"
+        if structured.get("date_confidence"):
+            fields["date_confidence"] = structured["date_confidence"]
+        elif not (existing or {}).get("date_confidence"):
+            fields["date_confidence"] = "stated"
     elif structured.get("founded_year") and not (existing or {}).get("incorporated_on"):
         fields["incorporated_on"] = f"{int(structured['founded_year']):04d}-07-01"
         fields["age_source"] = "source_stated"
@@ -992,7 +1008,18 @@ def _fields_from_structured(
         fields["is_university_spinout"] = int(bool(structured["is_university_spinout"]))
     if structured.get("university_name"):
         fields["spinout_university"] = structured["university_name"]
+    if structured.get("extraction_method"):
+        fields["extraction_method"] = structured["extraction_method"]
     return fields
+
+
+def _structured_date(value: Any) -> str | None:
+    """Normalise a structured date to an ISO ``YYYY-MM-DD`` string."""
+    if value in (None, ""):
+        return None
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat())[:10]
+    return str(value)[:10]
 
 
 def _fields_from_extraction(extraction: Any, cfg: Any) -> dict[str, Any]:
@@ -1061,7 +1088,10 @@ def extract_stage(items: Iterable[Any], cfg: Any, *, use_llm: bool,
     out: list[Any] = []
     for item in items:
         structured = getattr(item, "structured", None) or {}
-        if structured.get("company_number"):
+        # Companies House has a company number; TTO adapters stamp
+        # `extraction_method=structured`. Both already parsed the page — the
+        # reader would only drop the incorporation date they carried.
+        if structured.get("company_number") or structured.get("extraction_method") == "structured":
             out.append(item)
             continue
         record = extract(item, ctx)
