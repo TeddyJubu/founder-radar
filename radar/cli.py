@@ -273,6 +273,83 @@ def sync_sheet(ctx):
     _emit(_sync(_db(ctx)), ctx.obj["json"])
 
 
+@cli.command("repair-fund-criteria")
+@click.option(
+    "--force-sheet", is_flag=True,
+    help="Overwrite the Fund Criteria tab even when last-good looks healthy",
+)
+@click.pass_context
+def repair_fund_criteria(ctx, force_sheet):
+    """Reseed Fund Criteria from code defaults and refresh last-good.
+
+    Use after a column-shifted sheet wrote vehicle_key='yes' into scores.
+    Without --force-sheet, the Google tab is only rewritten when the loaded
+    config is poisoned (or last-good was healed from defaults).
+    """
+    from radar.config.defaults import default_config
+    from radar.config.loader import (
+        funds_are_poisoned,
+        load_last_good,
+        load_runtime_config,
+        save_snapshot,
+    )
+    from radar.render.sheet import (
+        FUND_CRITERIA,
+        ValueRange,
+        a1,
+        col_letter,
+        fund_criteria_seed_grid,
+        open_gateway,
+    )
+
+    db = _db(ctx)
+    warn_list: list[str] = []
+    cfg, _gateway, warnings = load_runtime_config(db)
+    warn_list.extend(warnings)
+    poisoned = funds_are_poisoned(cfg.funds)
+    last = load_last_good(db)
+    last_poisoned = last is not None and funds_are_poisoned(last.funds)
+
+    needs_repair = poisoned or last_poisoned or force_sheet
+    if needs_repair:
+        cfg = default_config()
+        save_snapshot(db, cfg, is_last_good=True)
+
+    sheet_written = False
+    if needs_repair:
+        try:
+            gw = open_gateway()
+        except Exception as exc:  # noqa: BLE001 — sheet is optional for DB heal
+            warn_list.append(f"sheet not rewritten: {exc}")
+        else:
+            grid = fund_criteria_seed_grid(cfg)
+            # Blank the used range first so leftover shifted columns disappear,
+            # then write the canonical seed.
+            blank = [[""] * 17 for _ in range(200)]
+            gw.batch_set(
+                [ValueRange(a1(FUND_CRITERIA, "A", 1, "Q", 200), blank)],
+                value_input_option="USER_ENTERED",
+            )
+            width = col_letter(max(len(r) for r in grid) - 1)
+            gw.batch_set(
+                [ValueRange(a1(FUND_CRITERIA, "A", 1, width, len(grid)), grid)],
+                value_input_option="USER_ENTERED",
+            )
+            sheet_written = True
+
+    payload = {
+        "repaired": needs_repair,
+        "sheet_written": sheet_written,
+        "funds": [f.name for f in cfg.funds],
+        "vehicle_keys": [
+            v.vehicle_key for f in cfg.funds for v in f.vehicles
+        ],
+        "warnings": warn_list,
+    }
+    _emit(payload, ctx.obj["json"])
+    if not payload["repaired"]:
+        click.echo("Fund Criteria already healthy — pass --force-sheet to reseed")
+
 # -------------------------------------------------------------------- upkeep
 
 
