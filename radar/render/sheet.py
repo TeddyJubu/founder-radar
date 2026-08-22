@@ -193,10 +193,13 @@ class GspreadGateway:
 
 def open_gateway(sheet_id: str | None = None,
                  credentials_path: str | None = None) -> GspreadGateway:
-    """Authorise and open. Imported lazily so `founder-radar --help` stays fast."""
-    import gspread
-    from google.oauth2.service_account import Credentials
+    """Authorise and open. Imported lazily so `founder-radar --help` stays fast.
 
+    Env checks run *before* importing ``gspread`` / Google auth. A missing
+    ``SHEET_ID`` is the common local/CI path; paying 200ms+ to import those
+    packages only to raise made the first ``/api/verdict`` race short browser
+    waits (e.g. test_c16's 250ms).
+    """
     key = (sheet_id or os.environ.get("SHEET_ID")
            or os.environ.get("RADAR_SHEET_ID"))
     if not key:
@@ -204,6 +207,10 @@ def open_gateway(sheet_id: str | None = None,
     sa_path = credentials_path or os.environ.get("GOOGLE_SA_JSON")
     if not sa_path:
         raise RuntimeError("GOOGLE_SA_JSON is not set — run `founder-radar doctor`")
+
+    import gspread
+    from google.oauth2.service_account import Credentials
+
     creds = Credentials.from_service_account_file(sa_path, scopes=list(SCOPES))
     return GspreadGateway(gspread.authorize(creds).open_by_key(key))
 

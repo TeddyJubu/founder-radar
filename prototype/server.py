@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -1554,6 +1555,12 @@ def mirror_verdict_to_sheet(company_id: str, verdict: str) -> str:
     successful user decision into a failed HTTP request; the scheduled full
     render can catch up later.
     """
+    # Skip importing radar.render.sheet (and its Google client stack) when the
+    # sheet is not configured — the common path for local/browser CI.
+    if not (os.environ.get("SHEET_ID") or os.environ.get("RADAR_SHEET_ID")):
+        return "not_configured"
+    if not os.environ.get("GOOGLE_SA_JSON"):
+        return "not_configured"
     try:
         from radar.render.sheet import mirror_verdict
 
