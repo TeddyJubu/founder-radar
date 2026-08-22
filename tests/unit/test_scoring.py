@@ -75,6 +75,7 @@ def test_worked_example_metzero(cfg):
     assert s["northstar"].tier           == "shortlist"      # edge 55.5 >= 55
     assert "already on their radar"      not in s["northstar"].explanation
     assert s["anticus"].reject_reason    == "no_eligible_vehicle"
+    assert s["anticus"].fund_fit_pct    > 0
     assert s["outward"].fund_fit_pct     == pytest.approx(15.0, abs=0.1)
     assert s["outward"].tier             == "reject"
     assert s["dsw"].vehicle_key          == "eis_service"    # seis_fund fails on stage

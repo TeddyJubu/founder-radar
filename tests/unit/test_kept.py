@@ -155,7 +155,10 @@ def test_today_exposes_match_scores_for_all_four_funds(db):
     scores = build_today(db.conn)["companies"][0]["fund_scores"]
 
     assert [score["fund_key"] for score in scores] == [
-        "outward", "dsw", "northstar", "anticus"
+        "dsw", "northstar", "outward", "anticus",
+    ]
+    assert [score["fund_name"] for score in scores] == [
+        "DSW Ventures", "Northstar Ventures", "Outward VC", "Anticus Partners",
     ]
     assert {score["fund_key"]: score["fit"] for score in scores} == {
         "outward": 20.0,
@@ -165,6 +168,27 @@ def test_today_exposes_match_scores_for_all_four_funds(db):
     }
     assert all("coverage" in score and "tier" in score and "why" in score for score in scores)
     assert all(isinstance(score["why"], str) and score["why"] for score in scores)
+
+
+def test_today_match_breakdown_ignores_a_fifth_fund(db):
+    """The breakdown is four named funds, not whatever landed in `score`."""
+    from radar.store.db import now_iso
+
+    ids = seed_companies(db, count=1, shortlist=1)
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, reject_reason, explanation,
+              flags, config_hash, scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (ids[0], "acme", None, 99.0, 0.9, 80.0, 99.0, "shortlist", None,
+         "x", None, "testhash", "1", now_iso()),
+    )
+    scores = build_today(db.conn)["companies"][0]["fund_scores"]
+    assert [row["fund_key"] for row in scores] == [
+        "dsw", "northstar", "outward", "anticus",
+    ]
+    assert "acme" not in {row["fund_key"] for row in scores}
 
 
 def test_fund_score_why_names_the_strongest_fit_and_miss(db):
@@ -217,7 +241,7 @@ def test_fund_score_why_explains_a_reject_instead_of_a_zero(db):
         row for row in build_today(db.conn)["companies"][0]["fund_scores"]
         if row["fund_key"] == "outward"
     )
-    assert outward["fit"] is None
+    assert outward["fit"] == 12.0
     assert "too old" in outward["why"].lower()
 
 

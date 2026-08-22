@@ -106,9 +106,12 @@ def test_a4_company_keys(api):
     for c in api["companies"]:
         assert required <= set(c), f"{c.get('name')} missing {required - set(c)}"
         assert len(c["fund_scores"]) == 4
-        assert {score["fund_key"] for score in c["fund_scores"]} == {
-            "outward", "dsw", "northstar", "anticus"
-        }
+        assert [score["fund_key"] for score in c["fund_scores"]] == [
+            "dsw", "northstar", "outward", "anticus",
+        ]
+        assert [score["fund_name"] for score in c["fund_scores"]] == [
+            "DSW Ventures", "Northstar Ventures", "Outward VC", "Anticus Partners",
+        ]
 
 
 def test_a5_rejects_never_reach_today(api):
@@ -218,6 +221,14 @@ def test_b14_every_card_has_a_direct_primary_source_link(today, api):
 def test_b15_four_fund_match_scores_are_visible(today, api):
     scores = today.locator(tid("fund-score"))
     assert scores.count() == 4
+
+    displayed_keys = [
+        scores.nth(i).get_attribute("data-fund") for i in range(scores.count())
+    ]
+    assert displayed_keys == ["dsw", "northstar", "outward", "anticus"]
+    assert [scores.nth(i).locator(".k").inner_text() for i in range(4)] == [
+        "DSW Ventures", "Northstar Ventures", "Outward VC", "Anticus Partners",
+    ]
 
     displayed = {}
     for i in range(scores.count()):

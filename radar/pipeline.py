@@ -219,6 +219,9 @@ def evaluate(company: Any, cfg: Any, *, today: date | None = None,
             vehicle_scores.append((vehicle, fit, verdict))
 
         if not vehicle_scores:
+            # Keep the matrix score. Vehicle gates decide whether we can send
+            # this company; they must not blank the Match breakdown for the
+            # other three funds on the card.
             results.append(Score(
                 company_id=company.id,
                 company_name=company.canonical_name,
@@ -226,12 +229,14 @@ def evaluate(company: Any, cfg: Any, *, today: date | None = None,
                 vehicle_key=None,
                 tier="reject",
                 reject_reason="no_eligible_vehicle",
-                fund_fit_pct=0.0,
-                coverage=0.0,
+                fund_fit_pct=base_fit.pct,
+                raw_sum=base_fit.raw_sum,
+                coverage=base_fit.coverage,
                 discovery_edge=0.0,
                 priority=0.0,
                 explanation="Rejected: no eligible vehicle — every hard rule failed.",
                 flags=list(gate.flags),
+                components=base_fit.components,
                 config_hash=config_hash,
                 scorer_version=SCORER_VERSION,
             ))
@@ -679,12 +684,17 @@ def _bulk_score_rows(company: dict, cfg: Any, attributes: tuple[str, ...], *,
                 best_vehicle, best = vehicle, fit
 
         if best is None:
-            # mirror `evaluate`: a reject row carries no discovery edge
+            # Mirror `evaluate`: ineligible to send, but the matrix score still
+            # belongs on the four-fund Match breakdown.
             rows_out.append((_score_row(
-                company["id"], fund.key, None, 0.0, 0.0, 0.0, 0.0, "reject",
+                company["id"], fund.key, None, fit["pct"], fit["coverage"],
+                0.0, 0.0, "reject",
                 "no_eligible_vehicle",
                 "Rejected: no eligible vehicle — every hard rule failed.",
-                list(gate.flags), config_hash, scored_at), []))
+                list(gate.flags), config_hash, scored_at),
+                [(fund.key, None, key, label, sub, weight, contribution, evidence)
+                 for key, label, sub, weight, contribution, evidence
+                 in fit["components"]]))
             continue
 
         priority = priority_of(best["pct"], edge, cfg)

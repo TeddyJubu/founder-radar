@@ -1133,56 +1133,81 @@ def _fund_fit_why(
 
     The four fund bars were being read as slices of 100%. Naming the strongest
     fit (and the strongest miss) is how a reader sees they are four different
-    mandates. Unknown stays unknown; a missing component row is not a 0.
+    mandates.     Unknown stays unknown; a missing component row is not a 0.
+    Vehicle ineligibility is a send-to fact, not a blank match score.
     """
+    if score_id is not None:
+        rows = conn.execute(
+            """SELECT key, label, sub_score, weight, evidence
+                 FROM score_component WHERE score_id = ?""",
+            (score_id,),
+        ).fetchall()
+        fit = [row for row in rows if row["key"] not in _EDGE_COMPONENT_KEYS]
+        if fit:
+            def contribution(row: sqlite3.Row) -> float:
+                score = row["sub_score"]
+                if score is None:
+                    return -1.0
+                return float(row["weight"] or 0) * float(score)
+
+            known = [row for row in fit if row["sub_score"] is not None]
+            positives = sorted(
+                (row for row in known if row["sub_score"] >= _FIT_POSITIVE_AT),
+                key=contribution,
+                reverse=True,
+            )
+            negatives = sorted(
+                (row for row in known if row["sub_score"] <= _FIT_NEGATIVE_AT),
+                key=lambda row: float(row["weight"] or 0) * (1.0 - float(row["sub_score"])),
+                reverse=True,
+            )
+            unknowns = [row for row in fit if row["sub_score"] is None]
+            parts: list[str] = []
+            if positives:
+                top = positives[0]
+                name = (top["label"] or top["key"] or "criteria").replace("_", " ").lower()
+                evidence = _short_evidence(top["evidence"])
+                parts.append(f"Fits {name}" + (f" ({evidence})" if evidence else ""))
+            if negatives:
+                top = negatives[0]
+                name = (top["label"] or top["key"] or "criteria").replace("_", " ").lower()
+                evidence = _short_evidence(top["evidence"])
+                parts.append("weaker on " + name + (f" ({evidence})" if evidence else ""))
+            elif not positives and unknowns:
+                name = (unknowns[0]["label"] or unknowns[0]["key"] or "criteria")
+                parts.append(f"{name.replace('_', ' ')} not known")
+            if parts:
+                return "; ".join(parts)
+
     if tier == "reject":
         key = (reject_reason or "").strip()
         return _FUND_REJECT_WHY.get(key, key.replace("_", " ") or "Not eligible for this fund")
     if tier == "unscored" or score_id is None:
         return "Not scored against this fund yet"
+    return "Scored on this fund's own criteria"
 
-    rows = conn.execute(
-        """SELECT key, label, sub_score, weight, evidence
-             FROM score_component WHERE score_id = ?""",
-        (score_id,),
-    ).fetchall()
-    fit = [row for row in rows if row["key"] not in _EDGE_COMPONENT_KEYS]
-    if not fit:
-        return "Scored on this fund's own criteria"
 
-    def contribution(row: sqlite3.Row) -> float:
-        score = row["sub_score"]
-        if score is None:
-            return -1.0
-        return float(row["weight"] or 0) * float(score)
+_GATE_ZERO_REASONS = frozenset({
+    "max_company_age_months",
+    "max_total_funding_gbp",
+    "max_stage",
+    "already_on_vc_portfolio",
+    "min_uk_presence",
+})
 
-    known = [row for row in fit if row["sub_score"] is not None]
-    positives = sorted(
-        (row for row in known if row["sub_score"] >= _FIT_POSITIVE_AT),
-        key=contribution,
-        reverse=True,
-    )
-    negatives = sorted(
-        (row for row in known if row["sub_score"] <= _FIT_NEGATIVE_AT),
-        key=lambda row: float(row["weight"] or 0) * (1.0 - float(row["sub_score"])),
-        reverse=True,
-    )
-    unknowns = [row for row in fit if row["sub_score"] is None]
-    parts: list[str] = []
-    if positives:
-        top = positives[0]
-        name = (top["label"] or top["key"] or "criteria").replace("_", " ").lower()
-        evidence = _short_evidence(top["evidence"])
-        parts.append(f"Fits {name}" + (f" ({evidence})" if evidence else ""))
-    if negatives:
-        top = negatives[0]
-        name = (top["label"] or top["key"] or "criteria").replace("_", " ").lower()
-        evidence = _short_evidence(top["evidence"])
-        parts.append("weaker on " + name + (f" ({evidence})" if evidence else ""))
-    elif not positives and unknowns:
-        name = (unknowns[0]["label"] or unknowns[0]["key"] or "criteria")
-        parts.append(f"{name.replace('_', ' ')} not known")
-    return "; ".join(parts) if parts else "Scored on this fund's own criteria"
+
+def _visible_fund_fit(row: sqlite3.Row | None) -> float | None:
+    """The matrix percentage, or None when a freshness gate wrote a fake 0."""
+    if row is None:
+        return None
+    pct = row["fund_fit_pct"]
+    if (
+        row["tier"] == "reject"
+        and float(pct or 0) == 0.0
+        and (row["reject_reason"] or "") in _GATE_ZERO_REASONS
+    ):
+        return None
+    return pct
 
 
 def _fund_score_payload(
@@ -1193,12 +1218,15 @@ def _fund_score_payload(
     *,
     config_hash: str | None = None,
 ) -> list[dict]:
-    """Return the latest score for every configured fund, in config order.
+    """Exactly four funds, always, in the same order, for every candidate.
 
-    Today still chooses one primary route per company, but the reader needs
-    the other three fund fits to spot overlap. Missing rows stay explicit as
-    ``None`` rather than being mistaken for a zero match.
+    `config.funds` is not the list: a sheet edit must not add a fifth bar or
+    rename DSW into a mandate line. Missing rows stay ``fit: None`` rather
+    than a guessed zero. A rejected vehicle still shows its matrix score.
     """
+    from radar.config.defaults import BREAKDOWN_FUNDS, FUND_NAMES
+    from radar.config.loader import canonical_fund_key
+
     latest: dict[str, sqlite3.Row] = {}
     sql = """SELECT id, fund_key, vehicle_key, fund_fit_pct, coverage, tier,
                          reject_reason, scored_at
@@ -1210,21 +1238,18 @@ def _fund_score_payload(
         params.append(config_hash)
     sql += " ORDER BY scored_at DESC, id DESC"
     for row in conn.execute(sql, params):
-        latest.setdefault(row["fund_key"], row)
+        latest.setdefault(canonical_fund_key(row["fund_key"]), row)
 
     scores: list[dict] = []
-    for fund in config.funds:
-        row = latest.get(fund.key)
+    for key in BREAKDOWN_FUNDS:
+        row = latest.get(key)
         vehicle = vehicles.get(row["vehicle_key"] or "", {}) if row else {}
         tier = row["tier"] if row else "unscored"
         reject_reason = row["reject_reason"] if row else None
         scores.append({
-            "fund_key": fund.key,
-            "fund_name": fund.name,
-            # A rejected fund is not a 0% match: it failed an eligibility gate
-            # such as age, geography, or funding. Keep that distinction visible
-            # in the breakdown rather than presenting false precision.
-            "fit": row["fund_fit_pct"] if row and row["tier"] != "reject" else None,
+            "fund_key": key,
+            "fund_name": FUND_NAMES[key],
+            "fit": _visible_fund_fit(row),
             "coverage": row["coverage"] if row else None,
             "tier": tier,
             "reject_reason": reject_reason,

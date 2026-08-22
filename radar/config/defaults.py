@@ -34,6 +34,11 @@ FUND_NAMES = {
 
 FUND_ORDER = ("outward", "dsw", "northstar", "anticus")
 
+# Every Today card and the sheet's four match columns use this list, in this
+# order. `config.funds` can grow or be renamed in the sheet; the breakdown
+# does not. DSW → Northstar → Outward → Anticus is the scan order Aryan uses.
+BREAKDOWN_FUNDS: tuple[str, ...] = ("dsw", "northstar", "outward", "anticus")
+
 # ------------------------------------------------------------ 11 vehicles
 #
 # Order within a fund is meaningful: when two vehicles are both eligible and

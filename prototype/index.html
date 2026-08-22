@@ -987,17 +987,30 @@ function renderCriteria(c) {
   return `<div class="ledger" data-testid="criteria">${groups.join("")}</div>`;
 }
 
+const BREAKDOWN_FUNDS = [
+  {key: "dsw", name: "DSW Ventures"},
+  {key: "northstar", name: "Northstar Ventures"},
+  {key: "outward", name: "Outward VC"},
+  {key: "anticus", name: "Anticus Partners"},
+];
+
 function renderFundScores(c) {
-  const scores = Array.isArray(c.fund_scores) ? c.fund_scores : [];
-  if (!scores.length) return "";
+  const byKey = {};
+  for (const row of (c.fund_scores || [])) {
+    if (row && row.fund_key) byKey[row.fund_key] = row;
+  }
+  const scores = BREAKDOWN_FUNDS.map(({key, name}) => {
+    const row = byKey[key] || {};
+    return {...row, fund_key: key, fund_name: name};
+  });
   const also = (c.also_fits || []).length
     ? `<p class="fund-note" data-testid="also-fits">Also fits ${c.also_fits.slice(0,2).map(a =>
         `<strong>${esc(a.fund_key)}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</p>`
     : "";
   return `<div class="fund-scores" data-testid="fund-scores" aria-label="Match score by fund">
     <div class="fund-scores-head">
-      <h3>Fit with each fund</h3>
-      <p class="fund-scores-hint" data-testid="fund-scores-hint">Each bar is this company against that fund's own rules — not a share of 100%. Send to mixes fund fit with how new it is, so the tallest bar is not always the route.</p>
+      <h3>Match breakdown</h3>
+      <p class="fund-scores-hint" data-testid="fund-scores-hint">The same four funds on every company. Each bar is this company against that fund's own rules — not a share of 100%. Send to mixes fund fit with how new it is, so the tallest bar is not always the route.</p>
     </div>
     ${scores.map(s => {
       const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
@@ -1008,7 +1021,7 @@ function renderFundScores(c) {
       const status = s.tier === "reject"
         ? ` · ${s.reject_reason || "not eligible"}` : "";
       const why = String(s.why || "").trim();
-      const title = `${s.fund_name || s.fund_key}: ${display} match${coverage}${status}${why ? " — " + why : ""}`;
+      const title = `${s.fund_name}: ${display} match${coverage}${status}${why ? " — " + why : ""}`;
       const tone = hasFit ? band(value, 70, 45) : "low";
       const best = s.fund_key === c.fund;
       const width = hasFit ? Math.max(0, Math.min(100, Math.round(value))) : 0;
@@ -1020,7 +1033,7 @@ function renderFundScores(c) {
                    title="${esc(title)}">
                  <div class="fund-score-top">
                    <div class="fund-score-name">
-                     <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+                     <div class="k">${esc(s.fund_name)}</div>
                      ${best ? `<span class="fund-tag">Send to</span>` : ""}
                    </div>
                    <div class="n">${display}</div>

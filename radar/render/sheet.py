@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Iterable, Mapping, Protocol, Sequence
 
+from radar.config.defaults import BREAKDOWN_FUNDS as FUND_ORDER
 from radar.render.formatting import (
     COMPANIES,
     COMPANIES_HEADERS,
@@ -67,9 +68,6 @@ RAW = "RAW"
 USER_ENTERED = "USER_ENTERED"
 
 SCOPES = ("https://www.googleapis.com/auth/spreadsheets",)
-
-# The canonical column order for the four fit columns M–P (07-interfaces tab 2).
-FUND_ORDER: tuple[str, ...] = ("dsw", "northstar", "outward", "anticus")
 
 # One batchGet for everything stage ① and stage ⑦ need.
 READ_RANGES: dict[str, str] = {

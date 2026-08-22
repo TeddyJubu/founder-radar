@@ -133,7 +133,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | A2 | `GET /api/today` | 200, valid JSON |
 | A3 | Top-level keys | `date`, `companies`, `totals`, `run`, `eligibility_diagnostics` all present |
 | A3b | Eligibility diagnostics | scored minus shown equals excluded, and reason counts sum to excluded; each reason is aggregate-only |
-| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `ch_verified`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` has exactly `outward`, `dsw`, `northstar`, `anticus` |
+| A4 | Company keys | every element has `company_id`, `name`, `fit`, `edge`, `coverage`, `priority`, `explanation`, `flags`, `signals`, `ch_verified`, `also_fits`, `fund_scores`, `vehicle`, `tier`; `fund_scores` is exactly `dsw`, `northstar`, `outward`, `anticus` in that order |
 | A5 | Tier filter | no company has `tier == "reject"` |
 | A6 | Ordering | `priority` is non-increasing across the array |
 | A7 | Tie-break | where `priority` is equal, `coverage` is non-increasing |
@@ -159,7 +159,7 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B9 | One current dot | exactly one `progress-dot[data-state="now"]` |
 | B10 | Three buttons | the three `verdict-*` testids each present exactly once |
 | B11 | Bar visible | `verdict-bar` not `hidden` while cards remain |
-| B15 | Four fund matches | exactly four `fund-score` elements; each displayed `data-value` matches the corresponding API `fund_scores[*].fit`; `fund-scores-hint` explains they are not a share of 100%; four `fund-why` lines |
+| B15 | Four fund matches | exactly four `fund-score` elements in order `dsw`, `northstar`, `outward`, `anticus`, labelled DSW Ventures / Northstar Ventures / Outward VC / Anticus Partners; each displayed `data-value` matches the corresponding API `fund_scores[*].fit`; `fund-scores-hint` explains they are not a share of 100%; four `fund-why` lines |
 | B16 | Companies House badge | `ch-verified` exists only for a card whose API `ch_verified` is non-null; its text includes `Verified on Companies House` and the exact incorporation date |
 
 ### B12 — No placeholder leakage *(high value)*
