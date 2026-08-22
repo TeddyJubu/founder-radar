@@ -186,7 +186,7 @@ cp /opt/founder-radar/app/hermes/skills/founder-radar/references/today-check.md 
    ~/.hermes/skills/founder-radar/references/
 ```
 
-The web dashboard is published at `https://hermes.<RADAR_WEB_DOMAIN>/` (override with `HERMES_WEB_DOMAIN`). `deploy/install.sh` writes that hostname into Caddy on every deploy and reloads Caddy so Let's Encrypt can issue a cert — a radar-only Caddyfile is how the hostname started failing with `ERR_SSL_PROTOCOL_ERROR`. `hermes-dashboard.service` runs `hermes dashboard --host 127.0.0.1 --port 9119 --no-open` and the installer builds the SPA if `web_dist` is missing. Chat stays Telegram-first; the dashboard is a browser control plane, not a second scoring system.
+The web dashboard is published at `https://hermes.<RADAR_WEB_DOMAIN>/` (override with `HERMES_WEB_DOMAIN`). `deploy/install.sh` writes that hostname into Caddy on every deploy and reloads Caddy so Let's Encrypt can issue a cert — a radar-only Caddyfile is how the hostname started failing with `ERR_SSL_PROTOCOL_ERROR`. `hermes-dashboard.service` runs `hermes dashboard --host 127.0.0.1 --port 9119 --no-open --skip-build` with `MemoryMax=700M`. The installer builds the SPA if `web_dist` is missing; starting without `--skip-build` runs `npm ci` and OOM-kills the unit at 400M (Caddy then 502s). Chat stays Telegram-first; the dashboard is a browser control plane, not a second scoring system.
 
 Finally, in Telegram, message the bot `/sethome` so scheduled deliveries know where to go.
 

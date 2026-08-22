@@ -123,7 +123,7 @@ def test_hermes_dashboard_is_published_behind_caddy():
 
     unit = HERMES_DASHBOARD_UNIT.read_text()
     assert "hermes-dashboard.sh" in unit
-    assert "MemoryMax=400M" in unit
+    assert "MemoryMax=700M" in unit
     assert "0.0.0.0" not in unit
 
     assert HERMES_DASHBOARD_SH.is_file()
@@ -187,6 +187,7 @@ def test_hermes_dashboard_wrapper_execs_loopback(tmp_path):
     assert "--host" in args and "127.0.0.1" in args
     assert "--port" in args and "9119" in args
     assert "--no-open" in args
+    assert "--skip-build" in args
     assert "0.0.0.0" not in args
 
 

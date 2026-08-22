@@ -8,6 +8,8 @@
 #
 # Never prints secrets. Never force-pushes. Never binds 0.0.0.0 (that
 # engages Hermes's public auth gate and is the wrong shape behind Caddy).
+# --skip-build: install.sh builds web_dist; `npm ci` at start hits
+# MemoryMax and OOM-kills the unit (HTTP 502 behind Caddy).
 set -euo pipefail
 
 ROOT="${ROOT:-/opt/founder-radar}"
@@ -47,4 +49,4 @@ if [ -z "$BIN" ]; then
   exit 1
 fi
 
-exec "$BIN" dashboard --host "$HOST" --port "$PORT" --no-open
+exec "$BIN" dashboard --host "$HOST" --port "$PORT" --no-open --skip-build
