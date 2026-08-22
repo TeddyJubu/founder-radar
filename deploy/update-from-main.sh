@@ -28,38 +28,6 @@ truthy() {
   esac
 }
 
-load_hermes_env() {
-  HERMES_BIN="${HERMES_BIN:-}"
-  if [ -f "${ROOT}/hermes.env" ]; then
-    # Installer-written KEY=value only. No bcrypt hashes.
-    set -a
-    # shellcheck disable=SC1091
-    . "${ROOT}/hermes.env"
-    set +a
-  fi
-}
-
-hermes_dashboard_expected() {
-  # A published hermes.<host> with nothing on :9119 is HTTP 502.
-  # Reinstall even when HERMES_BIN was blank in hermes.env.
-  [ -n "${HERMES_WEB_DOMAIN:-}" ] && return 0
-  [ -n "${HERMES_BIN:-}" ] && [ -x "${HERMES_BIN}" ]
-}
-
-dashboard_is_healthy() {
-  command -v systemctl >/dev/null 2>&1 || return 1
-  systemctl is-active --quiet hermes-dashboard.service || return 1
-  command -v curl >/dev/null 2>&1 || return 0
-  local code
-  code="$(curl -sS --max-time 2 -o /tmp/hermes-dash-update.body \
-    -w '%{http_code}' -H 'Host: 127.0.0.1:9119' \
-    http://127.0.0.1:9119/ 2>/dev/null || true)"
-  if grep -qi 'Frontend not built' /tmp/hermes-dash-update.body 2>/dev/null; then
-    return 1
-  fi
-  [ -n "$code" ] && [ "$code" != "000" ]
-}
-
 if [ "$(id -u)" -ne 0 ] && [ "$ALLOW_NONROOT" != "1" ]; then
   echo "update-from-main.sh must run as root" >&2
   exit 1
@@ -113,13 +81,8 @@ if [ "$before" = "$remote" ]; then
   if truthy "$FORCE"; then
     say "already at $before — forced rescore without a pull"
   else
-    load_hermes_env
-    if [ "$DRY" != "1" ] && hermes_dashboard_expected && ! dashboard_is_healthy; then
-      say "HEAD current but hermes-dashboard is not serving UI — reinstalling"
-    else
-      say "already at $before — nothing to do"
-      exit 0
-    fi
+    say "already at $before — nothing to do"
+    exit 0
   fi
 else
   say "updating $before -> $remote"
@@ -149,6 +112,16 @@ run_cli() {
 }
 
 run_cli doctor || say "doctor reported issues (see output above)"
+
+# Heal a column-shifted Fund Criteria sheet / poisoned last-good before
+# rescoring. Without --force-sheet this is a no-op when config is healthy.
+say "repairing Fund Criteria if last-good or the sheet is poisoned"
+repair_json="$(run_cli --json repair-fund-criteria || true)"
+if printf '%s' "$repair_json" | grep -q '"repaired": true'; then
+  say "Fund Criteria repaired — forcing full rescore"
+  FORCE=1
+fi
+
 if [ "$before" != "$(run_git rev-parse HEAD)" ] || truthy "$FORCE"; then
   say "rescoring all companies under the current config"
   run_cli rescore --all
@@ -166,16 +139,10 @@ if command -v systemctl >/dev/null 2>&1; then
       fail=1
     fi
   done
-  load_hermes_env
-  if hermes_dashboard_expected; then
-    if dashboard_is_healthy; then
-      say "ok: hermes-dashboard.service"
-    else
-      say "error: hermes-dashboard.service is not serving UI after update"
-      systemctl status --no-pager --lines 20 hermes-dashboard.service || true
-      journalctl -u hermes-dashboard.service --no-pager -n 80 || true
-      fail=1
-    fi
+  # Hermes Agent control plane must not be public. If an old unit is still
+  # active, surface it as a warning (install.sh already tries to disable it).
+  if systemctl is-active --quiet hermes-dashboard.service 2>/dev/null; then
+    say "warn: hermes-dashboard.service is still active — control plane should be Telegram-only"
   fi
   [ "$fail" -eq 0 ] || exit 1
 fi

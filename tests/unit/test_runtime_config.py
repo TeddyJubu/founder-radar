@@ -18,7 +18,9 @@ from radar.config.loader import (
     canonical_fund_key,
     drop_legacy_website_qualifier,
     drop_legacy_admitting_qualifiers,
+    funds_are_poisoned,
     load_config,
+    load_last_good,
     load_runtime_config,
     parse_fund_criteria,
     save_snapshot,
@@ -100,7 +102,7 @@ def test_sheet_fund_display_names_canonicalize_to_score_keys():
     assert canonical_fund_key("Outward VC") == "outward"
     assert canonical_fund_key("Northstar Ventures") == "northstar"
     lists = default_config().lists
-    funds, _warnings, _cells = parse_fund_criteria(
+    funds, _warnings, _cells, layout_error = parse_fund_criteria(
         [
             ["Fund key", "Vehicle key", "Fund", "Vehicle", "Active", "Stage min",
              "Stage max", "Cheque min", "Cheque max", "Geo rule", "Geo values",
@@ -112,8 +114,160 @@ def test_sheet_fund_display_names_canonicalize_to_score_keys():
         ],
         lists=lists,
     )
+    assert layout_error is None
     assert [fund.key for fund in funds] == ["dsw"]
     assert funds[0].vehicles[0].vehicle_key == "seis_fund"
+
+
+def _seeded_fund_criteria_grid():
+    """The grid `seed_grids` writes for a blank Fund Criteria tab."""
+    from radar.render.formatting import FUND_CRITERIA_HEADERS
+
+    cfg = default_config()
+    grid = [list(FUND_CRITERIA_HEADERS)]
+    for vehicle in cfg.all_vehicles():
+        rejects = " · ".join(
+            f"{k}:{v}" for k, v in vehicle.hard_rejects.items()
+        ) if isinstance(vehicle.hard_rejects, dict) else str(vehicle.hard_rejects or "")
+        grid.append([
+            vehicle.fund_key, vehicle.vehicle_key, vehicle.fund_name,
+            vehicle.vehicle_name, "TRUE" if vehicle.active else "FALSE",
+            vehicle.stage_min or "", vehicle.stage_max or "",
+            vehicle.cheque_min or "", vehicle.cheque_max or "",
+            vehicle.geo_rule, ", ".join(vehicle.geo_values),
+            vehicle.max_age_years or "",
+            rejects,
+            ", ".join(vehicle.sectors_plus), ", ".join(vehicle.sectors_minus),
+            vehicle.one_liner, "",
+        ])
+    return grid
+
+
+def test_seeded_fund_criteria_round_trips_and_promotes_last_good(db):
+    """Clean defaults still become last-good after a sheet load."""
+    grid = _seeded_fund_criteria_grid()
+    funds, warnings, _cells, layout_error = parse_fund_criteria(
+        grid, lists=default_config().lists,
+    )
+    assert layout_error is None
+    assert not any("TRUE/FALSE" in w for w in warnings.values())
+    keys = {
+        (fund.key, vehicle.vehicle_key)
+        for fund in funds
+        for vehicle in fund.vehicles
+    }
+    assert ("dsw", "seis_fund") in keys
+    assert ("outward", "fund_ii") in keys
+    assert all(vk != "yes" for _, vk in keys)
+
+    result = load_config({"Fund Criteria": grid}, db=db)
+    assert not result.errors
+    row = db.one(
+        "SELECT config_json FROM config_snapshot WHERE is_last_good = 1"
+    )
+    assert row is not None
+    import json
+    payload = json.loads(row["config_json"])
+    vehicle_keys = [
+        v["vehicle_key"]
+        for fund in payload["funds"]
+        for v in fund["vehicles"]
+    ]
+    assert "yes" not in vehicle_keys
+    assert "seis_fund" in vehicle_keys
+
+
+def test_misaligned_active_in_column_b_does_not_poison_last_good(db):
+    """Live failure: Active YES in B → vehicle_key='yes', fund names = blurbs."""
+    good = default_config()
+    save_snapshot(db, good, is_last_good=True)
+    prior = db.one(
+        "SELECT config_hash FROM config_snapshot WHERE is_last_good = 1"
+    )["config_hash"]
+
+    # Fund key | Active | geography note | … — the signature that hit production.
+    poisoned = [
+        ["Fund key", "Active", "Note", "Vehicle", "Enabled", "Stage min",
+         "Stage max", "Cheque min", "Cheque max", "Geo rule", "Geo values",
+         "Max age (yrs)", "Hard rejects", "Sectors +", "Sectors −",
+         "One-liner"],
+        ["outward", "YES", "UK-based founders at entry", "Fund II", "TRUE",
+         "pre_seed", "series_a", "", "", "HARD", "uk_wide", "", "", "", "", ""],
+        ["dsw", "YES", "Regional UK preferred (not London-centric); UK founders",
+         "SEIS", "TRUE", "idea", "pre_seed", "", "", "HARD",
+         "outside_golden_triangle", "3", "", "", "", ""],
+    ]
+    funds, warnings, cells, layout_error = parse_fund_criteria(
+        poisoned, lists=default_config().lists,
+    )
+    assert layout_error is not None
+    assert funds == []
+    assert all(
+        "yes" not in (v.vehicle_key or "").lower()
+        for fund in funds
+        for v in fund.vehicles
+    )
+    assert any("TRUE/FALSE" in c.text or "shifted" in (layout_error or "").lower()
+               for c in cells) or layout_error
+
+    result = load_config({"Fund Criteria": poisoned}, db=db)
+    assert "fund_criteria" in result.errors or result.errors
+    assert result.used_last_good is True
+    assert all(
+        v.vehicle_key != "yes"
+        for fund in result.config.funds
+        for v in fund.vehicles
+    )
+    assert any(f.name == "Outward VC" for f in result.config.funds)
+    still = db.one(
+        "SELECT config_hash FROM config_snapshot WHERE is_last_good = 1"
+    )["config_hash"]
+    assert still == prior, "poisoned Fund Criteria must not replace last-good"
+
+
+def test_poisoned_last_good_is_healed_from_code_defaults(db):
+    """When sheet AND last-good are poison, defaults become the new last-good."""
+    import json
+
+    from radar.config.models import Fund, Vehicle
+
+    poison = default_config().model_copy(deep=True)
+    poison.funds = [
+        Fund(
+            key="outward",
+            name="UK-based founders at entry",
+            vehicles=[
+                Vehicle(
+                    fund_key="outward",
+                    vehicle_key="yes",
+                    fund_name="UK-based founders at entry",
+                    vehicle_name="Pre-Series A",
+                    active=True,
+                ),
+            ],
+        ),
+    ]
+    save_snapshot(db, poison, is_last_good=True)
+    assert funds_are_poisoned(load_last_good(db).funds)
+
+    poisoned_grid = [
+        ["Fund key", "Active", "Note", "Vehicle", "Enabled"],
+        ["outward", "YES", "UK-based founders at entry", "Fund II", "TRUE"],
+    ]
+    result = load_config({"Fund Criteria": poisoned_grid}, db=db)
+    assert result.healed_fund_criteria is True
+    assert not result.errors
+    assert not funds_are_poisoned(result.config.funds)
+    assert any(f.name == "Outward VC" for f in result.config.funds)
+    row = db.one(
+        "SELECT config_json FROM config_snapshot WHERE is_last_good = 1"
+    )
+    payload = json.loads(row["config_json"])
+    keys = [v["vehicle_key"] for f in payload["funds"] for v in f["vehicles"]]
+    assert "yes" not in keys
+    assert "fund_ii" in keys
+
+
 
 
 def test_run_pipeline_reads_sheet_settings_when_a_gateway_is_present(db):

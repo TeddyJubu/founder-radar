@@ -102,68 +102,66 @@ def test_web_surface_requires_a_password():
     _assert_caddy_has_no_committed_password(CADDYFILE.read_text())
 
 
-def test_hermes_dashboard_is_published_behind_caddy():
-    """hermes.<host> must keep a TLS cert across radar deploys.
+def test_hermes_host_is_tls_alias_to_review_ui():
+    """hermes.<host> terminates TLS for the review UI — not :9119.
 
-    install.sh used to write a radar-only Caddyfile. HTTP still 308'd the
-    hermes hostname to HTTPS, then the handshake aborted with
-    ERR_SSL_PROTOCOL_ERROR because Caddy had no cert for that SNI. The
-    installer must rewrite Caddy from git every time, append the hermes
-    site, and share the review-surface password. Host is rewritten to the
-    loopback bind so Hermes does not 400 Invalid Host after TLS works.
+    The Hermes Agent control plane stays Telegram-only. Publishing
+    hermes-dashboard on the public internet was the wrong product surface;
+    hermes.* shares the Caddy site address list with RADAR_WEB_DOMAIN and
+    reverse-proxies 127.0.0.1:8787 with the same basic auth.
     """
-    text = CADDYFILE_HERMES.read_text()
+    text = CADDYFILE.read_text()
     _assert_caddy_has_no_committed_password(text)
-    assert "{$HERMES_WEB_DOMAIN}" in text
-    assert "{$HERMES_DASHBOARD_UPSTREAM}" in text
-    assert "flush_interval -1" in text, "Chat WebSockets would buffer"
-    assert "header_up Host 127.0.0.1:9119" in text
-    assert "header_up Host {host}" not in text
-    assert "0.0.0.0" not in text
-
-    unit = HERMES_DASHBOARD_UNIT.read_text()
-    assert "hermes-dashboard.sh" in unit
-    assert "MemoryMax=700M" in unit
-    assert "0.0.0.0" not in unit
-
-    assert HERMES_DASHBOARD_SH.is_file()
-    assert os.access(HERMES_DASHBOARD_SH, os.X_OK), \
-        "hermes-dashboard.sh is not executable"
+    assert "{$RADAR_WEB_DOMAIN}, {$HERMES_WEB_DOMAIN}" in text
+    assert "reverse_proxy 127.0.0.1:8787" in text
+    assert "reverse_proxy" in text and text.count("reverse_proxy") == 1
+    assert "HERMES_DASHBOARD_UPSTREAM" not in text
+    # No second reverse_proxy target (legacy control-plane port).
+    assert "127.0.0.1:91" not in text
 
     installer = INSTALL_SH.read_text()
-    assert 'cat "$HERE/Caddyfile.hermes" >> /etc/caddy/Caddyfile' in installer
+    assert 'cat "$HERE/Caddyfile.hermes"' not in installer
     assert "leaving existing /etc/caddy/Caddyfile in place" not in installer
-    assert installer.index('cat "$HERE/Caddyfile.hermes"') < \
-        installer.index("systemctl reload caddy")
     assert 'hermes_domain="hermes.$web_domain"' in installer
-    assert "hermes-dashboard.service" in installer
+    assert "systemctl restart founder-radar-web.service" in installer
+    assert "systemctl restart caddy" in installer
+    assert "disable --now hermes-dashboard.service" in installer
+    assert "probe_hermes_dashboard" not in installer
+    assert "npm run build" not in installer
     assert "HERMES_DASHBOARD_PUBLIC_URL" in installer
-    assert "npm run build" in installer
-    assert "Frontend not built" in installer
-    assert "probe_hermes_dashboard" in installer
     assert "hermes.env" in installer
-    # Start on the binary alone. Requiring HERMES_USER left :9119 dead
-    # (Caddy 502) when install ran as root and only command -v found hermes.
-    assert 'if [ -n "${HERMES_BIN:-}" ]; then' in installer
-    assert '&& [ -n "${HERMES_USER:-}" ]' not in installer
-    assert "stat -c '%U'" in installer
     # Still never source .env (bcrypt `$2y$` under `set -u`).
     assert '. "$ENV_FILE"' not in installer
 
 
-def test_caddy_templates_compose_radar_and_hermes_sites():
-    """The files install.sh concatenates must be two named sites, not one."""
-    combined = CADDYFILE.read_text() + "\n" + CADDYFILE_HERMES.read_text()
-    assert "{$RADAR_WEB_DOMAIN}" in combined
-    assert "{$HERMES_WEB_DOMAIN}" in combined
-    assert combined.count("basic_auth") == 2
-    assert "127.0.0.1:8787" in combined
-    assert "127.0.0.1:9119" in combined
-    assert "tls internal" not in combined
+def test_public_caddyfile_has_no_control_plane_port():
+    """Public Caddy must only reverse-proxy the review UI."""
+    text = CADDYFILE.read_text()
+    assert "reverse_proxy 127.0.0.1:8787" in text
+    assert "127.0.0.1:91" not in text
+    installer = INSTALL_SH.read_text()
+    assert "127.0.0.1:91" not in installer
+    assert 'cat "$HERE/Caddyfile.hermes"' not in installer
+    assert not CADDYFILE_HERMES.is_file(), \
+        "Caddyfile.hermes must not ship — hermes.* is in the main Caddyfile"
+
+
+def test_legacy_hermes_dashboard_unit_stays_unpublished():
+    """Unit + wrapper may remain in deploy/ for local ops, but install must
+    not enable them. If present, they still bind loopback only."""
+    if HERMES_DASHBOARD_UNIT.is_file():
+        unit = HERMES_DASHBOARD_UNIT.read_text()
+        assert "0.0.0.0" not in unit
+        assert "MemoryMax=" in unit
+    if HERMES_DASHBOARD_SH.is_file():
+        assert os.access(HERMES_DASHBOARD_SH, os.X_OK), \
+            "hermes-dashboard.sh is not executable"
 
 
 def test_hermes_dashboard_wrapper_execs_loopback(tmp_path):
-    """The unit must bind loopback with --no-open, never 0.0.0.0."""
+    """If the legacy wrapper is invoked locally, it must bind loopback."""
+    if not HERMES_DASHBOARD_SH.is_file():
+        pytest.skip("hermes-dashboard.sh not present")
     fake = tmp_path / "hermes"
     args_path = tmp_path / "args"
     fake.write_text(
@@ -193,6 +191,8 @@ def test_hermes_dashboard_wrapper_execs_loopback(tmp_path):
 
 def test_hermes_dashboard_wrapper_fails_without_a_binary(tmp_path):
     """A green unit that execs nothing is how the URL stays blank."""
+    if not HERMES_DASHBOARD_SH.is_file():
+        pytest.skip("hermes-dashboard.sh not present")
     env_file = tmp_path / "hermes.env"
     env_file.write_text("HERMES_BIN=/no/such/hermes\nHERMES_HOME=%s\n" % tmp_path)
     path = str(tmp_path) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
@@ -243,8 +243,7 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "enable --now founder-radar-update.timer" in installer
     assert "chmod 755" in installer and "update-from-main.sh" in installer
     assert "references/today-check.md" in installer
-    assert "hermes-dashboard.sh" in installer
-    assert 'cat "$HERE/Caddyfile.hermes" >> /etc/caddy/Caddyfile' in installer
+    assert 'cat "$HERE/Caddyfile.hermes"' not in installer
     assert "leaving existing /etc/caddy/Caddyfile in place" not in installer
     # pip as radar from /root dies on an editable path hook. Pin the fix.
     assert 'cd "$APP_DIR"' in installer
@@ -256,12 +255,11 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "web_hash_set" in installer
 
     script = UPDATE_SCRIPT.read_text()
-    assert "hermes-dashboard.service" in script
-    assert "Frontend not built" in script
-    assert "not serving UI" in script
-    assert "HERMES_WEB_DOMAIN" in script
-    expected_fn = script.split("hermes_dashboard_expected()", 1)[1]
-    assert "HERMES_WEB_DOMAIN" in expected_fn
+    assert "repair-fund-criteria" in script
+    assert "rescore" in script and "--all" in script
+    assert "hermes_dashboard_expected" not in script
+    assert "Frontend not built" not in script
+    assert "not serving UI" not in script
 
     workflow = DEPLOY_WORKFLOW.read_text()
     assert "configured=false" in workflow

@@ -76,6 +76,15 @@ LEGACY_NON_ADMITTING_QUALIFIERS: tuple[tuple[str, str], ...] = (
 
 TRUE_TOKENS = frozenset({"yes", "y", "true", "t", "1", "✓", "✔", "on", "x", "☑", "enabled"})
 FALSE_TOKENS = frozenset({"no", "n", "false", "f", "0", "off", "", "—", "-", "n/a", "☐"})
+# Active?/YES landed in the Vehicle-key column once and poisoned last-good
+# (vehicle_key="yes", fund names = geography blurbs). These must never become
+# vehicle identities, even when the header row still looks plausible.
+BOOLEAN_VEHICLE_TOKENS = frozenset(
+    t for t in (TRUE_TOKENS | FALSE_TOKENS) if t and t not in {"—", "-", "n/a", "☐"}
+)
+_ACTIVE_HEADER_TOKENS = frozenset({
+    "active", "active?", "enabled", "enabled?", "on", "on?",
+})
 
 _MONEY = re.compile(
     r"^[£$€]?\s*(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?P<mult>[kKmMbB])?$"
@@ -276,6 +285,9 @@ class LoadResult:
     status_cells: list[StatusCell] = field(default_factory=list)
     used_last_good: bool = False
     seeded: list[str] = field(default_factory=list)
+    # True when Fund Criteria was poison and vehicles were taken from code
+    # defaults so a new last-good could be written (and the sheet tab rewritten).
+    healed_fund_criteria: bool = False
 
     def __iter__(self) -> Iterator[Any]:
         yield self.config
@@ -782,12 +794,93 @@ def _coerce_setting(key: str, raw: str, type_hint: str,
     return coerce_value(raw)
 
 
+def default_vehicle_keys() -> frozenset[str]:
+    """Canonical vehicle keys from code defaults — used to reject sheet poison."""
+    from radar.config.defaults import default_config
+
+    return frozenset(
+        vehicle.vehicle_key
+        for fund in default_config().funds
+        for vehicle in fund.vehicles
+    )
+
+
+def fund_criteria_header_shift(grid: Sequence[Sequence[Any]]) -> str | None:
+    """Detect Active?/YES sitting where Vehicle key belongs.
+
+    Headers are otherwise ignored by the positional parser; this is the one
+    place we read row 0 so a shifted tab cannot silently become last-good.
+    """
+    if not grid:
+        return None
+    header_b = _cell(grid[0], 1).strip().lower().rstrip("?")
+    if header_b in _ACTIVE_HEADER_TOKENS or header_b in BOOLEAN_VEHICLE_TOKENS:
+        return (
+            "Fund Criteria column B looks like Active, not Vehicle key — "
+            "columns are shifted; last-good was not updated"
+        )
+    header_a = _cell(grid[0], 0).strip().lower()
+    if header_a and "fund" not in header_a and header_a in _ACTIVE_HEADER_TOKENS:
+        return (
+            "Fund Criteria column A is not Fund key — columns are shifted; "
+            "last-good was not updated"
+        )
+    return None
+
+
+def _vehicle_identity_is_poison(raw_vehicle: str, vehicle_key: str) -> bool:
+    """True when Active YES/NO (or similar) was parsed as a vehicle key."""
+    raw = (raw_vehicle or "").strip().lower()
+    key = (vehicle_key or "").strip().lower()
+    if raw in BOOLEAN_VEHICLE_TOKENS or key in BOOLEAN_VEHICLE_TOKENS:
+        return True
+    return False
+
+
+def funds_are_poisoned(funds: Sequence[Fund]) -> bool:
+    """True when any vehicle key is Active TRUE/FALSE residue."""
+    for fund in funds:
+        for vehicle in fund.vehicles:
+            key = (vehicle.vehicle_key or "").strip().lower()
+            if key in BOOLEAN_VEHICLE_TOKENS:
+                return True
+    return False
+
+
+def fund_criteria_blocks_last_good(
+    funds: Sequence[Fund],
+    *,
+    layout_error: str | None = None,
+) -> str | None:
+    """Refuse last-good promotion when Fund Criteria is layout-poisoned.
+
+    Custom vehicle keys Aryan adds later are allowed; boolean tokens and the
+    known Active-in-B signature are not.
+    """
+    if layout_error:
+        return layout_error
+    for fund in funds:
+        for vehicle in fund.vehicles:
+            key = (vehicle.vehicle_key or "").strip().lower()
+            if key in BOOLEAN_VEHICLE_TOKENS:
+                return (
+                    f"Fund Criteria vehicle key '{vehicle.vehicle_key}' looks "
+                    "like Active TRUE/FALSE — columns are shifted; "
+                    "last-good was not updated"
+                )
+    return None
+
+
 def parse_fund_criteria(
     grid: Sequence[Sequence[Any]],
     *,
     lists: Mapping[str, Sequence[str]],
-) -> tuple[list[Fund], dict[str, str], list[StatusCell]]:
-    """One row per vehicle. Eleven of them by default (07-interfaces tab 4)."""
+) -> tuple[list[Fund], dict[str, str], list[StatusCell], str | None]:
+    """One row per vehicle. Eleven of them by default (07-interfaces tab 4).
+
+    Returns ``(funds, warnings, status_cells, layout_error)``. A non-None
+    ``layout_error`` means the tab must not become last-good.
+    """
     funds: dict[str, Fund] = {}
     warnings: dict[str, str] = {}
     cells: list[StatusCell] = []
@@ -795,12 +888,16 @@ def parse_fund_criteria(
     sectors = vocab(lists, "sector")
     geos = tuple(vocab(lists, "geography")) + tuple(vocab(lists, "gate_geography"))
     fund_alias, vehicle_alias = identity_aliases()
+    layout_error = fund_criteria_header_shift(grid)
+    data_rows_seen = 0
+    rows_kept = 0
 
     for offset, row in enumerate(grid[1:], start=2):
         raw_fund = _cell(row, 0).strip()
         raw_vehicle = _cell(row, 1).strip()
         if not raw_fund or not raw_vehicle:
             continue
+        data_rows_seen += 1
         fund_key = canonical_fund_key(raw_fund, fund_alias)
         vehicle_key = (
             vehicle_alias.get((fund_key, raw_vehicle.lower()))
@@ -809,6 +906,22 @@ def parse_fund_criteria(
         )
 
         notes: list[str] = []
+        if _vehicle_identity_is_poison(raw_vehicle, vehicle_key):
+            text = (
+                f"❌ '{raw_vehicle}' is not a vehicle key (looks like Active "
+                "TRUE/FALSE) — row ignored; fix column order"
+            )
+            cells.append(StatusCell(
+                "Fund Criteria", FUND_CRITERIA_STATUS_COL, offset, text, True,
+            ))
+            warnings[f"{fund_key}.{raw_vehicle.lower()}"] = text
+            if layout_error is None:
+                layout_error = (
+                    "Fund Criteria has Active TRUE/FALSE in the Vehicle key "
+                    "column — last-good was not updated"
+                )
+            continue
+
         raw_rejects = _cell(row, 12)
         for part in re.split(r"\s*·\s*|\s*;\s*", raw_rejects):
             part = part.strip().strip("`")
@@ -860,6 +973,7 @@ def parse_fund_criteria(
         if fund is None:
             fund = funds[fund_key] = Fund(key=fund_key, name=vehicle.fund_name)
         fund.vehicles.append(vehicle)
+        rows_kept += 1
 
         text = " · ".join(notes) if notes else OK
         cells.append(StatusCell("Fund Criteria", FUND_CRITERIA_STATUS_COL, offset,
@@ -867,7 +981,12 @@ def parse_fund_criteria(
         if notes:
             warnings[f"{fund_key}.{vehicle_key}"] = text
 
-    return list(funds.values()), warnings, cells
+    if data_rows_seen and rows_kept == 0 and layout_error is None:
+        layout_error = (
+            "Fund Criteria rows were all invalid — last-good was not updated"
+        )
+
+    return list(funds.values()), warnings, cells, layout_error
 
 
 def _enum_or_note(raw: str, allowed: Sequence[str], label: str,
@@ -1094,7 +1213,7 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
     last_good = load_last_good(db) if db is not None else None
 
     lists = parse_lists(raw.get("Lists") or [])
-    funds, fund_warnings, criteria_cells = parse_fund_criteria(
+    funds, fund_warnings, criteria_cells, layout_error = parse_fund_criteria(
         raw.get("Fund Criteria") or [], lists=lists)
 
     fund_alias, _ = identity_aliases()
@@ -1111,12 +1230,36 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
     overrides, errors, settings_cells = parse_settings(
         raw.get("Settings") or [], last_good=last_good, lists=lists)
 
+    block = fund_criteria_blocks_last_good(funds, layout_error=layout_error)
+    healed_from_defaults = False
+    used_last_good = False
+    if block:
+        prior_ok = (
+            last_good is not None
+            and last_good.funds
+            and not funds_are_poisoned(last_good.funds)
+        )
+        if prior_ok:
+            funds = list(last_good.funds)
+            used_last_good = True
+            errors["fund_criteria"] = f"❌ {block}"
+        else:
+            # Sheet is poison and last-good is missing or also poison — the
+            # live Aug 2026 failure mode. Fall back to code defaults and allow
+            # them to become the new last-good so Today can recover.
+            from radar.config.defaults import default_config
+
+            funds = list(default_config().funds)
+            healed_from_defaults = True
+            fund_warnings["fund_criteria"] = (
+                f"⚠️ {block}; reseeding vehicles from code defaults"
+            )
+
     sources = parse_sources(raw.get("Sources") or [])
     if not sources:
         sources = list(last_good.sources) if last_good else []
     sources = with_default_sources(sources)
 
-    used_last_good = False
     try:
         settings = Settings(**overrides)
     except ValidationError as exc:
@@ -1148,4 +1291,5 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
         warnings=warnings,
         status_cells=settings_cells + criteria_cells + weight_cells,
         used_last_good=used_last_good,
+        healed_fund_criteria=healed_from_defaults,
     )

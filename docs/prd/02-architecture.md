@@ -341,7 +341,7 @@ Also required, and cheap:
 | Claude Haiku 4.5 | pinned snapshot | Strict JSON schema support confirmed; ~£2.50/month at this volume. Provider is behind an `LLMClient` protocol, so Gemini Flash-Lite (10× cheaper) is a config change. **Pin a dated model ID, never an alias** — an alias silently rolls the model and turns golden tests into flaky tests. |
 | Playwright | latest | Opt-in per source only. Budget ~300 MB and 1–2 s per page against 5 MB and 50 ms for a plain request. Expect to need it for at most two sources. |
 | systemd timer | — | Survives Hermes upgrades and daemon crashes. |
-| Hermes Agent | 0.20.x | Telegram surface, plus an optional loopback web dashboard behind Caddy. `hermes send` works with no gateway running, which is the fallback path. |
+| Hermes Agent | 0.20.x | Telegram surface. `hermes.<host>` is a TLS alias to the review UI (:8787); the Agent control plane is not published. `hermes send` works with no gateway running, which is the fallback path. |
 
 ---
 
