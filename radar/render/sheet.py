@@ -193,10 +193,13 @@ class GspreadGateway:
 
 def open_gateway(sheet_id: str | None = None,
                  credentials_path: str | None = None) -> GspreadGateway:
-    """Authorise and open. Imported lazily so `founder-radar --help` stays fast."""
-    import gspread
-    from google.oauth2.service_account import Credentials
+    """Authorise and open. Imported lazily so `founder-radar --help` stays fast.
 
+    Env checks run *before* importing ``gspread`` / Google auth. A missing
+    ``SHEET_ID`` is the common local/CI path; paying 200ms+ to import those
+    packages only to raise made the first ``/api/verdict`` race short browser
+    waits (e.g. test_c16's 250ms).
+    """
     key = (sheet_id or os.environ.get("SHEET_ID")
            or os.environ.get("RADAR_SHEET_ID"))
     if not key:
@@ -204,6 +207,10 @@ def open_gateway(sheet_id: str | None = None,
     sa_path = credentials_path or os.environ.get("GOOGLE_SA_JSON")
     if not sa_path:
         raise RuntimeError("GOOGLE_SA_JSON is not set — run `founder-radar doctor`")
+
+    import gspread
+    from google.oauth2.service_account import Credentials
+
     creds = Credentials.from_service_account_file(sa_path, scopes=list(SCOPES))
     return GspreadGateway(gspread.authorize(creds).open_by_key(key))
 
@@ -994,6 +1001,32 @@ def _is_blank(grid: Sequence[Sequence[Any]]) -> bool:
     return not any(any(str(c).strip() for c in row if c is not None) for row in grid or [])
 
 
+def fund_criteria_seed_grid(cfg: Any | None = None) -> list[list[str]]:
+    """Canonical Fund Criteria tab from code defaults (or a supplied config)."""
+    cfg = cfg or _default_config()
+    grid = [list(HEADERS[FUND_CRITERIA])]
+    for vehicle in cfg.all_vehicles():
+        rejects = vehicle.hard_rejects
+        if isinstance(rejects, dict):
+            reject_text = " · ".join(
+                f"{k}:{_reject_value(v)}" for k, v in rejects.items()
+            )
+        else:
+            reject_text = _txt(rejects)
+        grid.append([
+            vehicle.fund_key, vehicle.vehicle_key, vehicle.fund_name,
+            vehicle.vehicle_name, "TRUE" if vehicle.active else "FALSE",
+            vehicle.stage_min or "", vehicle.stage_max or "",
+            _txt(vehicle.cheque_min), _txt(vehicle.cheque_max),
+            vehicle.geo_rule, ", ".join(vehicle.geo_values),
+            _txt(vehicle.max_age_years),
+            reject_text,
+            ", ".join(vehicle.sectors_plus), ", ".join(vehicle.sectors_minus),
+            vehicle.one_liner, "",
+        ])
+    return grid
+
+
 def seed_grids(existing: Mapping[str, Sequence[Sequence[Any]]]) -> dict[str, list[list[str]]]:
     """Write the editable tabs exactly once, when they are empty.
 
@@ -1014,20 +1047,7 @@ def seed_grids(existing: Mapping[str, Sequence[Sequence[Any]]]) -> dict[str, lis
         out[SETTINGS] = grid
 
     if _is_blank(existing.get(FUND_CRITERIA, [])):
-        grid = [list(HEADERS[FUND_CRITERIA])]
-        for vehicle in cfg.all_vehicles():
-            grid.append([
-                vehicle.fund_key, vehicle.vehicle_key, vehicle.fund_name,
-                vehicle.vehicle_name, "TRUE" if vehicle.active else "FALSE",
-                vehicle.stage_min or "", vehicle.stage_max or "",
-                _txt(vehicle.cheque_min), _txt(vehicle.cheque_max),
-                vehicle.geo_rule, ", ".join(vehicle.geo_values),
-                _txt(vehicle.max_age_years),
-                " · ".join(f"{k}:{_reject_value(v)}" for k, v in vehicle.hard_rejects.items()),
-                ", ".join(vehicle.sectors_plus), ", ".join(vehicle.sectors_minus),
-                vehicle.one_liner, "",
-            ])
-        out[FUND_CRITERIA] = grid
+        out[FUND_CRITERIA] = fund_criteria_seed_grid(cfg)
 
     if _is_blank(existing.get(SCORING_WEIGHTS, [])):
         out[SCORING_WEIGHTS] = _weights_grid(cfg)
@@ -1217,6 +1237,16 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
 
     result = load_config(raw, db=db)
     cfg = result.config
+    if result.healed_fund_criteria:
+        # Active YES landed in Vehicle key and poisoned scoring. Overwrite the
+        # tab with the canonical seed (intentional edits on a shifted layout
+        # are already unusable).
+        healed = fund_criteria_seed_grid(cfg)
+        raw[FUND_CRITERIA] = healed
+        width = col_letter(max(len(r) for r in healed) - 1)
+        seed_writes.append(
+            ValueRange(a1(FUND_CRITERIA, "A", 1, width, len(healed)), healed)
+        )
     lists, stripped = drop_legacy_admitting_qualifiers(cfg.lists, db)
     if stripped:
         cfg = cfg.model_copy(update={"lists": lists})

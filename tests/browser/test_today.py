@@ -428,7 +428,16 @@ def test_c16_back_navigation_does_not_reopen_a_decided_company(today):
     first_company_id = today.locator(tid("card")).get_attribute("data-company-id")
 
     today.keyboard.press("3")
-    today.wait_for_timeout(250)
+    # decide() is async (POST /api/verdict). Wait for the card to advance —
+    # a fixed 250ms sleep raced the cold Google-client import on first verdict.
+    today.wait_for_function(
+        """prev => {
+          const card = document.querySelector('[data-testid="card"]');
+          return !!(card && card.getAttribute('data-company-id') !== prev);
+        }""",
+        arg=first_company_id,
+        timeout=10_000,
+    )
     second_company_id = today.locator(tid("card")).get_attribute("data-company-id")
     today.keyboard.press("ArrowLeft")
 

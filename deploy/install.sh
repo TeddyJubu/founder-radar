@@ -115,11 +115,14 @@ for unit in founder-radar.service founder-radar.timer \
             founder-radar-heartbeat.service founder-radar-heartbeat.timer \
             founder-radar-backup.service founder-radar-backup.timer \
             founder-radar-web.service \
-            founder-radar-update.service founder-radar-update.timer \
-            hermes-dashboard.service; do
+            founder-radar-update.service founder-radar-update.timer; do
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
-chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh" "$HERE/hermes-dashboard.sh"
+chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh"
+# hermes-dashboard.sh remains in the tree for local ops, but is not published.
+if [ -f "$HERE/hermes-dashboard.sh" ]; then
+  chmod 755 "$HERE/hermes-dashboard.sh"
+fi
 
 install -m 644 "$HERE/logrotate.founder-radar" "$LOGROTATE_DIR/founder-radar"
 
@@ -128,6 +131,12 @@ systemctl enable --now founder-radar.timer
 systemctl enable --now founder-radar-heartbeat.timer
 systemctl enable --now founder-radar-backup.timer
 systemctl enable --now founder-radar-update.timer
+
+# Hermes Agent control plane stays Telegram-only. Older installs published
+# hermes-dashboard.service — stop and disable that unit if present.
+if systemctl cat hermes-dashboard.service >/dev/null 2>&1; then
+  systemctl disable --now hermes-dashboard.service 2>/dev/null || true
+fi
 
 # ------------------------------------------------------------- 4b. the review
 #
@@ -138,6 +147,9 @@ systemctl enable --now founder-radar-update.timer
 
 say "review surface"
 systemctl enable --now founder-radar-web.service
+# enable --now does not reload an already-running unit; always restart so
+# code and config already on disk become the live process.
+systemctl restart founder-radar-web.service
 
 unquote() {
   local v="$1"
@@ -169,10 +181,9 @@ done < "$ENV_FILE"
 
 # ------------------------------------------------------------------ 5. hermes
 #
-# Skill file plus the web dashboard. The chat gateway is still optional
-# (02-architecture §3); the dashboard is what https://hermes.<host>/ is.
-# Deleting the skill and hermes-dashboard.service costs the chat + UI
-# surfaces and nothing in radar/.
+# Skill file for Telegram chat. The Hermes Agent control plane is NOT
+# published on the public internet — hermes.<host> is a TLS alias for the
+# review UI (:8787), same basic auth as RADAR_WEB_DOMAIN.
 
 say "hermes"
 HERMES_ENV_FILE="${HERMES_ENV_FILE:-$ROOT/hermes.env}"
@@ -180,9 +191,6 @@ HERMES_USER="${HERMES_USER:-}"
 HERMES_HOME="${HERMES_HOME:-}"
 HERMES_BIN="${HERMES_BIN:-}"
 
-# Prefer a home that actually has the agent over "first /home/* with
-# .hermes". The updater runs as root (SUDO_USER empty), so a leftover
-# empty ~/.hermes on another account used to steal the dashboard User=.
 pick_hermes_home() {
   local home owner
   for home in /home/* /root; do
@@ -224,10 +232,6 @@ else
   done
 fi
 
-# install.sh runs as root. `command -v hermes` can succeed while
-# pick_hermes_home found no ~/.hermes owner — the dashboard then never
-# started and Caddy returned 502 on hermes.<host>. Own the process as
-# the binary's owner when we have no better account.
 if [ -n "$HERMES_BIN" ] && [ -z "$HERMES_USER" ]; then
   HERMES_USER="$(stat -c '%U' "$HERMES_BIN" 2>/dev/null || true)"
   if [ -n "$HERMES_USER" ] && [ -z "$HERMES_HOME" ]; then
@@ -264,119 +268,29 @@ if [ -z "$hermes_domain" ] && [ -n "$web_domain" ]; then
 fi
 
 write_hermes_env() {
-  local upstream="$1"
   {
     printf 'HERMES_USER=%s\n' "${HERMES_USER:-}"
     printf 'HERMES_HOME=%s\n' "${HERMES_HOME:-}"
     printf 'HERMES_BIN=%s\n' "${HERMES_BIN:-}"
     printf 'HERMES_WEB_DOMAIN=%s\n' "${hermes_domain:-}"
-    printf 'HERMES_DASHBOARD_UPSTREAM=%s\n' "$upstream"
-    printf 'HERMES_DASHBOARD_HOST=127.0.0.1\n'
-    printf 'HERMES_DASHBOARD_PORT=9119\n'
     if [ -n "$hermes_domain" ]; then
+      # Same review UI as RADAR_WEB_DOMAIN — not the Agent control plane.
       printf 'HERMES_DASHBOARD_PUBLIC_URL=https://%s\n' "$hermes_domain"
     fi
   } > "$HERMES_ENV_FILE"
   chmod 644 "$HERMES_ENV_FILE"
 }
 
-# Write a stub env first so Caddy and the unit can start (they source this).
-if [ -n "$HERMES_USER" ] || [ -n "$hermes_domain" ] || [ -n "${HERMES_BIN:-}" ]; then
-  write_hermes_env "127.0.0.1:9119"
+# Caddy needs HERMES_WEB_DOMAIN set whenever the review surface is published
+# (the site address list includes both hostnames).
+if [ -n "$web_domain" ]; then
+  write_hermes_env
+elif [ -n "$HERMES_USER" ] || [ -n "${HERMES_BIN:-}" ]; then
+  write_hermes_env
 fi
 
-build_hermes_spa() {
-  local agent_dir="$1"
-  [ -f "$agent_dir/web/package.json" ] || return 0
-  if ! command -v npm >/dev/null 2>&1; then
-    say "installing nodejs so the Hermes dashboard UI can be built"
-    apt-get install -y -qq nodejs npm || return 1
-  fi
-  command -v npm >/dev/null 2>&1 || return 1
-  say "building hermes dashboard frontend"
-  sudo -H -u "$HERMES_USER" env HOME="$HERMES_HOME" \
-    bash -c "cd \"$agent_dir/web\" && npm install --no-audit --no-fund && npm run build"
-}
-
-probe_hermes_dashboard() {
-  local tries="${1:-90}" i=0 code=""
-  dashboard_ok=0
-  : > /tmp/hermes-dash-probe.body
-  while [ "$i" -lt "$tries" ]; do
-    code="$(curl -sS --max-time 2 -o /tmp/hermes-dash-probe.body \
-      -w '%{http_code}' -H 'Host: 127.0.0.1:9119' \
-      http://127.0.0.1:9119/ 2>/dev/null || true)"
-    if [ -n "$code" ] && [ "$code" != "000" ]; then
-      if grep -qi 'Frontend not built' /tmp/hermes-dash-probe.body 2>/dev/null; then
-        say "error: dashboard SPA is not built — UI would be blank"
-        dashboard_ok=0
-        return 1
-      fi
-      dashboard_ok=1
-      say "hermes dashboard listening on 127.0.0.1:9119 (HTTP $code)"
-      return 0
-    fi
-    i=$((i + 1))
-    sleep 1
-  done
-  say "error: hermes dashboard did not answer on 127.0.0.1:9119"
-  return 1
-}
-
-if [ -n "${HERMES_BIN:-}" ]; then
-  agent_dir="${HERMES_HOME:-}/.hermes/hermes-agent"
-  if [ -n "${HERMES_USER:-}" ] && [ -x "$agent_dir/.venv/bin/pip" ]; then
-    say "ensuring hermes-agent[web] for the dashboard"
-    sudo -H -u "$HERMES_USER" env HOME="$HERMES_HOME" \
-      "$agent_dir/.venv/bin/pip" install --quiet -e "$agent_dir[web]" || \
-      say "pip install hermes-agent[web] failed — dashboard may refuse to start"
-  fi
-  dist="$agent_dir/hermes_cli/web_dist/index.html"
-  if [ -n "${HERMES_USER:-}" ] && [ -f "$agent_dir/web/package.json" ] && [ ! -f "$dist" ]; then
-    build_hermes_spa "$agent_dir" || \
-      say "frontend build failed — will probe and retry"
-  fi
-  mkdir -p "$UNIT_DIR/hermes-dashboard.service.d"
-  {
-    printf '[Service]\n'
-    if [ -n "${HERMES_USER:-}" ]; then
-      printf 'User=%s\n' "$HERMES_USER"
-      if id -gn "$HERMES_USER" >/dev/null 2>&1; then
-        printf 'Group=%s\n' "$(id -gn "$HERMES_USER")"
-      fi
-    fi
-    if [ -n "${HERMES_HOME:-}" ]; then
-      printf 'Environment=HOME=%s\n' "$HERMES_HOME"
-      printf 'WorkingDirectory=%s\n' "$HERMES_HOME"
-      printf 'ReadWritePaths=%s/.hermes\n' "$HERMES_HOME"
-    fi
-  } > "$UNIT_DIR/hermes-dashboard.service.d/user.conf"
-  systemctl daemon-reload
-  # Restart, not only start: a previous blank SPA or stale env stays
-  # loaded until the unit is bounced.
-  systemctl enable hermes-dashboard.service
-  systemctl restart hermes-dashboard.service || \
-    say "hermes-dashboard.service failed to start — see journalctl -u hermes-dashboard"
-  if ! probe_hermes_dashboard 90; then
-    if [ -n "${HERMES_USER:-}" ] && [ -f "$agent_dir/web/package.json" ]; then
-      say "retrying hermes dashboard frontend build"
-      if build_hermes_spa "$agent_dir"; then
-        systemctl restart hermes-dashboard.service || true
-        probe_hermes_dashboard 90 || true
-      fi
-    fi
-  fi
-else
-  say "hermes binary not found — dashboard stays unpublished on :9119"
-  dashboard_ok=0
-fi
-
-if [ -f "$HERMES_ENV_FILE" ]; then
-  write_hermes_env "127.0.0.1:9119"
-fi
-
-# Always rewrite Caddy from git. A radar-only file is how hermes.<host>
-# lost its cert (HTTP 308, then ERR_SSL_PROTOCOL_ERROR on HTTPS).
+# Always rewrite Caddy from git so hermes.<host> keeps a Let's Encrypt cert
+# as a TLS alias to the review UI (not the Agent dashboard).
 if [ -n "$web_domain" ] && [ "$web_hash_set" -eq 1 ]; then
   if ! command -v caddy >/dev/null 2>&1; then
     say "installing caddy"
@@ -389,11 +303,6 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
     apt-get update -qq && apt-get install -y -qq caddy
   fi
   install -m 644 "$HERE/Caddyfile" /etc/caddy/Caddyfile
-  if [ -n "$hermes_domain" ] && [ "$hermes_domain" != "$web_domain" ]; then
-    printf '\n' >> /etc/caddy/Caddyfile
-    cat "$HERE/Caddyfile.hermes" >> /etc/caddy/Caddyfile
-    say "publishing Hermes dashboard hostname $hermes_domain"
-  fi
   mkdir -p /etc/systemd/system/caddy.service.d
   {
     printf '[Service]\n'
@@ -402,10 +311,12 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
   } > /etc/systemd/system/caddy.service.d/override.conf
   systemctl daemon-reload
   systemctl enable --now caddy
-  systemctl reload caddy 2>/dev/null || systemctl restart caddy
+  # Restart (not reload-only): pick up EnvironmentFile + re-issue certs for
+  # the hermes.* alias when it is newly added to the site address list.
+  systemctl restart caddy
   say "review surface live at https://$web_domain (password required)"
   if [ -n "$hermes_domain" ] && [ "$hermes_domain" != "$web_domain" ]; then
-    say "Hermes dashboard at https://$hermes_domain (same password)"
+    say "Hermes hostname https://$hermes_domain is a TLS alias to the same review UI"
   fi
 else
   say "RADAR_WEB_DOMAIN / RADAR_WEB_PASS_HASH not set in $ENV_FILE"
