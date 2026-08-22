@@ -40,6 +40,9 @@ load_hermes_env() {
 }
 
 hermes_dashboard_expected() {
+  # A published hermes.<host> with nothing on :9119 is HTTP 502.
+  # Reinstall even when HERMES_BIN was blank in hermes.env.
+  [ -n "${HERMES_WEB_DOMAIN:-}" ] && return 0
   [ -n "${HERMES_BIN:-}" ] && [ -x "${HERMES_BIN}" ]
 }
 

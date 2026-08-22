@@ -133,7 +133,6 @@ def test_hermes_dashboard_is_published_behind_caddy():
     installer = INSTALL_SH.read_text()
     assert 'cat "$HERE/Caddyfile.hermes" >> /etc/caddy/Caddyfile' in installer
     assert "leaving existing /etc/caddy/Caddyfile in place" not in installer
-    assert "systemctl reload caddy" in installer
     assert installer.index('cat "$HERE/Caddyfile.hermes"') < \
         installer.index("systemctl reload caddy")
     assert 'hermes_domain="hermes.$web_domain"' in installer
@@ -143,6 +142,11 @@ def test_hermes_dashboard_is_published_behind_caddy():
     assert "Frontend not built" in installer
     assert "probe_hermes_dashboard" in installer
     assert "hermes.env" in installer
+    # Start on the binary alone. Requiring HERMES_USER left :9119 dead
+    # (Caddy 502) when install ran as root and only command -v found hermes.
+    assert 'if [ -n "${HERMES_BIN:-}" ]; then' in installer
+    assert '&& [ -n "${HERMES_USER:-}" ]' not in installer
+    assert "stat -c '%U'" in installer
     # Still never source .env (bcrypt `$2y$` under `set -u`).
     assert '. "$ENV_FILE"' not in installer
 
@@ -254,6 +258,9 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "hermes-dashboard.service" in script
     assert "Frontend not built" in script
     assert "not serving UI" in script
+    assert "HERMES_WEB_DOMAIN" in script
+    expected_fn = script.split("hermes_dashboard_expected()", 1)[1]
+    assert "HERMES_WEB_DOMAIN" in expected_fn
 
     workflow = DEPLOY_WORKFLOW.read_text()
     assert "configured=false" in workflow

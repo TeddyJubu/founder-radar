@@ -215,6 +215,24 @@ if [ -n "$HERMES_HOME" ] && [ -x "$HERMES_HOME/.local/bin/hermes" ]; then
   HERMES_BIN="$HERMES_HOME/.local/bin/hermes"
 elif command -v hermes >/dev/null 2>&1; then
   HERMES_BIN="$(command -v hermes)"
+else
+  for candidate in /usr/local/bin/hermes /usr/bin/hermes; do
+    if [ -x "$candidate" ]; then
+      HERMES_BIN="$candidate"
+      break
+    fi
+  done
+fi
+
+# install.sh runs as root. `command -v hermes` can succeed while
+# pick_hermes_home found no ~/.hermes owner — the dashboard then never
+# started and Caddy returned 502 on hermes.<host>. Own the process as
+# the binary's owner when we have no better account.
+if [ -n "$HERMES_BIN" ] && [ -z "$HERMES_USER" ]; then
+  HERMES_USER="$(stat -c '%U' "$HERMES_BIN" 2>/dev/null || true)"
+  if [ -n "$HERMES_USER" ] && [ -z "$HERMES_HOME" ]; then
+    HERMES_HOME="$(getent passwd "$HERMES_USER" | cut -d: -f6 || true)"
+  fi
 fi
 
 install_skill() {
@@ -305,29 +323,33 @@ probe_hermes_dashboard() {
   return 1
 }
 
-if [ -n "${HERMES_BIN:-}" ] && [ -n "${HERMES_USER:-}" ]; then
-  agent_dir="$HERMES_HOME/.hermes/hermes-agent"
-  if [ -x "$agent_dir/.venv/bin/pip" ]; then
+if [ -n "${HERMES_BIN:-}" ]; then
+  agent_dir="${HERMES_HOME:-}/.hermes/hermes-agent"
+  if [ -n "${HERMES_USER:-}" ] && [ -x "$agent_dir/.venv/bin/pip" ]; then
     say "ensuring hermes-agent[web] for the dashboard"
     sudo -H -u "$HERMES_USER" env HOME="$HERMES_HOME" \
       "$agent_dir/.venv/bin/pip" install --quiet -e "$agent_dir[web]" || \
       say "pip install hermes-agent[web] failed — dashboard may refuse to start"
   fi
   dist="$agent_dir/hermes_cli/web_dist/index.html"
-  if [ -f "$agent_dir/web/package.json" ] && [ ! -f "$dist" ]; then
+  if [ -n "${HERMES_USER:-}" ] && [ -f "$agent_dir/web/package.json" ] && [ ! -f "$dist" ]; then
     build_hermes_spa "$agent_dir" || \
       say "frontend build failed — will probe and retry"
   fi
   mkdir -p "$UNIT_DIR/hermes-dashboard.service.d"
   {
     printf '[Service]\n'
-    printf 'User=%s\n' "$HERMES_USER"
-    if id -gn "$HERMES_USER" >/dev/null 2>&1; then
-      printf 'Group=%s\n' "$(id -gn "$HERMES_USER")"
+    if [ -n "${HERMES_USER:-}" ]; then
+      printf 'User=%s\n' "$HERMES_USER"
+      if id -gn "$HERMES_USER" >/dev/null 2>&1; then
+        printf 'Group=%s\n' "$(id -gn "$HERMES_USER")"
+      fi
     fi
-    printf 'Environment=HOME=%s\n' "$HERMES_HOME"
-    printf 'WorkingDirectory=%s\n' "$HERMES_HOME"
-    printf 'ReadWritePaths=%s/.hermes\n' "$HERMES_HOME"
+    if [ -n "${HERMES_HOME:-}" ]; then
+      printf 'Environment=HOME=%s\n' "$HERMES_HOME"
+      printf 'WorkingDirectory=%s\n' "$HERMES_HOME"
+      printf 'ReadWritePaths=%s/.hermes\n' "$HERMES_HOME"
+    fi
   } > "$UNIT_DIR/hermes-dashboard.service.d/user.conf"
   systemctl daemon-reload
   # Restart, not only start: a previous blank SPA or stale env stays
@@ -336,7 +358,7 @@ if [ -n "${HERMES_BIN:-}" ] && [ -n "${HERMES_USER:-}" ]; then
   systemctl restart hermes-dashboard.service || \
     say "hermes-dashboard.service failed to start — see journalctl -u hermes-dashboard"
   if ! probe_hermes_dashboard 90; then
-    if [ -f "$agent_dir/web/package.json" ]; then
+    if [ -n "${HERMES_USER:-}" ] && [ -f "$agent_dir/web/package.json" ]; then
       say "retrying hermes dashboard frontend build"
       if build_hermes_spa "$agent_dir"; then
         systemctl restart hermes-dashboard.service || true
