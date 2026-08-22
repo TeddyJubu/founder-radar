@@ -25,6 +25,30 @@ from tests.browser.conftest import tid
 
 pytestmark = pytest.mark.browser
 
+
+def _review_each_card(page, count: int, key: str) -> None:
+    """Press a verdict key once per card and wait for the queue to advance.
+
+    `decide()` is async (POST /api/verdict). A short sleep lets a second
+    keypress hit the same company while the fetch is in flight; that press
+    is swallowed (`sessionReviewed`) and the done-state never arrives.
+    """
+    for _ in range(count):
+        if page.locator(tid("done-state")).count():
+            return
+        company_id = page.locator(tid("card")).get_attribute("data-company-id")
+        page.keyboard.press(key)
+        page.wait_for_function(
+            """prev => {
+              const done = document.querySelector('[data-testid="done-state"]');
+              if (done) return true;
+              const card = document.querySelector('[data-testid="card"]');
+              return !!(card && card.getAttribute('data-company-id') !== prev);
+            }""",
+            arg=company_id,
+            timeout=10_000,
+        )
+
 PLACEHOLDERS = ("undefined", "null", "NaN", "[object Object]", "(None)")
 
 VIEWPORTS = [
@@ -344,9 +368,7 @@ def test_c9_toast_auto_hides(today):
 
 
 def test_c10_c11_reviewing_everything_reaches_the_done_state(today, api):
-    for _ in range(len(api["companies"])):
-        today.keyboard.press("2")
-        today.wait_for_timeout(120)
+    _review_each_card(today, len(api["companies"]), "2")
     today.wait_for_selector(tid("done-state"))
     assert "reviewed" in today.locator(tid("done-state")).inner_text()
     assert today.locator(tid("verdict-bar")).is_hidden()
@@ -368,10 +390,7 @@ def test_c15_review_again_restores_the_daily_queue(today, server):
         current_api = json.loads(response.read())
     first_company_id = current_api["companies"][0]["company_id"]
 
-    for _ in range(len(current_api["companies"])):
-        today.keyboard.press("3")
-        today.wait_for_timeout(120)
-
+    _review_each_card(today, len(current_api["companies"]), "3")
     today.wait_for_selector(tid("done-state"))
     today.locator(tid("review-again")).click()
     today.wait_for_selector(tid("card"))
