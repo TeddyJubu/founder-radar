@@ -80,7 +80,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Score number | `score-value` | | rounded display text; two per card |
 | Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
 | Score hint | `score-hint` | | one-line explainer under the tiles |
-| Fund score grid | `fund-scores` | | all four fund-specific Match values |
+| Fund score grid | `fund-scores` | | all four fund-specific Match values, drawn as named bars |
 | Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank when unscored or rejected |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
@@ -94,7 +94,8 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Footnote row | `card-footnote` | | |
 | Coverage note | `coverage-note` | `data-coverage` | present only when `thin` |
 | Caveat | `caveat` | `data-flag` | raw flag name, e.g. `age_unknown` |
-| Also fits | `also-fits` | | absent when no other fund matched |
+| Also fits | `also-fits` | | absent when no other fund matched — never a generic “several funds can match” caption |
+| Fit criteria panel | `criteria-panel` | `data-panel` = `matched` / `missing` / `against` | present only when that bucket has rows. Unknown fit rows go in `missing`; missed fit rows go in `against`; met/partial in `matched`. Edge rows stay in `criteria-group[data-group=edge]` |
 | Progress | `progress` | | |
 | Progress dot | `progress-dot` | `data-state` = `done` / `now` / `todo` | |
 | Verdict bar | `verdict-bar` | | `hidden` on the done state |

@@ -221,43 +221,59 @@ figcaption {
     </div>
 
     <figure>
-      <svg viewBox="0 0 640 260" role="img"
-           aria-label="An annotated company card showing the name, the two scores, the fund it suits, and the reason it was chosen.">
-        <rect x="0" y="0" width="440" height="250" rx="14"
+      <svg viewBox="0 0 640 300" role="img"
+           aria-label="An annotated company card showing what the company does, which funds match, who to send it to, and why it is new.">
+        <rect x="0" y="0" width="440" height="290" rx="14"
               fill="var(--bg-3)" stroke="var(--separator)"/>
-        <text x="24" y="46" font-size="22" font-weight="700" fill="var(--label)">Kelvin Bio</text>
-        <text x="24" y="68" font-size="12" fill="var(--label-2)">Newcastle · started 2 months ago</text>
+        <rect x="16" y="16" width="28" height="28" rx="7" fill="var(--blue-fill)"/>
+        <text x="30" y="36" font-size="14" font-weight="700" text-anchor="middle" fill="#fff">K</text>
+        <text x="52" y="30" font-size="16" font-weight="700" fill="var(--label)">Kelvin Bio</text>
+        <text x="52" y="48" font-size="11" fill="var(--label-2)">Newcastle · Life sciences · 2 months</text>
+        <text x="16" y="76" font-size="12" fill="var(--label)">Therapies for Parkinson’s.</text>
+        <text x="16" y="96" font-size="11" fill="var(--label-2)">Source: Northern Accelerator ↗</text>
 
-        <rect x="286" y="22" width="66" height="60" rx="9" fill="var(--fill)"/>
-        <text x="319" y="58" font-size="22" font-weight="600" text-anchor="middle" fill="var(--green)">88</text>
-        <text x="319" y="72" font-size="9" text-anchor="middle" fill="var(--label-2)">FIT</text>
-        <rect x="358" y="22" width="66" height="60" rx="9" fill="var(--fill)"/>
-        <text x="391" y="58" font-size="22" font-weight="600" text-anchor="middle" fill="var(--green)">90</text>
-        <text x="391" y="72" font-size="9" text-anchor="middle" fill="var(--label-2)">EDGE</text>
+        <text x="300" y="30" font-size="10" font-weight="600" fill="var(--label-2)">Northstar</text>
+        <text x="424" y="30" font-size="10" font-weight="600" text-anchor="end" fill="var(--green)">88%</text>
+        <rect x="300" y="36" width="124" height="6" rx="3" fill="var(--fill)"/>
+        <rect x="300" y="36" width="109" height="6" rx="3" fill="var(--blue-fill)"/>
+        <text x="300" y="58" font-size="10" font-weight="600" fill="var(--label-2)">DSW</text>
+        <text x="424" y="58" font-size="10" font-weight="600" text-anchor="end" fill="var(--label)">71%</text>
+        <rect x="300" y="64" width="124" height="6" rx="3" fill="var(--fill)"/>
+        <rect x="300" y="64" width="88" height="6" rx="3" fill="var(--blue-fill)"/>
 
-        <rect x="24" y="96" width="392" height="46" rx="9"
+        <rect x="16" y="114" width="408" height="42" rx="9"
               fill="color-mix(in srgb, var(--blue) 8%, transparent)"
               stroke="color-mix(in srgb, var(--blue) 22%, transparent)"/>
-        <text x="40" y="116" font-size="13" font-weight="600" fill="var(--label)">Northstar Ventures</text>
-        <text x="40" y="132" font-size="11" fill="var(--label-2)">Spinout Inspire Fund · £200k–£750k</text>
+        <text x="28" y="132" font-size="10" font-weight="600" fill="var(--blue)">SEND TO</text>
+        <text x="28" y="148" font-size="12" font-weight="600" fill="var(--label)">Northstar · Spinout Inspire · £200k–£750k</text>
 
-        <text x="24" y="168" font-size="12" fill="var(--label)">Found via Northern Accelerator. Matches on</text>
-        <text x="24" y="186" font-size="12" fill="var(--label)">location, sector and founder background.</text>
-        <rect x="24" y="204" width="120" height="26" rx="13" fill="var(--fill)"/>
-        <text x="40" y="221" font-size="11" fill="var(--label)">the proof ↗</text>
+        <rect x="16" y="168" width="200" height="54" rx="9" fill="var(--fill)"/>
+        <text x="28" y="188" font-size="10" font-weight="600" fill="var(--label)">Why it matches</text>
+        <circle cx="32" cy="206" r="5" fill="none" stroke="var(--green)" stroke-width="1.5"/>
+        <path d="M29.5 206 l2 2 3.5-4" fill="none" stroke="var(--green)" stroke-width="1.5"/>
+        <text x="42" y="210" font-size="11" fill="var(--label)">North East · spinout</text>
+        <rect x="224" y="168" width="200" height="54" rx="9" fill="var(--fill)"/>
+        <text x="236" y="188" font-size="10" font-weight="600" fill="var(--label)">Missing info</text>
+        <circle cx="240" cy="206" r="5" fill="none" stroke="var(--label-3)" stroke-width="1.5" stroke-dasharray="2 2"/>
+        <text x="250" y="210" font-size="11" fill="var(--label-2)">Revenue / traction</text>
 
-        <!-- pointers -->
-        <path d="M470 52 H452" stroke="var(--label-3)" stroke-width="1.5"/>
-        <text x="478" y="50" font-size="11" font-weight="600" fill="var(--label)">Two scores</text>
-        <text x="478" y="64" font-size="11" fill="var(--label-2)">explained below</text>
-        <path d="M470 120 H432" stroke="var(--label-3)" stroke-width="1.5"/>
-        <text x="478" y="118" font-size="11" font-weight="600" fill="var(--label)">Who to send it to</text>
-        <text x="478" y="132" font-size="11" fill="var(--label-2)">and the cheque size</text>
-        <path d="M470 200 H432" stroke="var(--label-3)" stroke-width="1.5"/>
-        <text x="478" y="198" font-size="11" font-weight="600" fill="var(--label)">Why it's here</text>
-        <text x="478" y="212" font-size="11" fill="var(--label-2)">with links to check</text>
+        <rect x="16" y="232" width="408" height="42" rx="9" fill="var(--fill)"/>
+        <text x="28" y="250" font-size="10" font-weight="600" fill="var(--label)">Why it's new</text>
+        <circle cx="32" cy="264" r="5" fill="none" stroke="var(--green)" stroke-width="1.5"/>
+        <path d="M29.5 264 l2 2 3.5-4" fill="none" stroke="var(--green)" stroke-width="1.5"/>
+        <text x="42" y="268" font-size="11" fill="var(--label)">First public announcement · from the register</text>
+
+        <path d="M470 40 H440" stroke="var(--label-3)" stroke-width="1.5"/>
+        <text x="478" y="38" font-size="11" font-weight="600" fill="var(--label)">Which fund</text>
+        <text x="478" y="52" font-size="11" fill="var(--label-2)">every match, not just one</text>
+        <path d="M470 132 H428" stroke="var(--label-3)" stroke-width="1.5"/>
+        <text x="478" y="130" font-size="11" font-weight="600" fill="var(--label)">Who to send it to</text>
+        <text x="478" y="144" font-size="11" fill="var(--label-2)">and the cheque size</text>
+        <path d="M470 252 H428" stroke="var(--label-3)" stroke-width="1.5"/>
+        <text x="478" y="250" font-size="11" font-weight="600" fill="var(--label)">Why it matters now</text>
+        <text x="478" y="264" font-size="11" fill="var(--label-2)">new, not already known</text>
       </svg>
-      <figcaption>Everything you need to decide, on one screen.</figcaption>
+      <figcaption>What it is, which fund, and why now — on one screen.</figcaption>
     </figure>
   </section>
 

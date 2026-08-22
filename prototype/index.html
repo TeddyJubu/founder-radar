@@ -13,7 +13,7 @@
   min-height: 100%;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  max-width: 780px;
+  max-width: 880px;
   margin: 0 auto;
   padding: 0 var(--s5);
 }
@@ -135,6 +135,9 @@ main {
   border: 0.5px solid var(--separator);
   animation: rise .42s var(--spring) both;
 }
+/* Scan path, not chrome: what the company is, which funds match, who to
+   send it to, then why it matches / what's missing / why it's new. Numbers
+   still come from the API; this only rearranges them. */
 @keyframes rise {
   from { opacity: 0; transform: translateY(10px) scale(0.995); }
   to   { opacity: 1; transform: none; }
@@ -147,16 +150,37 @@ main {
     color-mix(in srgb, var(--orange) 5%, var(--bg-3)) 0%, var(--bg-3) 190px);
 }
 
-.top { display: flex; gap: var(--s5); align-items: flex-start; }
-.ident { min-width: 0; flex: 1; }
-
-h2 {
-  font-size: var(--large-title); line-height: var(--large-title-lh);
-  font-weight: 700; letter-spacing: -0.5px; margin: 0 0 var(--s2);
+/* What it is (left) and which funds match (right). Stacks on a phone. */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.9fr);
+  gap: var(--s5);
+  align-items: start;
+}
+.ident { min-width: 0; }
+.ident-head {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 2px var(--s3);
+  align-items: start;
+}
+.mark {
+  grid-row: 1 / span 2;
+  width: 40px; height: 40px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--blue-fill); color: #fff;
+  font-size: 17px; line-height: 1; font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.card h2 {
+  grid-column: 2;
+  font-size: 28px; line-height: 32px;
+  font-weight: 700; letter-spacing: -0.4px; margin: 0;
   overflow-wrap: anywhere;
 }
 .meta {
-  font-size: var(--subhead); line-height: var(--subhead-lh);
+  grid-column: 2;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
   color: var(--label-2);
   display: flex; flex-wrap: wrap; gap: var(--s2) 0;
 }
@@ -178,54 +202,81 @@ h2 {
    younger / less covered / register-first. Testids stay score-fit / score-edge
    so the API contract does not churn. */
 .scores {
-  display: flex; flex-direction: column; align-items: flex-end;
-  gap: var(--s2); flex: none;
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: var(--s3); min-width: 0;
 }
 .score-row { display: flex; gap: var(--s2); }
 .score {
-  width: 84px; padding: var(--s3) var(--s2) var(--s2);
+  flex: 1; min-width: 0;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s2);
+  padding: 8px 10px;
   background: var(--fill); border-radius: var(--r-control);
-  text-align: center;
   cursor: help;
 }
 .score-fit {
-  width: 96px; padding: var(--s3) var(--s3) var(--s2);
   background: color-mix(in srgb, var(--blue) 8%, var(--fill));
   border: 0.5px solid color-mix(in srgb, var(--blue) 18%, transparent);
 }
 .score .n {
-  font-size: 30px; line-height: 34px; font-weight: 600;
-  letter-spacing: -0.6px; font-variant-numeric: tabular-nums;
+  font-size: 22px; line-height: 26px; font-weight: 600;
+  letter-spacing: -0.4px; font-variant-numeric: tabular-nums;
 }
-.score-fit .n { font-size: 34px; line-height: 36px; }
 .score .k {
   font-size: var(--caption); line-height: var(--caption-lh);
   color: var(--label-2); text-transform: uppercase; letter-spacing: 0.4px;
-  margin-top: 2px;
 }
 .score-hint {
-  max-width: 180px;
   font-size: var(--caption); line-height: var(--caption-lh);
-  color: var(--label-3); text-align: right;
+  color: var(--label-3);
 }
 .fund-scores {
-  width: 100%; max-width: 360px;
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+  width: 100%;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .fund-score {
-  min-width: 0; padding: 6px 4px 5px;
+  min-width: 0; padding: 8px 10px 10px;
   background: var(--fill); border: 0.5px solid var(--separator);
-  border-radius: var(--r-control); text-align: center; cursor: help;
+  border-radius: var(--r-control); cursor: help;
+}
+.fund-score.best {
+  background: color-mix(in srgb, var(--blue) 8%, var(--fill));
+  border-color: color-mix(in srgb, var(--blue) 22%, transparent);
+}
+.fund-score-top {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s2);
 }
 .fund-score .n {
-  font-size: 16px; line-height: 19px; font-weight: 600;
+  flex: none;
+  font-size: 15px; line-height: 20px; font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .fund-score .k {
-  margin-top: 2px; font-size: 10px; line-height: 12px;
-  color: var(--label-2); white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  color: var(--label); font-weight: 510;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.fund-bar {
+  margin-top: 6px; height: 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--label) 12%, transparent);
+  overflow: hidden;
+}
+.fund-bar-fill {
+  display: block; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue-fill), var(--purple));
+}
+.fund-score[data-tier="reject"] .fund-bar-fill,
+.fund-score[data-tier="unscored"] .fund-bar-fill {
+  background: var(--label-3);
+}
+.fund-note {
+  margin: 2px 0 0;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  color: var(--label-3);
+}
+.fund-note strong { color: var(--label); font-weight: 500; }
 .fund-score.high .n { color: var(--green); }
 .fund-score.mid .n { color: var(--label); }
 .fund-score.low .n { color: var(--orange); }
@@ -243,6 +294,13 @@ h2 {
   border-radius: var(--r-control);
   background: color-mix(in srgb, var(--blue) 8%, transparent);
   border: 0.5px solid color-mix(in srgb, var(--blue) 22%, transparent);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s3);
+}
+.route-kicker {
+  flex: none;
+  font-size: var(--caption); line-height: var(--caption-lh);
+  font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--blue);
 }
 .route .fund {
   font-size: var(--headline); line-height: var(--headline-lh); font-weight: 600;
@@ -254,10 +312,9 @@ h2 {
 /* Company description leads when we have one. Absent means absent — a
    registry-only company is not described by inventing a SIC paraphrase. */
 .blurb {
-  margin: var(--s5) 0 0;
+  margin: var(--s4) 0 0;
   font-size: var(--headline); line-height: var(--headline-lh);
   font-weight: 510; color: var(--label);
-  max-width: 40rem;
 }
 
 /* The spec's explanation, still verbatim — each template clause on its own
@@ -299,6 +356,19 @@ h2 {
 .ledger { margin: var(--s5) 0 0; display: flex; flex-direction: column; gap: var(--s4); }
 
 .led-group { display: flex; flex-direction: column; gap: var(--s1); }
+
+.led-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: var(--s3);
+}
+.led-panel {
+  min-width: 0;
+  padding: var(--s4);
+  background: var(--fill);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--r-control);
+}
 
 .led-head {
   display: flex; align-items: baseline; gap: var(--s2);
@@ -365,6 +435,33 @@ h2 {
   max-width: 52ch;
 }
 
+.why-new-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
+  gap: 0.5px;
+  margin: 0; padding: 0;
+  background: var(--separator);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--r-control);
+  overflow: hidden;
+}
+.why-new-items .led-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-areas:
+    "icon name"
+    "icon val"
+    ".    gloss";
+  gap: 2px var(--s2);
+  padding: 10px var(--s4);
+  border: 0;
+  background: var(--bg-3);
+}
+.why-new-items .led-ic { grid-area: icon; transform: none; align-self: start; }
+.why-new-items .led-name { grid-area: name; }
+.why-new-items .led-val { grid-area: val; text-align: left; }
+.why-new-items .led-gloss { grid-area: gloss; max-width: none; }
+
 /* The original sentence, kept verbatim and one tap away. Nothing here
    paraphrases it; the ledger is the same data, not a retelling. */
 .why-full { margin: var(--s4) 0 0; }
@@ -391,7 +488,19 @@ h2 {
   .why-full > summary::after { transition: none; }
 }
 
-.evidence { margin: var(--s5) 0 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.evidence { margin: var(--s4) 0 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.source-row {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--s2) var(--s3);
+  width: 100%;
+}
+.source-caption {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 0;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  color: var(--label-2);
+}
+.source-ic { flex: none; color: var(--label-3); }
 .ev {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px var(--s3);
@@ -405,16 +514,16 @@ h2 {
 .ev:active { transform: scale(0.97); }
 .ev .chev { color: var(--label-3); }
 
-/* The way back to the source is the one link on this card worth pressing, so
-   it is filled while the rest stay quiet pills. Deliberately NOT competing
-   with the verdict bar: this is blue and inline, those are the decision. */
+/* The way back to the source is the one link on this card worth pressing.
+   Outlined, not filled: the filled control is the verdict, not the article. */
 .ev.primary {
-  background: var(--blue-fill);
-  color: #fff;
+  background: transparent;
+  color: var(--blue);
   font-weight: 590;
+  border: 0.5px solid color-mix(in srgb, var(--blue) 55%, var(--separator));
 }
-.ev.primary:hover { background: color-mix(in srgb, #fff 12%, var(--blue-fill)); }
-.ev.primary .chev { color: color-mix(in srgb, #fff 65%, transparent); }
+.ev.primary:hover { background: color-mix(in srgb, var(--blue) 10%, transparent); }
+.ev.primary .chev { color: var(--blue); }
 
 .foot {
   margin-top: var(--s5); padding-top: var(--s4);
@@ -485,10 +594,11 @@ button.no  { color: var(--red); }
   text-align: center; padding: var(--s8) var(--s5);
   animation: rise .42s var(--spring) both;
 }
+.empty h2,
+.done-state h2 { font-size: var(--title2); line-height: var(--title2-lh); }
 .done-state .tick {
   font-size: 56px; line-height: 1; color: var(--green); margin-bottom: var(--s4);
 }
-.done-state h2 { font-size: var(--title2); line-height: var(--title2-lh); }
 .done-state p { color: var(--label-2); font-size: var(--subhead); }
 .done-state a {
   color: var(--blue); text-decoration: none; font-weight: 500;
@@ -533,17 +643,11 @@ button.no  { color: var(--red); }
   header { padding: var(--s5) 0 var(--s4); }
   h1 { font-size: 28px; line-height: 34px; }
   .card { padding: var(--s5); }
-  .top { flex-direction: column; gap: var(--s4); }
-  .scores { width: 100%; align-items: stretch; }
-  .score-row { width: 100%; }
-  .score-fit { width: auto; }
-  .score { flex: 1; width: auto; padding: var(--s2) var(--s2) 6px; }
-  .score .n { font-size: 26px; line-height: 30px; }
-  .score-fit .n { font-size: 28px; line-height: 32px; }
-  .score-hint { max-width: none; text-align: left; }
-  .fund-scores { max-width: none; }
-  h2 { font-size: 26px; line-height: 32px; }
-  .blurb { font-size: var(--subhead); line-height: 21px; margin-top: var(--s4); }
+  .hero { grid-template-columns: 1fr; gap: var(--s4); }
+  .led-panels { grid-template-columns: 1fr; }
+  .card h2 { font-size: 24px; line-height: 28px; }
+  .score .n { font-size: 20px; line-height: 24px; }
+  .blurb { font-size: var(--subhead); line-height: 21px; }
   .why-clause { font-size: var(--footnote); line-height: 18px; }
   button { font-size: var(--subhead); padding: 11px var(--s2); }
   .route { padding: var(--s3); margin-top: var(--s4); }
@@ -554,7 +658,6 @@ button.no  { color: var(--red); }
   .dots { flex-basis: 100%; justify-content: flex-end; }
   .date { display: none; }             /* the header already says Today */
   button .kbd { display: none; }       /* no hardware keyboard to hint at */
-  .fund-scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
 </head>
@@ -591,6 +694,29 @@ const fmtMoney = (n) =>
                                      : Math.round(n/1000) + "k");
 
 const band = (v, hi, lo) => v >= hi ? "high" : (v >= lo ? "mid" : "low");
+
+const DISCOVERY = {
+  news: "News",
+  grant: "Grant",
+  spinout: "University spinout",
+  accelerator: "Accelerator",
+  registry: "Companies House",
+};
+
+function prettyLabel(value) {
+  const raw = String(value || "").replace(/_/g, " ").trim();
+  if (!raw) return "";
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function initial(name) {
+  const t = String(name || "").trim();
+  return t ? t[0].toUpperCase() : "";
+}
+
+const DOC_ICON = `<svg class="source-ic" viewBox="0 0 16 16" width="14" height="14"
+     fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"
+     aria-hidden="true"><path d="M4.5 2.5h5L12 5v8.5H4.5z"/><path d="M9.5 2.5V5H12"/></svg>`;
 
 // Flags are the system's own words, turned into caveats a human reads.
 const FLAG_COPY = {
@@ -742,29 +868,61 @@ function renderCriteria(c) {
   const all = Array.isArray(c.components) ? c.components.filter(Boolean) : [];
   if (!all.length) return "";
 
-  const groups = [
-    {key: "fit",  title: "Fits the fund", score: c.fit,
-     items: all.filter(x => !EDGE_KEYS.has(x.key)).sort(ledSort)},
-    {key: "edge", title: "New to them",   score: c.edge,
-     items: all.filter(x =>  EDGE_KEYS.has(x.key)).sort(ledSort)},
-  ].filter(g => g.items.length);
+  const fitItems = all.filter(x => !EDGE_KEYS.has(x.key)).sort(ledSort);
+  const edgeItems = all.filter(x => EDGE_KEYS.has(x.key)).sort(ledSort);
+  const groups = [];
 
-  return `<div class="ledger" data-testid="criteria">
-    ${groups.map(g => `
-      <section class="led-group" data-testid="criteria-group" data-group="${g.key}">
+  if (fitItems.length) {
+    const matched = fitItems.filter(x => {
+      const s = ledStatus(x);
+      return s === "met" || s === "partial";
+    });
+    const against = fitItems.filter(x => ledStatus(x) === "missed");
+    const missing = fitItems.filter(x => ledStatus(x) === "unknown");
+    const score = `<span class="led-score">Match
+            <b>${Math.round(Number(c.fit) || 0)}</b></span>`;
+    let scoreUsed = false;
+    const panel = (title, key, items) => {
+      if (!items.length) return "";
+      const headScore = scoreUsed ? "" : score;
+      scoreUsed = true;
+      return `
+      <div class="led-panel" data-testid="criteria-panel" data-panel="${esc(key)}">
         <div class="led-head">
-          <h3>${esc(g.title)}</h3>
-          <span class="led-score">${g.key === "fit" ? "Match" : "Fresh"}
-            <b>${Math.round(Number(g.score) || 0)}</b></span>
+          <h3>${esc(title)}</h3>
+          ${headScore}
         </div>
-        <ul class="led-rows">${ledRows(g.items)}</ul>
-      </section>`).join("")}
-  </div>`;
+        <ul class="led-rows">${ledRows(items)}</ul>
+      </div>`;
+    };
+    groups.push(`
+      <section class="led-group" data-testid="criteria-group" data-group="fit">
+        <div class="led-panels">${panel("Why it matches", "matched", matched)}${panel("Missing info", "missing", missing)}${panel("Against", "against", against)}</div>
+      </section>`);
+  }
+
+  if (edgeItems.length) {
+    groups.push(`
+      <section class="led-group" data-testid="criteria-group" data-group="edge">
+        <div class="led-head">
+          <h3>Why it's new</h3>
+          <span class="led-score">Fresh
+            <b>${Math.round(Number(c.edge) || 0)}</b></span>
+        </div>
+        <ul class="led-rows why-new-items">${ledRows(edgeItems)}</ul>
+      </section>`);
+  }
+
+  return `<div class="ledger" data-testid="criteria">${groups.join("")}</div>`;
 }
 
 function renderFundScores(c) {
   const scores = Array.isArray(c.fund_scores) ? c.fund_scores : [];
   if (!scores.length) return "";
+  const also = (c.also_fits || []).length
+    ? `<p class="fund-note" data-testid="also-fits">Also fits ${c.also_fits.slice(0,2).map(a =>
+        `<strong>${esc(a.fund_key)}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</p>`
+    : "";
   return `<div class="fund-scores" data-testid="fund-scores" aria-label="Match score by fund">
     ${scores.map(s => {
       const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
@@ -776,16 +934,48 @@ function renderFundScores(c) {
         ? ` · ${s.reject_reason || "not eligible"}` : "";
       const title = `${s.fund_name || s.fund_key}: ${display} match${coverage}${status}`;
       const tone = hasFit ? band(value, 70, 45) : "low";
-      return `<div class="fund-score ${tone}" data-testid="fund-score"
+      const best = s.fund_key === c.fund ? " best" : "";
+      const width = hasFit ? Math.max(0, Math.min(100, Math.round(value))) : 0;
+      return `<div class="fund-score ${tone}${best}" data-testid="fund-score"
                    data-fund="${esc(s.fund_key)}"
                    data-value="${hasFit ? esc(s.fit) : ""}"
                    data-coverage="${s.coverage == null ? "" : esc(s.coverage)}"
                    data-tier="${esc(s.tier || "unscored")}"
                    title="${esc(title)}">
-                 <div class="n">${display}</div>
-                 <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+                 <div class="fund-score-top">
+                   <div class="k">${esc(s.fund_name || s.fund_key)}</div>
+                   <div class="n">${display}</div>
+                 </div>
+                 <div class="fund-bar" aria-hidden="true">
+                   <span class="fund-bar-fill" style="width:${width}%"></span>
+                 </div>
                </div>`;
     }).join("")}
+    ${also}
+  </div>`;
+}
+
+function renderEvidence(c) {
+  const links = articleLinks(c).filter(a => safeUrl(a.url));
+  if (!links.length) return "";
+  const source = sourceName(c.source_key);
+  const items = links.map((a, i) => {
+    const primary = i === 0;
+    const label = primary && a.kind === "source" ? `Open ${source}` : a.label;
+    return `<a class="ev${primary ? " primary" : ""}" data-testid="evidence-link"
+        data-kind="${esc(a.kind)}"${primary ? ' data-primary="true"' : ""}
+        ${a.kind === "source" && primary ? 'data-primary-source="true"' : ""}
+        ${primary ? 'aria-describedby="source-caption"' : ""}
+        href="${safeUrl(a.url)}" target="_blank" rel="noopener">
+       ${esc(label)} <span class="chev">↗</span></a>`;
+  });
+  const [primary, ...rest] = items;
+  return `<div class="evidence" data-testid="evidence">
+    <div class="source-row">
+      <p class="source-caption" id="source-caption">${DOC_ICON}Source: ${esc(source)}</p>
+      ${primary}
+    </div>
+    ${rest.join("")}
   </div>`;
 }
 
@@ -972,24 +1162,10 @@ function render() {
   const metaBits = [];
   if (c.domain) metaBits.push(`<a data-testid="company-domain" href="${safeUrl(c.website || "https://" + c.domain)}" target="_blank" rel="noopener">${esc(c.domain)}</a>`);
   if (c.city) metaBits.push(`<span>${esc(c.city)}</span>`);
-  else if (c.region) metaBits.push(`<span>${esc(c.region.replace(/_/g, " "))}</span>`);
+  else if (c.region) metaBits.push(`<span>${esc(prettyLabel(c.region))}</span>`);
+  if (c.sector) metaBits.push(`<span>${esc(prettyLabel(c.sector))}</span>`);
+  if (DISCOVERY[c.route]) metaBits.push(`<span>${esc(DISCOVERY[c.route])}</span>`);
   metaBits.push(`<span class="age" data-testid="company-age" data-exact="${esc(c.age_exact || "")}" ${c.age_exact ? `title="${esc(c.age_exact)}"` : ""}>${esc(c.age_phrase)}</span>`);
-
-  // The first link is the one to press — the article the company came from —
-  // so it is a filled button rather than another grey pill. The rest stay
-  // quiet: this screen is for deciding, not for reading everything we hold.
-  //
-  // The label is the headline itself rather than a "Read the article" prefix.
-  // The fill and the ↗ already say it is a button; spending the label on that
-  // too would cost the one thing worth knowing before you click, which is
-  // what you are about to open.
-  const evidence = articleLinks(c).filter(a => safeUrl(a.url)).map((a, i) =>
-    `<a class="ev${i === 0 ? " primary" : ""}" data-testid="evidence-link"
-        data-kind="${esc(a.kind)}"${i === 0 ? ' data-primary="true"' : ""}
-        ${a.kind === "source" && i === 0 ? 'data-primary-source="true"' : ""}
-        href="${safeUrl(a.url)}" target="_blank" rel="noopener">
-       ${esc(a.label)} <span class="chev">↗</span></a>`
-  ).join("");
 
   // The explanation sentence already names its own caveats. Repeating them
   // below turns one warning into three, which reads as three problems.
@@ -999,13 +1175,9 @@ function render() {
     .map(f => `<span class="flag" data-testid="caveat" data-flag="${esc(f)}">${esc(FLAG_COPY[f] || f.replace(/_/g, " "))}</span>`)
     .join("");
 
-  const also = (c.also_fits || []).length
-    ? `<span class="also" data-testid="also-fits">Also fits ${c.also_fits.slice(0,2).map(a =>
-        `<strong>${esc(a.fund_key)}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</span>`
-    : "";
-
   const coverageNote = thin
     ? `<span class="flag" data-testid="coverage-note" data-coverage="${c.coverage}">we know ${Math.round(c.coverage * 5)} of 5 things about this company</span>` : "";
+  const foot = [coverageNote, flags].filter(Boolean).join("");
 
   // Every hook a test needs is a data-testid. The CSS classes are for
   // styling and may be renamed freely; the testids are the contract.
@@ -1017,24 +1189,31 @@ function render() {
     <article class="card ${thin ? "thin" : ""}" data-testid="card"
              data-company-id="${esc(c.company_id)}" data-tier="${esc(c.tier)}"
              data-coverage="${esc(c.coverage)}" data-thin="${thin}">
-      <div class="top">
+      <div class="hero">
         <div class="ident">
-          <h2 data-testid="company-name">${esc(c.name)}</h2>
-          <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
+          <div class="ident-head">
+            <div class="mark" aria-hidden="true">${esc(initial(c.name))}</div>
+            <h2 data-testid="company-name">${esc(c.name)}</h2>
+            <div class="meta" data-testid="company-meta">${metaBits.join("")}</div>
+          </div>
           ${renderCompaniesHouseVerification(c)}
+          ${c.one_liner
+            ? `<p class="blurb" data-testid="one-liner">${esc(c.one_liner)}</p>`
+            : ""}
+          ${renderEvidence(c)}
         </div>
         <div class="scores" data-testid="scores">
           <div class="score-row">
             <div class="score score-fit ${band(c.fit, 70, 45)}" data-testid="score-fit"
                  data-value="${c.fit}" data-band="${band(c.fit, 70, 45)}"
                  title="${esc(matchTitle)}">
-              <div class="n" data-testid="score-value">${Math.round(c.fit)}</div>
-              <div class="k" data-testid="score-label">Match</div></div>
+              <div class="k" data-testid="score-label">Match</div>
+              <div class="n" data-testid="score-value">${Math.round(c.fit)}</div></div>
             <div class="score score-edge ${band(c.edge, 70, 45)}" data-testid="score-edge"
                  data-value="${c.edge}" data-band="${band(c.edge, 70, 45)}"
                  title="${esc(freshTitle)}">
-              <div class="n" data-testid="score-value">${Math.round(c.edge)}</div>
-              <div class="k" data-testid="score-label">Fresh</div></div>
+              <div class="k" data-testid="score-label">Fresh</div>
+              <div class="n" data-testid="score-value">${Math.round(c.edge)}</div></div>
           </div>
           <div class="score-hint" data-testid="score-hint">Match = fund fit · Fresh = new to them</div>
           ${renderFundScores(c)}
@@ -1042,13 +1221,12 @@ function render() {
       </div>
 
       <div class="route" data-testid="route" data-fund="${esc(c.fund)}">
-        <div class="fund" data-testid="route-fund">${esc(c.fund_name || c.fund)}</div>
-        <div class="veh" data-testid="route-vehicle">${esc(c.vehicle || "")}${cheque ? " · " + cheque : ""}</div>
+        <span class="route-kicker">Send to</span>
+        <div>
+          <div class="fund" data-testid="route-fund">${esc(c.fund_name || c.fund)}</div>
+          <div class="veh" data-testid="route-vehicle">${esc(c.vehicle || "")}${cheque ? " · " + cheque : ""}</div>
+        </div>
       </div>
-
-      ${c.one_liner
-        ? `<p class="blurb" data-testid="one-liner">${esc(c.one_liner)}</p>`
-        : ""}
 
       ${renderCriteria(c)}
 
@@ -1057,9 +1235,7 @@ function render() {
         ${renderExplanation(c.explanation || "")}
       </details>
 
-      ${evidence ? `<div class="evidence" data-testid="evidence">${evidence}</div>` : ""}
-
-      <div class="foot" data-testid="card-footnote">${coverageNote}${flags}${also}</div>
+      ${foot ? `<div class="foot" data-testid="card-footnote">${foot}</div>` : ""}
     </article>`;
 
   footer.hidden = false;
