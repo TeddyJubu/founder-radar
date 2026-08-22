@@ -22,6 +22,7 @@ from radar.qa.today import (
     TodayCheckResult,
     is_rejected,
     latest_today_verdict,
+    load_today_cards,
     parse_verdict,
     record_check,
     rules_precheck,
@@ -99,6 +100,13 @@ def test_rules_precheck_catches_ipo_copy():
     assert got is not None and got.verdict == "reject"
     assert got.reason == "ipo"
     assert got.checker == "rules"
+
+
+def test_rules_precheck_ignores_ipo_as_market_context():
+    assert rules_precheck(_card(
+        one_liner="Seed round as the IPO market thawed",
+        headlines=("UK founders wait out the IPO window",),
+    )) is None
 
 
 def test_rules_precheck_catches_series_c():
@@ -253,8 +261,12 @@ def test_pipeline_invokes_today_qa(db, config, monkeypatch):
 
 
 def test_hermes_subagent_parses_a_reject():
+    seen: list[list[str]] = []
+
     def runner(argv, **kw):
-        assert "-q" in argv
+        seen.append(list(argv))
+        assert argv[1:4] == ["chat", "-Q", "--query-file"]
+        assert argv[-1] == "-"
         assert "today_card" in (kw.get("input") or "")
 
         class Completed:
@@ -272,6 +284,38 @@ def test_hermes_subagent_parses_a_reject():
     assert got.verdict == "reject"
     assert got.reason == "already_backed"
     assert "Parkwalk" in got.summary
+    assert seen[0][0] == "/usr/bin/hermes"
+
+
+def test_hermes_subagent_falls_back_to_query_argv():
+    seen: list[list[str]] = []
+
+    def runner(argv, **kw):
+        seen.append(list(argv))
+        if "--query-file" in argv:
+            class Failed:
+                returncode = 2
+                stdout = ""
+                stderr = "unrecognized arguments: --query-file"
+
+            return Failed()
+
+        assert "-q" in argv
+        assert any("today_card" in str(part) for part in argv)
+        assert kw.get("input") is None
+
+        class Completed:
+            returncode = 0
+            stdout = "VERDICT: PASS\nSUMMARY: Early-stage Newcastle spinout.\n"
+            stderr = ""
+
+        return Completed()
+
+    checker = HermesSubagent(binary="/usr/bin/hermes", runner=runner)
+    got = checker.review(_card())
+    assert got.verdict == "pass"
+    assert any("--query-file" in argv for argv in seen)
+    assert any("-q" in argv and "today_card" in " ".join(argv) for argv in seen)
 
 
 def test_hermes_subagent_missing_binary(monkeypatch):
@@ -300,3 +344,83 @@ def test_skill_maps_today_qa_to_the_cli():
     prompt = Path("hermes/skills/founder-radar/references/today-check.md")
     assert prompt.is_file()
     assert "WRONG" in prompt.read_text()
+
+
+# ----------------------------------------------------- Today candidate set
+
+
+def _watchlist_row(db, company, *, source_key, source_url, priority, fund="dsw"):
+    from radar.store.db import now_iso
+    from tests.factories import store_company
+
+    cid = store_company(db, company)
+    stamp = now_iso()
+    db.execute(
+        "INSERT INTO company_source(company_id, source_key, external_id, "
+        "source_url, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
+        (cid, source_key, f"ext-{cid}", source_url, stamp, stamp),
+    )
+    db.execute(
+        """INSERT INTO score
+             (company_id, fund_key, vehicle_key, fund_fit_pct, coverage,
+              discovery_edge, priority, tier, reject_reason, explanation,
+              flags, config_hash, scorer_version, scored_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (cid, fund, None, 80.0, 0.8, 70.0, priority, "watchlist", None,
+         "Queued for review.", None, "testhash", "1", stamp),
+    )
+    return cid
+
+
+def test_today_qa_checks_registry_watchlist_with_a_share_issue(db):
+    from tests.factories import registry_company
+
+    cid = _watchlist_row(
+        db,
+        registry_company(
+            canonical_name="SH01 Startup Ltd",
+            norm_key="sh01startupqa",
+            age_months=6,
+            has_share_issue=True,
+        ),
+        source_key="companies_house",
+        source_url="https://find-and-update.company-information.service.gov.uk/company/15021885",
+        priority=80,
+    )
+    cards = load_today_cards(db)
+    assert cid in {card.company_id for card in cards}
+    shown = {row["company_id"] for row in build_today(db.conn)["companies"]}
+    assert cid in shown
+
+
+def test_today_qa_skips_registry_shells_without_a_venture_signal(db):
+    from tests.factories import registry_company
+
+    cid = _watchlist_row(
+        db,
+        registry_company(
+            canonical_name="4DCONSTRUCTIONPLANNING LTD",
+            norm_key="4dconstructionplanningqa",
+            age_months=6,
+        ),
+        source_key="companies_house",
+        source_url="https://find-and-update.company-information.service.gov.uk/company/15021884",
+        priority=99,
+    )
+    cards = load_today_cards(db)
+    assert cid not in {card.company_id for card in cards}
+
+
+def test_today_qa_ignores_stale_config_hash(db, config):
+    from radar.config.loader import save_snapshot
+
+    ids = seed_companies(db, count=1, shortlist=1)
+    save_snapshot(db, config, is_last_good=True)
+    db.execute("UPDATE score SET config_hash = 'oldhash' WHERE company_id = ?",
+               (ids[0],))
+    assert load_today_cards(db, config) == []
+    db.execute(
+        "UPDATE score SET config_hash = ? WHERE company_id = ?",
+        (config.hash(), ids[0]),
+    )
+    assert [card.company_id for card in load_today_cards(db, config)] == ids

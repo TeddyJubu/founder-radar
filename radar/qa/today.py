@@ -1,11 +1,11 @@
 """Today QA — a boxed veto after scoring, before anything is shown.
 
 The deterministic pipeline still chooses the shortlist. This module then asks
-a Hermes *subagent* (an isolated one-shot `hermes -q` pass with a dedicated
-prompt, not the Telegram front desk) whether each selected company is the
-WRONG company to put on Today: already backed, IPO / late-stage, parent or
-investor, wrong legal entity, or a city that cannot be the winning vehicle's
-region.
+a Hermes *subagent* (an isolated one-shot `hermes chat -Q --query-file -`
+pass with a dedicated prompt, not the Telegram front desk) whether each
+selected company is the WRONG company to put on Today: already backed, IPO /
+late-stage, parent or investor, wrong legal entity, or a city that cannot be
+the winning vehicle's region.
 
 It may only *remove* a card. It cannot add one, cannot change a score, and
 cannot merge. A stored `reason` is what makes "why did this drop off Today?"
@@ -41,6 +41,9 @@ QA_LIMIT = 24
 HERMES_TIMEOUT_S = 60
 REVIEWABLE = ("shortlist", "watchlist")
 TRACK_A = ("news", "grant", "spinout", "accelerator")
+VENTURE_SIGNAL_KINDS = (
+    "share_issue", "grant_award", "spinout", "press", "news", "competition_win",
+)
 
 REJECT_REASONS = (
     "already_backed",
@@ -61,9 +64,14 @@ SUMMARY_RE = re.compile(
     r"^\s*SUMMARY:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 
 IPO_RE = re.compile(
-    r"\b(pre-?IPO|files? for (an )?IPO|\bIPO\b|listed on (the )?(AIM|LSE|"
-    r"London Stock Exchange)|initial public offering)\b",
-    re.I,
+    r"(?i)(?:"
+    r"\bpre-?IPO\b"
+    r"|\bfiles? for (?:an )?IPO\b"
+    r"|\bIPO\s+(?:filing|process|plans?|debut|listing)\b"
+    r"|\blisted on (?:the )?(?:AIM|LSE|NASDAQ|NYSE|London Stock Exchange)\b"
+    r"|\binitial public offering\b"
+    r"|\bpublicly listed\b"
+    r")"
 )
 LATE_STAGE_RE = re.compile(
     r"\b(Series [B-Z]\b|growth round|late[- ]stage|pre-IPO)\b", re.I)
@@ -328,12 +336,21 @@ def rules_precheck(card: TodayCard) -> TodayCheckResult | None:
 # ----------------------------------------------------------- hermes runner
 
 
+def _argv_for_log(argv: list[str]) -> list[str]:
+    """Argv without a multi-kilobyte prompt — logs must stay readable."""
+    return [part if len(part) < 64 else f"<{len(part)} chars>" for part in argv[1:]]
+
+
 class HermesSubagent:
-    """One-shot `hermes -q` as the Today QA subagent.
+    """One-shot Hermes chat as the Today QA subagent.
 
     Isolated from the Telegram gateway: no chat history, no scoring skill,
     just the Today-check brief plus one card. Every failure becomes
     `HermesUnavailable` so the pipeline has one mode to swallow.
+
+    Hermes treats `-q` as `--query` (the prompt), not quiet. Quiet is `-Q`.
+    `--query-file -` is the documented way to pass a long JSON body on stdin
+    without shell-quoting it.
     """
 
     name = "hermes"
@@ -357,24 +374,29 @@ class HermesSubagent:
         binary = self._binary or shutil.which("hermes")
         if not binary:
             raise HermesUnavailable("hermes binary not on PATH")
-        attempts: list[list[str]] = [
-            [binary, "-q"],
-            [binary, "chat", "-q"],
+        # stdin=True means the prompt is the query body; otherwise it is argv.
+        attempts: list[tuple[list[str], bool]] = [
+            ([binary, "chat", "-Q", "--query-file", "-"], True),
+            ([binary, "chat", "-Q", "-q", prompt], False),
+            ([binary, "-z", prompt], False),
         ]
         last: str | None = None
-        for argv in attempts:
+        env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1"}
+        for argv, use_stdin in attempts:
             try:
                 completed = self._runner(  # noqa: S603 - fixed argv, no shell
                     argv,
-                    input=prompt,
+                    input=prompt if use_stdin else None,
                     capture_output=True,
                     text=True,
                     timeout=self.timeout,
-                    env={**os.environ, "TERM": "dumb"},
+                    env=env,
                 )
             except (OSError, subprocess.SubprocessError) as exc:
                 last = f"{type(exc).__name__}: {exc}"
-                log.warning("hermes today-qa %s failed: %s", argv[1:], last)
+                log.warning(
+                    "hermes today-qa %s failed: %s", _argv_for_log(argv), last,
+                )
                 continue
             text = (completed.stdout or "").strip()
             if not text:
@@ -382,7 +404,7 @@ class HermesSubagent:
             if completed.returncode == 0 and text:
                 return text
             last = f"exit {completed.returncode}: {text[:240]}"
-            log.warning("hermes today-qa %s: %s", argv[1:], last)
+            log.warning("hermes today-qa %s: %s", _argv_for_log(argv), last)
         raise HermesUnavailable(last or "hermes returned nothing")
 
 
@@ -532,6 +554,71 @@ def _headlines(db: Any, company_id: str, *, limit: int = 4) -> tuple[str, ...]:
     return tuple(str(row["headline"]) for row in rows if _row_get(row, "headline"))
 
 
+def _is_registry_route(route: str | None) -> bool:
+    return (route or "registry") in {"registry", ""}
+
+
+def _active_config_hash(db: Any) -> str | None:
+    """Same generation Today reads: last-good snapshot, canonicalized hash.
+
+    Tests without a snapshot keep latest-per-company behaviour so a seeded
+    `testhash` still reaches the checker.
+    """
+    try:
+        row = _one(
+            db,
+            "SELECT config_json FROM config_snapshot WHERE is_last_good = 1 "
+            "ORDER BY created_at DESC LIMIT 1",
+        )
+    except sqlite3.OperationalError:
+        return None
+    payload = _row_get(row, "config_json") if row else None
+    if not payload:
+        return None
+    from radar.config.loader import parse_snapshot
+
+    parsed = parse_snapshot(payload)
+    return parsed.hash() if parsed is not None else None
+
+
+def has_registry_venture_signal(db: Any, company_id: str) -> bool:
+    """True when a Companies House card has a real venture signal, not just a Ltd.
+
+    Shared with the Today prototype so a registry watchlist row that can occupy
+    the queue is also the row this module asks Hermes about.
+    """
+    rows = _query(
+        db,
+        "SELECT source_key, source_url FROM company_source WHERE company_id = ?",
+        (company_id,),
+    )
+    if any(
+        _row_get(row, "source_key") != "companies_house"
+        and str(_row_get(row, "source_url") or "").startswith(("http://", "https://"))
+        for row in rows
+    ):
+        return True
+    row = _one(
+        db,
+        "SELECT has_share_issue, is_university_spinout, news_mention_count "
+        "FROM company WHERE id = ?",
+        (company_id,),
+    )
+    if row is not None:
+        if _row_get(row, "has_share_issue") or _row_get(row, "is_university_spinout"):
+            return True
+        if (_row_get(row, "news_mention_count") or 0) > 0:
+            return True
+    placeholders = ",".join("?" * len(VENTURE_SIGNAL_KINDS))
+    found = _one(
+        db,
+        f"SELECT 1 AS ok FROM signal WHERE company_id = ? "
+        f"AND kind IN ({placeholders}) LIMIT 1",
+        (company_id, *VENTURE_SIGNAL_KINDS),
+    )
+    return found is not None
+
+
 def load_today_cards(
     db: Any,
     cfg: Any = None,
@@ -540,14 +627,18 @@ def load_today_cards(
 ) -> list[TodayCard]:
     """The companies Today *would* consider, in Today order, capped.
 
-    Watchlist registry shells are skipped here so we do not spend a Hermes
-    call on a card `_today_block_reason` would already hide. Track A
-    watchlist rows still get a look — they are what leaked IPO / Oxford
-    cards onto the live queue.
+    Shortlist, Track A watchlist, and registry watchlist rows that already
+    have a venture signal (SH01 / grant / press / a non-CH source). Registry
+    shells without a venture signal are skipped so we do not spend a Hermes
+    call on a card `_today_block_reason` would already hide.
     """
+    config_hash = _active_config_hash(db)
+    hash_sql = "AND s.config_hash = ?" if config_hash else ""
+    hash_params: tuple[Any, ...] = (config_hash,) if config_hash else ()
+    track_sql = ",".join("?" * len(TRACK_A))
     rows = _query(
         db,
-        """
+        f"""
         WITH latest AS (
           SELECT s.*,
                  ROW_NUMBER() OVER (
@@ -556,6 +647,7 @@ def load_today_cards(
                  ) AS score_rank
             FROM score s
            WHERE s.tier IN (?, ?)
+             {hash_sql}
         )
         SELECT c.id AS company_id, c.canonical_name, c.hq_city, c.hq_region,
                c.stage, c.one_liner, c.incorporated_on, c.discovery_route,
@@ -564,20 +656,20 @@ def load_today_cards(
           FROM latest s
           JOIN company c ON c.id = s.company_id
          WHERE s.score_rank = 1 AND c.merged_into IS NULL
-           AND (
-                 s.tier = 'shortlist'
-              OR c.discovery_route IN ('news','grant','spinout','accelerator')
-           )
-         ORDER BY CASE WHEN c.discovery_route IN
-                    ('news','grant','spinout','accelerator') THEN 0 ELSE 1 END,
+         ORDER BY CASE WHEN c.discovery_route IN ({track_sql}) THEN 0 ELSE 1 END,
                   s.priority DESC, c.canonical_name
         """,
-        REVIEWABLE,
+        (*REVIEWABLE, *hash_params, *TRACK_A),
     )
     cards: list[TodayCard] = []
     for row in rows:
         source_key, source_url = _http_source(db, row["company_id"])
         if not source_url:
+            continue
+        route = _row_get(row, "discovery_route")
+        if _is_registry_route(route) and not has_registry_venture_signal(
+            db, row["company_id"],
+        ):
             continue
         geo_rule, geo_values = _vehicle_geo(cfg, _row_get(row, "vehicle_key"))
         cards.append(TodayCard(
@@ -588,7 +680,7 @@ def load_today_cards(
             stage=_row_get(row, "stage"),
             one_liner=_row_get(row, "one_liner"),
             incorporated_on=_row_get(row, "incorporated_on"),
-            route=_row_get(row, "discovery_route"),
+            route=route,
             website=_row_get(row, "website_url"),
             source_url=source_url,
             source_key=source_key,
@@ -754,6 +846,7 @@ __all__ = [
     "build_user_prompt",
     "cached_check",
     "check_one",
+    "has_registry_venture_signal",
     "is_rejected",
     "latest_today_verdict",
     "load_today_cards",

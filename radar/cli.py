@@ -232,7 +232,7 @@ def digest(ctx, period, on_date, send):
               help="Rules only — skip the Hermes subagent")
 @click.pass_context
 def today_qa(ctx, no_hermes):
-    """Re-run the Hermes Today QA subagent on the current shortlist.
+    """Re-run the Hermes Today QA subagent on Today's list.
 
     Veto only: a reject hides the card from Today. Scores are not rewritten.
     """

@@ -412,7 +412,7 @@ Two properties this stage must have, and they are testable:
 
 **A Hermes subagent looks at each company already selected for Today. It may only remove.**
 
-Scoring has finished. The morning queue is a short list of names. For each one, the pipeline spawns an isolated Hermes pass (`hermes -q`, the Today-check brief, one card) and asks: *is this the wrong company to put on Today's list?*
+Scoring has finished. The morning queue is a short list of names. For each one, the pipeline spawns an isolated Hermes pass (`hermes chat -Q --query-file -`, the Today-check brief, one card) and asks: *is this the wrong company to put on Today's list?*
 
 Wrong means already VC-backed, IPO / late-stage, parent or investor, the wrong legal entity, or a city that cannot be the winning vehicle's region (Oxford offered as Yorkshire). A `VERDICT: REJECT` hides the card from Today, the digest, and the sheet tab. Scores are not rewritten. A missing check is not a reject.
 
