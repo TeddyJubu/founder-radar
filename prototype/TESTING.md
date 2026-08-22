@@ -94,7 +94,8 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Footnote row | `card-footnote` | | |
 | Coverage note | `coverage-note` | `data-coverage` | present only when `thin` |
 | Caveat | `caveat` | `data-flag` | raw flag name, e.g. `age_unknown` |
-| Also fits | `also-fits` | | absent when no other fund matched |
+| Also fits | `also-fits` | | absent when no other fund matched — never a generic “several funds can match” caption |
+| Fit criteria panel | `criteria-panel` | `data-panel` = `matched` / `missing` / `against` | present only when that bucket has rows. Unknown fit rows go in `missing`; missed fit rows go in `against`; met/partial in `matched`. Edge rows stay in `criteria-group[data-group=edge]` |
 | Progress | `progress` | | |
 | Progress dot | `progress-dot` | `data-state` = `done` / `now` / `todo` | |
 | Verdict bar | `verdict-bar` | | `hidden` on the done state |

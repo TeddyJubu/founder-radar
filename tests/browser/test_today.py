@@ -181,6 +181,11 @@ def test_b14_every_card_has_a_direct_primary_source_link(today, api):
                          'data-primary-source="true"]')
     assert link.count() == 1
     assert link.get_attribute("href") == api["companies"][0]["source_url"]
+    source = (api["companies"][0]["source_key"] or "source").replace("_", " ")
+    label = re.sub(r"\s+", " ", link.inner_text().replace("↗", "")).strip()
+    assert source.lower() in label.lower(), f"primary link {label!r} does not name {source!r}"
+    assert label.lower() != "open source", label
+    assert link.get_attribute("aria-describedby") == "source-caption"
 
 
 def test_b15_four_fund_match_scores_are_visible(today, api):
@@ -198,6 +203,11 @@ def test_b15_four_fund_match_scores_are_visible(today, api):
         if score["fit"] is not None
     }
     assert displayed == expected
+    assert "several funds can match" not in today.locator(tid("fund-scores")).inner_text().lower()
+    if api["companies"][0].get("also_fits"):
+        assert today.locator(tid("also-fits")).count() == 1
+    else:
+        assert today.locator(tid("also-fits")).count() == 0
 
 
 def test_b16_eligibility_diagnostics_are_visible_without_company_rows(today, api):
@@ -461,6 +471,44 @@ def test_d4c_ledger_shows_every_scored_rule_and_never_calls_unknown_a_failure(to
 
     assert today.locator(f'{tid("criterion")}[data-status="unknown"]').count() == sum(
         1 for c in components if c["sub_score"] is None)
+
+
+EDGE_KEYS = {"press_coverage", "age", "disclosed_funding", "discovery_route"}
+FIT_PANEL = {
+    "met": "matched",
+    "partial": "matched",
+    "unknown": "missing",
+    "missed": "against",
+}
+
+
+def test_d4e_unknown_fit_is_missing_and_misses_are_against(today, api):
+    """Unknown is not the same as a known miss. Merging them under
+    'Missing info' would put Industrial Tech next to 'not known'."""
+    components = api["companies"][0]["components"]
+    saw_fit_panel = False
+    for comp in components:
+        row = today.locator(f'{tid("criterion")}[data-key="{comp["key"]}"]')
+        group = today.locator(tid("criteria-group")).filter(has=row)
+        assert group.count() == 1, comp["key"]
+        if comp["key"] in EDGE_KEYS:
+            assert group.get_attribute("data-group") == "edge", comp["key"]
+            continue
+        sub = comp["sub_score"]
+        if sub is None:
+            status = "unknown"
+        elif sub >= 0.6:
+            status = "met"
+        elif sub <= 0.34:
+            status = "missed"
+        else:
+            status = "partial"
+        panel = today.locator(tid("criteria-panel")).filter(has=row)
+        assert panel.count() == 1, comp["key"]
+        assert panel.get_attribute("data-panel") == FIT_PANEL[status], (
+            f"{comp['key']}: status={status} in {panel.get_attribute('data-panel')}")
+        saw_fit_panel = True
+    assert saw_fit_panel
 
 
 def test_d4d_gloss_explains_only_what_is_not_already_obvious(today, api):

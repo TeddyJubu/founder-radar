@@ -882,14 +882,14 @@ function renderCriteria(c) {
     const score = `<span class="led-score">Match
             <b>${Math.round(Number(c.fit) || 0)}</b></span>`;
     let scoreUsed = false;
-    const panel = (title, items) => {
+    const panel = (title, key, items) => {
       if (!items.length) return "";
       const headScore = scoreUsed ? "" : score;
       scoreUsed = true;
       return `
-      <div class="led-panel">
+      <div class="led-panel" data-testid="criteria-panel" data-panel="${esc(key)}">
         <div class="led-head">
-          <h3>${title}</h3>
+          <h3>${esc(title)}</h3>
           ${headScore}
         </div>
         <ul class="led-rows">${ledRows(items)}</ul>
@@ -897,7 +897,7 @@ function renderCriteria(c) {
     };
     groups.push(`
       <section class="led-group" data-testid="criteria-group" data-group="fit">
-        <div class="led-panels">${panel("Why it matches", matched)}${panel("Missing info", missing)}${panel("Against", against)}</div>
+        <div class="led-panels">${panel("Why it matches", "matched", matched)}${panel("Missing info", "missing", missing)}${panel("Against", "against", against)}</div>
       </section>`);
   }
 
@@ -922,7 +922,7 @@ function renderFundScores(c) {
   const also = (c.also_fits || []).length
     ? `<p class="fund-note" data-testid="also-fits">Also fits ${c.also_fits.slice(0,2).map(a =>
         `<strong>${esc(a.fund_key)}</strong> ${Math.round(a.fund_fit_pct)}`).join(" · ")}</p>`
-    : `<p class="fund-note">Several funds can match the same company.</p>`;
+    : "";
   return `<div class="fund-scores" data-testid="fund-scores" aria-label="Match score by fund">
     ${scores.map(s => {
       const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
@@ -958,19 +958,21 @@ function renderFundScores(c) {
 function renderEvidence(c) {
   const links = articleLinks(c).filter(a => safeUrl(a.url));
   if (!links.length) return "";
+  const source = sourceName(c.source_key);
   const items = links.map((a, i) => {
     const primary = i === 0;
-    const label = primary ? "Open source" : a.label;
+    const label = primary && a.kind === "source" ? `Open ${source}` : a.label;
     return `<a class="ev${primary ? " primary" : ""}" data-testid="evidence-link"
         data-kind="${esc(a.kind)}"${primary ? ' data-primary="true"' : ""}
         ${a.kind === "source" && primary ? 'data-primary-source="true"' : ""}
+        ${primary ? 'aria-describedby="source-caption"' : ""}
         href="${safeUrl(a.url)}" target="_blank" rel="noopener">
        ${esc(label)} <span class="chev">↗</span></a>`;
   });
   const [primary, ...rest] = items;
   return `<div class="evidence" data-testid="evidence">
     <div class="source-row">
-      <p class="source-caption">${DOC_ICON}Source: ${esc(sourceName(c.source_key))}</p>
+      <p class="source-caption" id="source-caption">${DOC_ICON}Source: ${esc(source)}</p>
       ${primary}
     </div>
     ${rest.join("")}
