@@ -1,0 +1,37 @@
+# Optional first-boot snippet. install.sh appends this only when
+# /etc/caddy/Caddyfile does not already exist. A live Caddyfile that was
+# fixed on the box is never overwritten or reloaded by the updater.
+#
+# Host is rewritten to the loopback bind so Hermes's DNS-rebinding guard
+# accepts the request. Passing the public hostname through as Host is how
+# the SPA comes back as `Invalid Host header` after TLS already works.
+
+{$HERMES_WEB_DOMAIN} {
+	encode gzip
+
+	basic_auth {
+		{$RADAR_WEB_USER} {$RADAR_WEB_PASS_HASH}
+	}
+
+	# flush_interval -1 keeps the Chat tab WebSocket from buffering.
+	# Host must be the loopback bind, not the public name.
+	reverse_proxy {$HERMES_DASHBOARD_UPSTREAM} {
+		header_up Host 127.0.0.1:9119
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		flush_interval -1
+	}
+
+	header {
+		Cache-Control "no-store"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/hermes-dashboard.log
+		format console
+	}
+}
