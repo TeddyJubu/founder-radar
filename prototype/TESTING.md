@@ -80,7 +80,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Score number | `score-value` | | rounded display text; two per card |
 | Score label | `score-label` | | `Match` / `Fresh` (uppercase is CSS only) |
 | Score hint | `score-hint` | | one-line explainer under the tiles |
-| Fund score grid | `fund-scores` | | all four fund-specific Match values |
+| Fund score grid | `fund-scores` | | all four fund-specific Match values, drawn as named bars |
 | Fund score | `fund-score` | `data-fund`, `data-value`, `data-coverage`, `data-tier` | one per configured fund; `data-value` is blank when unscored or rejected |
 | Route chip | `route` | `data-fund` | |
 | Fund name | `route-fund` | | |
