@@ -448,14 +448,19 @@ main {
 .why-new-items .led-row {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
-  gap: 4px var(--s2);
+  grid-template-areas:
+    "icon name"
+    "icon val"
+    ".    gloss";
+  gap: 2px var(--s2);
   padding: 10px var(--s4);
   border: 0;
   background: var(--bg-3);
 }
-.why-new-items .led-ic { transform: none; }
-.why-new-items .led-val { text-align: left; }
-.why-new-items .led-gloss { max-width: none; }
+.why-new-items .led-ic { grid-area: icon; transform: none; align-self: start; }
+.why-new-items .led-name { grid-area: name; }
+.why-new-items .led-val { grid-area: val; text-align: left; }
+.why-new-items .led-gloss { grid-area: gloss; max-width: none; }
 
 /* The original sentence, kept verbatim and one tap away. Nothing here
    paraphrases it; the ledger is the same data, not a retelling. */
@@ -872,31 +877,27 @@ function renderCriteria(c) {
       const s = ledStatus(x);
       return s === "met" || s === "partial";
     });
-    const gaps = fitItems.filter(x => {
-      const s = ledStatus(x);
-      return s === "unknown" || s === "missed";
-    });
+    const against = fitItems.filter(x => ledStatus(x) === "missed");
+    const missing = fitItems.filter(x => ledStatus(x) === "unknown");
     const score = `<span class="led-score">Match
             <b>${Math.round(Number(c.fit) || 0)}</b></span>`;
-    const matchPanel = matched.length ? `
+    let scoreUsed = false;
+    const panel = (title, items) => {
+      if (!items.length) return "";
+      const headScore = scoreUsed ? "" : score;
+      scoreUsed = true;
+      return `
       <div class="led-panel">
         <div class="led-head">
-          <h3>Why it matches</h3>
-          ${score}
+          <h3>${title}</h3>
+          ${headScore}
         </div>
-        <ul class="led-rows">${ledRows(matched)}</ul>
-      </div>` : "";
-    const gapPanel = gaps.length ? `
-      <div class="led-panel">
-        <div class="led-head">
-          <h3>Missing info</h3>
-          ${matched.length ? "" : score}
-        </div>
-        <ul class="led-rows">${ledRows(gaps)}</ul>
-      </div>` : "";
+        <ul class="led-rows">${ledRows(items)}</ul>
+      </div>`;
+    };
     groups.push(`
       <section class="led-group" data-testid="criteria-group" data-group="fit">
-        <div class="led-panels">${matchPanel}${gapPanel}</div>
+        <div class="led-panels">${panel("Why it matches", matched)}${panel("Missing info", missing)}${panel("Against", against)}</div>
       </section>`);
   }
 
