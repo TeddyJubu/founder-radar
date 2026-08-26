@@ -268,6 +268,39 @@ def test_poisoned_last_good_is_healed_from_code_defaults(db):
     assert "fund_ii" in keys
 
 
+def test_load_runtime_config_heals_poisoned_last_good_without_sheet(db):
+    """A Google outage must not keep serving vehicle_key='yes' forever."""
+    from radar.config.models import Fund, Vehicle
+
+    poison = default_config().model_copy(deep=True)
+    poison.funds = [
+        Fund(
+            key="dsw",
+            name="Regional UK preferred",
+            vehicles=[
+                Vehicle(
+                    fund_key="dsw",
+                    vehicle_key="yes",
+                    fund_name="Regional UK preferred",
+                    vehicle_name="SEIS",
+                    active=True,
+                ),
+            ],
+        ),
+    ]
+    save_snapshot(db, poison, is_last_good=True)
+
+    loaded, gateway, warnings = load_runtime_config(db, gateway=None)
+    assert gateway is None
+    assert not funds_are_poisoned(loaded.funds)
+    assert any("poisoned" in w.lower() for w in warnings)
+    assert any(f.name == "DSW Ventures" for f in loaded.funds)
+    assert "yes" not in {
+        v.vehicle_key for f in loaded.funds for v in f.vehicles
+    }
+    assert not funds_are_poisoned(load_last_good(db).funds)
+
+
 
 
 def test_run_pipeline_reads_sheet_settings_when_a_gateway_is_present(db):

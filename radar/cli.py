@@ -261,6 +261,31 @@ def today_qa(ctx, no_hermes):
         click.echo(line)
 
 
+@cli.command("why-today")
+@click.pass_context
+def why_today(ctx):
+    """Explain an empty or thin Today list (funnel + Fund Criteria health).
+
+    Paste this into Telegram when the client asks why there is nothing to
+    review. Counts only — no company names.
+    """
+    from radar.render.today_diagnose import (
+        diagnose_today,
+        format_today_diagnosis,
+    )
+
+    report = diagnose_today(_db(ctx))
+    if ctx.obj["json"]:
+        _emit(report, True)
+        return
+    click.echo(format_today_diagnosis(report))
+    if report.get("poisoned_fund_criteria") or (
+        report.get("scored_for_active_hash") == 0
+        and (report.get("scores_on_other_hashes") or 0) > 0
+    ):
+        sys.exit(EXIT_PARTIAL)
+
+
 # ---------------------------------------------------------------- the sheet
 
 
@@ -482,9 +507,18 @@ def doctor(ctx):
         checks.append((f"env {name}", bool(os.environ.get(name)), "required"))
     for name in OPTIONAL_ENV:
         present = bool(os.environ.get(name))
-        checks.append((f"env {name}", present, "optional — degraded if missing"))
+        # Bot token without chat id is a misconfiguration: the morning
+        # digest prints locally and the client sees "no result".
+        if name == "TELEGRAM_CHAT_ID" and os.environ.get("TELEGRAM_BOT_TOKEN"):
+            checks.append((
+                f"env {name}", present,
+                "required when TELEGRAM_BOT_TOKEN is set — else digest never arrives",
+            ))
+        else:
+            checks.append((f"env {name}", present, "optional — degraded if missing"))
 
     db_path = Path(ctx.obj["db_path"])
+    conn: Db | None = None
     try:
         conn = Db(db_path)
         tables = conn.tables()
@@ -493,6 +527,38 @@ def doctor(ctx):
         checks.append(("schema version", version is not None, str(version)))
     except Exception as exc:                    # noqa: BLE001 - diagnostics must not crash
         checks.append(("database", False, str(exc)))
+
+    if conn is not None:
+        try:
+            from radar.render.today_diagnose import diagnose_today
+
+            report = diagnose_today(conn)
+            poisoned = not report["poisoned_fund_criteria"]
+            checks.append((
+                "Fund Criteria last-good",
+                poisoned,
+                (
+                    "ok"
+                    if poisoned
+                    else "POISONED vehicle_key — repair-fund-criteria then rescore --all"
+                ),
+            ))
+            hash_ok = not (
+                report["scored_for_active_hash"] == 0
+                and report["scores_on_other_hashes"] > 0
+            )
+            checks.append((
+                "Today score generation",
+                hash_ok,
+                (
+                    f"shortlist {report['tiers']['shortlist']} · "
+                    f"watchlist {report['tiers']['watchlist']}"
+                    if hash_ok
+                    else "active config_hash has 0 scores — run rescore --all"
+                ),
+            ))
+        except Exception as exc:  # noqa: BLE001 — doctor must not crash
+            checks.append(("Today diagnosis", False, str(exc)))
 
     hermes = shutil.which("hermes")
     checks.append((
@@ -518,8 +584,16 @@ def doctor(ctx):
         for name, ok, detail in checks:
             click.echo(f"{'✅' if ok else '❌'}  {name.ljust(width)}  {detail}")
 
-    required_ok = all(ok for name, ok, detail in checks if detail == "required")
-    sys.exit(EXIT_OK if required_ok else EXIT_PARTIAL)
+    required_ok = all(
+        ok for name, ok, detail in checks
+        if detail == "required"
+        or detail.startswith("required when")
+    )
+    # Poisoned Fund Criteria is also fatal for a useful Today list.
+    fund_ok = all(
+        ok for name, ok, _ in checks if name == "Fund Criteria last-good"
+    )
+    sys.exit(EXIT_OK if required_ok and fund_ok else EXIT_PARTIAL)
 
 
 def main() -> None:

@@ -553,10 +553,41 @@ def load_runtime_config(
             raw, _, _, _ = read_sheet_state(gw)
             loaded = load_config(raw, db=db)
             cfg = _with_legacy_qualifier_strips(loaded.config, db)
+            if loaded.healed_fund_criteria:
+                warnings.append(
+                    "Fund Criteria was poisoned (Active landed in Vehicle key); "
+                    "reseeding vehicles from code defaults"
+                )
+            elif loaded.used_last_good and "fund_criteria" in loaded.errors:
+                warnings.append(loaded.errors["fund_criteria"])
+            warnings.extend(
+                f"{key}: {text}" for key, text in loaded.warnings.items()
+            )
             return cfg, gw, warnings
         except Exception as exc:  # noqa: BLE001 — fall through to last-good
             warnings.append(f"sheet not read: {type(exc).__name__}: {exc}")
     cfg = load_last_good(db)
+    if cfg is not None and funds_are_poisoned(cfg.funds):
+        # Sheet unreachable and last-good still carries vehicle_key="yes" —
+        # the Aug 2026 empty-Today failure. Heal here so a Google outage
+        # cannot keep serving a poisoned shortlist forever.
+        warnings.append(
+            "last-good Fund Criteria is poisoned (vehicle_key looks like "
+            "Active TRUE/FALSE); reseeding vehicles from code defaults"
+        )
+        healed = default_config().model_copy(
+            update={
+                "settings": cfg.settings,
+                "weights": cfg.weights,
+                "sources": with_default_sources(cfg.sources),
+                "lists": cfg.lists,
+            },
+            deep=True,
+        )
+        healed = _with_legacy_qualifier_strips(healed, db)
+        if db is not None:
+            save_snapshot(db, healed, is_last_good=True)
+        return healed, gw, warnings
     if cfg is not None:
         cfg = _with_legacy_qualifier_strips(cfg, db)
         return cfg, gw, warnings
