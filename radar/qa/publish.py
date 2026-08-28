@@ -234,13 +234,40 @@ def _heal(db: Any, issues: list[PublishIssue], report: PublishReport) -> None:
         try:
             from radar.config.defaults import default_config
             from radar.config.loader import canonicalize_config, save_snapshot
+            from radar.render.sheet import (
+                FUND_CRITERIA,
+                ValueRange,
+                a1,
+                col_letter,
+                fund_criteria_seed_grid,
+                open_gateway,
+            )
 
             cfg = canonicalize_config(default_config())
             digest = save_snapshot(db, cfg, is_last_good=True)
             report.heals.append(f"reseeded Fund Criteria → last-good {digest}")
+            try:
+                gw = open_gateway()
+                grid = fund_criteria_seed_grid(cfg)
+                blank = [[""] * 17 for _ in range(200)]
+                gw.batch_set(
+                    [ValueRange(a1(FUND_CRITERIA, "A", 1, "Q", 200), blank)],
+                    value_input_option="USER_ENTERED",
+                )
+                width = col_letter(max(len(r) for r in grid) - 1)
+                gw.batch_set(
+                    [ValueRange(a1(FUND_CRITERIA, "A", 1, width, len(grid)), grid)],
+                    value_input_option="USER_ENTERED",
+                )
+                report.heals.append("rewrote Fund Criteria sheet from defaults")
+            except Exception as sheet_exc:  # noqa: BLE001 — sheet optional
+                report.warnings.append(
+                    f"Fund Criteria sheet not rewritten: "
+                    f"{type(sheet_exc).__name__}: {sheet_exc}"
+                )
         except Exception as exc:  # noqa: BLE001
             report.warnings.append(
-                f"repair-fund-criteria failed: {type(exc).__name__}: {exc}"
+                f"Fund Criteria reseed failed: {type(exc).__name__}: {exc}"
             )
 
     if codes & {"config_hash_drift", "shortlist_vanished", "poisoned_fund_criteria"}:

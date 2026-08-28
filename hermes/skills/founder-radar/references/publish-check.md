@@ -12,7 +12,6 @@ publish snapshot you are given (counts + health flags).
 - `shortlist_vanished`: last run reported shortlisted > 0 but the active
   generation shows 0 scored rows
 - `poisoned_fund_criteria`: Fund Criteria last-good has boolean vehicle keys
-- Doctor-critical failure called out in the snapshot
 
 ## PASS when
 

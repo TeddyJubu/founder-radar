@@ -323,8 +323,9 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
         for line in [*warnings, *qa.warnings]:
             click.echo(line)
 
-    # Re-check after QA/heal so a mid-flight hash flip cannot sneak through.
-    report2 = pre_publish_check(db, use_hermes=False, heal=True)
+    # Re-check after QA so a mid-flight hash flip cannot sneak through.
+    # Honour --no-heal: refuse rather than silently rescoring at send time.
+    report2 = pre_publish_check(db, use_hermes=False, heal=not no_heal)
     if not report2.ok:
         click.echo(format_publish_report(report2))
         click.echo("publish refused after Today QA: gate BLOCK", err=True)

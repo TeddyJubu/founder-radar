@@ -191,13 +191,16 @@ def _today_block_reason(
     freshness = apply_freshness_gates(row, config, today=today)
     if not freshness.passed:
         return freshness.reason or "freshness_gate"
-    # Ops 2026-08-28: lasting verdicts (Kept / not for me) must not reappear
-    # on Today the next morning — only daily_review was being checked before.
+    # Lasting verdicts must not reappear the *next* morning. Same-calendar-day
+    # verdicts stay on daily_review so Review Again (which only clears that
+    # table) can restore the queue without erasing Kept / not for me.
     try:
+        day = today.isoformat() if hasattr(today, "isoformat") else str(today)
         decided = conn.execute(
             "SELECT 1 FROM user_field WHERE company_id = ? AND field = 'verdict' "
-            "AND TRIM(COALESCE(value, '')) != '' LIMIT 1",
-            (_row_company_id(row),),
+            "AND TRIM(COALESCE(value, '')) != '' "
+            "AND date(updated_at) < date(?) LIMIT 1",
+            (_row_company_id(row), day),
         ).fetchone()
         if decided:
             return "already_decided"
@@ -219,13 +222,11 @@ def _today_block_reason(
         leftover = [flag for flag in flags if flag != "age_unknown"]
         if leftover:
             return leftover[0]
-        # Track A often has no Companies House age. Unknown age alone must
-        # not empty Today — only hide when stage is *known* and later than
-        # seed (those cards need a verified age before Aryan reviews them).
-        if (
-            age_unknown
-            and stage is not None
-            and STAGES.index(stage) > STAGES.index("seed")
+        # Unknown age is allowed only when stage is known early (idea /
+        # pre-seed / seed). Undated + unstaged, or known post-seed without
+        # a CH date, stay off Today (PR #33 / ionSIGHT leak).
+        if age_unknown and (
+            stage is None or STAGES.index(stage) > STAGES.index("seed")
         ):
             return "maturity_unknown"
 
@@ -235,11 +236,10 @@ def _today_block_reason(
     vehicle = _vehicle_by_key(config, vehicle_key)
     if vehicle is not None and vehicle.geo_rule == "HARD" and vehicle.geo_values:
         verdict = evaluate_vehicle_gates(row, vehicle, config)
-        # Confirmed out-of-region stays hidden. Unverified geography used to
-        # empty Today after age was unknown — show those cards; Hermes/Aryan
-        # can still reject.
         if not verdict.passed and (verdict.reason or "").startswith("geography"):
             return "geography_mismatch"
+        if "geography" in (verdict.unverified_rules or ()):
+            return "geography_unverified"
 
     from radar.qa.today import is_rejected
 
@@ -1344,6 +1344,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                      WHERE uf.company_id = c.id
                        AND uf.field = 'verdict'
                        AND TRIM(COALESCE(uf.value, '')) != ''
+                       AND date(uf.updated_at) < date(?)
               )
               AND EXISTS (
                     SELECT 1 FROM company_source cs
@@ -1358,7 +1359,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                          'accelerator') THEN 0 ELSE 1 END,
                      s.priority DESC, s.coverage DESC, c.canonical_name
             """,
-        (*hash_params, *REVIEWABLE, *REVIEWABLE, review_date),
+        (*hash_params, *REVIEWABLE, *REVIEWABLE, review_date, review_date),
     ).fetchall()
 
     verdicts = {

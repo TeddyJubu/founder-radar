@@ -1,12 +1,12 @@
 """Tiering — shortlist, watchlist, reject, and always a reason.
 
-06-scoring §8, implemented as written. Two properties are worth stating
-plainly because they are the whole design:
+06-scoring §8, with one ops adjustment:
 
-* **Any flag at all keeps a company off the shortlist.** `age_unknown`,
-  `uk_unverified` and `gate_unverified` all mean "we could not check
-  something that matters", and a shortlist you cannot defend is worse than a
-  shorter one.
+* **Numeric bars decide shortlist.** Fit / edge / coverage must clear the
+  settings thresholds. Soft verify-flags (`age_unknown`, `gate_unverified`,
+  `uk_unverified`) annotate the reason ("verify before sending") instead of
+  hard-blocking — otherwise near-miss Track A rows produce chronic empty
+  shortlist mornings.
 * **"Scores high but we know too little" is watchlist with an explicit
   reason, not reject.** That is a research prompt, not a dismissal.
 """
