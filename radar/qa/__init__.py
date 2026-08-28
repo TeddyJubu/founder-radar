@@ -1,5 +1,6 @@
-"""Today QA — a veto on the morning queue, never a score."""
+"""Today QA and publish gate — veto + Hermes-operated publish checks."""
 
+from radar.qa.publish import format_publish_report, pre_publish_check
 from radar.qa.today import (
     HermesSubagent,
     TodayCard,
@@ -14,6 +15,8 @@ from radar.qa.today import (
 )
 
 __all__ = [
+    "format_publish_report",
+    "pre_publish_check",
     "HermesSubagent",
     "TodayCard",
     "TodayCheckResult",

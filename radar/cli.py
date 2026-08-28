@@ -46,7 +46,11 @@ def load_env_file(path: Path | None = None) -> int:
     `export`, and surrounding quotes stripped is the whole format in use.
     """
     path = path or Path.cwd() / ".env"
-    if not path.is_file():
+    try:
+        if not path.is_file():
+            return 0
+    except PermissionError:
+        # Unreadable cwd/.env (e.g. /root/.env when invoked via sudo -u radar).
         return 0
     loaded = 0
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -214,18 +218,125 @@ def fund(ctx, fund_key, top):
 @click.option("--week", "period", flag_value="week")
 @click.option("--date", "on_date", default=None)
 @click.option("--send", is_flag=True, help="Push to Telegram as well as printing")
+@click.option("--force", is_flag=True,
+              help="Send even if the publish gate would BLOCK "
+                   "(also requires RADAR_ALLOW_FORCE_PUBLISH=1)")
+@click.option("--no-hermes", is_flag=True, help="Skip Hermes publish-check subagent")
+@click.option("--no-heal", is_flag=True, help="Do not auto-rescore on hash drift")
 @click.pass_context
-def digest(ctx, period, on_date, send):
-    """The Telegram digest, printed (and optionally sent)."""
+def digest(ctx, period, on_date, send, force, no_hermes, no_heal):
+    """The Telegram digest, printed (and optionally sent).
+
+    `--send` runs the publish gate first (hash drift, poison, Hermes) and
+    auto-heals by default. `--no-heal` refuses instead of rescoring.
+    Use `founder-radar publish --send` for the full agent-native path
+    (gate + Today QA + send). `--force` bypasses the gate only when
+    `RADAR_ALLOW_FORCE_PUBLISH=1` is also set — last resort.
+    """
     from radar.render.digest import render_digest
 
-    text = render_digest(_db(ctx), period=period, on_date=on_date)
+    db = _db(ctx)
+    if send and force:
+        allow = (os.environ.get("RADAR_ALLOW_FORCE_PUBLISH") or "").strip().lower()
+        if allow not in ("1", "true", "yes"):
+            click.echo(
+                "digest --send --force refused: set RADAR_ALLOW_FORCE_PUBLISH=1 "
+                "(ops escape hatch; not set in systemd)",
+                err=True,
+            )
+            sys.exit(EXIT_FATAL)
+        click.echo(
+            "⚠️  digest --send --force: publish gate bypassed "
+            "(RADAR_ALLOW_FORCE_PUBLISH=1)",
+            err=True,
+        )
+    elif send:
+        from radar.qa.publish import format_publish_report, pre_publish_check
+
+        report = pre_publish_check(db, use_hermes=not no_hermes, heal=not no_heal)
+        click.echo(format_publish_report(report))
+        if not report.ok:
+            click.echo("digest --send refused: publish gate BLOCK", err=True)
+            sys.exit(EXIT_FATAL)
+
+    text = render_digest(db, period=period, on_date=on_date)
     if send:
         from radar.notify.telegram import send_message
 
         send_message(text)
     _emit(text, ctx.obj["json"])
 
+
+
+@cli.command("publish-check")
+@click.option("--no-hermes", is_flag=True, help="Deterministic checks only")
+@click.option("--no-heal", is_flag=True, help="Do not auto-rescore / repair")
+@click.pass_context
+def publish_check(ctx, no_hermes, no_heal):
+    """Hermes + deterministic gate: is it safe to publish to Aryan?
+
+    Exit 0 = PASS, exit 2 = BLOCK. Auto-heals config_hash drift when it can.
+    """
+    from radar.qa.publish import format_publish_report, pre_publish_check
+
+    report = pre_publish_check(
+        _db(ctx), use_hermes=not no_hermes, heal=not no_heal,
+    )
+    if ctx.obj["json"]:
+        _emit(report.as_dict(), True)
+    else:
+        click.echo(format_publish_report(report))
+    sys.exit(EXIT_OK if report.ok else EXIT_FATAL)
+
+
+@cli.command("publish")
+@click.option("--send", is_flag=True, help="Push the digest to Telegram on PASS")
+@click.option("--no-hermes", is_flag=True, help="Skip Hermes subagents")
+@click.option("--no-heal", is_flag=True, help="Do not auto-rescore / repair")
+@click.option("--skip-today-qa", is_flag=True, help="Skip per-card Today QA")
+@click.pass_context
+def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
+    """Agent-native publish: gate → Today QA → digest (optional --send).
+
+    This is the only path systemd and Hermes should use to message Aryan.
+    """
+    from radar.config.loader import load_runtime_config
+    from radar.qa.publish import format_publish_report, pre_publish_check
+    from radar.render.digest import render_digest
+
+    db = _db(ctx)
+    report = pre_publish_check(db, use_hermes=not no_hermes, heal=not no_heal)
+    click.echo(format_publish_report(report))
+    if not report.ok:
+        click.echo("publish refused: gate BLOCK", err=True)
+        sys.exit(EXIT_FATAL)
+
+    if not skip_today_qa:
+        from radar.qa.today import run_today_qa
+
+        cfg, _, warnings = load_runtime_config(db)
+        qa = run_today_qa(db, cfg, use_hermes=not no_hermes)
+        click.echo(
+            f"today QA: {qa.checked} checked, {qa.passed} pass, "
+            f"{qa.rejected} rejected, {qa.cached} cached"
+        )
+        for line in [*warnings, *qa.warnings]:
+            click.echo(line)
+
+    # Re-check after QA/heal so a mid-flight hash flip cannot sneak through.
+    report2 = pre_publish_check(db, use_hermes=False, heal=True)
+    if not report2.ok:
+        click.echo(format_publish_report(report2))
+        click.echo("publish refused after Today QA: gate BLOCK", err=True)
+        sys.exit(EXIT_FATAL)
+
+    text = render_digest(db, period="today")
+    if send:
+        from radar.notify.telegram import send_message
+
+        send_message(text)
+        click.echo("digest sent")
+    _emit(text, ctx.obj["json"])
 
 @cli.command("today-qa")
 @click.option("--no-hermes", is_flag=True,
@@ -560,7 +671,9 @@ def doctor(ctx):
         except Exception as exc:  # noqa: BLE001 — doctor must not crash
             checks.append(("Today diagnosis", False, str(exc)))
 
-    hermes = shutil.which("hermes")
+    from radar.qa.today import resolve_hermes_binary
+
+    hermes = resolve_hermes_binary()
     checks.append((
         "hermes binary", bool(hermes),
         hermes or "optional — Today QA falls back to rules only",

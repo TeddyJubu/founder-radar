@@ -36,17 +36,25 @@ def tier_of(
     settings = _settings(config)
     flags = list(flags)
 
-    if flags:
-        if fit.pct >= settings.watchlist_fit:
-            return "watchlist", f"{flags[0].replace('_', ' ')} — verify before sending"
-        return "reject", "below fit threshold"
-
+    # Ops 2026-08-27: soft verify-flags used to hard-block every near-miss
+    # (age_unknown / gate_unverified), which produced chronic zero-shortlist
+    # days. Numeric bars still apply; flags only annotate the reason.
     if (
         fit.pct >= settings.shortlist_fit
         and edge >= settings.shortlist_edge
         and fit.coverage >= settings.min_coverage
     ):
+        if flags:
+            return (
+                "shortlist",
+                f"{flags[0].replace('_', ' ')} — verify before sending",
+            )
         return "shortlist", ""
+
+    if flags:
+        if fit.pct >= settings.watchlist_fit:
+            return "watchlist", f"{flags[0].replace('_', ' ')} — verify before sending"
+        return "reject", "below fit threshold"
 
     if fit.pct >= settings.shortlist_fit and fit.coverage < settings.min_coverage:
         return "watchlist", "strong fit but too little known — needs 10 minutes of research"

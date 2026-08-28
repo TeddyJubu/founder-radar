@@ -63,6 +63,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "geography_mismatch": "Does not meet the fund's region rule",
     "missing_provenance": "No usable source URL",
     "reviewed_today": "Already reviewed today",
+    "already_decided": "Already decided (Kept / not for me)",
     "display_limit": "Beyond today's display limit",
     "registry_without_venture_signal": "Companies House only, no venture signal",
     "hermes_rejected": "Failed the final Hermes company check",
@@ -190,6 +191,18 @@ def _today_block_reason(
     freshness = apply_freshness_gates(row, config, today=today)
     if not freshness.passed:
         return freshness.reason or "freshness_gate"
+    # Ops 2026-08-28: lasting verdicts (Kept / not for me) must not reappear
+    # on Today the next morning — only daily_review was being checked before.
+    try:
+        decided = conn.execute(
+            "SELECT 1 FROM user_field WHERE company_id = ? AND field = 'verdict' "
+            "AND TRIM(COALESCE(value, '')) != '' LIMIT 1",
+            (_row_company_id(row),),
+        ).fetchone()
+        if decided:
+            return "already_decided"
+    except Exception:
+        pass
     flags = list(freshness.flags)
     age_unknown = (not _row_value(row, "incorporated_on")) or "age_unknown" in flags
     stage = canon_enum(_row_value(row, "stage"), STAGES)
@@ -206,7 +219,14 @@ def _today_block_reason(
         leftover = [flag for flag in flags if flag != "age_unknown"]
         if leftover:
             return leftover[0]
-        if age_unknown and (stage is None or STAGES.index(stage) > STAGES.index("seed")):
+        # Track A often has no Companies House age. Unknown age alone must
+        # not empty Today — only hide when stage is *known* and later than
+        # seed (those cards need a verified age before Aryan reviews them).
+        if (
+            age_unknown
+            and stage is not None
+            and STAGES.index(stage) > STAGES.index("seed")
+        ):
             return "maturity_unknown"
 
     vehicle_key = _row_value(row, "vehicle_key") or _winning_vehicle_key(
@@ -215,10 +235,11 @@ def _today_block_reason(
     vehicle = _vehicle_by_key(config, vehicle_key)
     if vehicle is not None and vehicle.geo_rule == "HARD" and vehicle.geo_values:
         verdict = evaluate_vehicle_gates(row, vehicle, config)
+        # Confirmed out-of-region stays hidden. Unverified geography used to
+        # empty Today after age was unknown — show those cards; Hermes/Aryan
+        # can still reject.
         if not verdict.passed and (verdict.reason or "").startswith("geography"):
             return "geography_mismatch"
-        if "geography" in (verdict.unverified_rules or ()):
-            return "geography_unverified"
 
     from radar.qa.today import is_rejected
 
@@ -1317,6 +1338,12 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                     SELECT 1 FROM daily_review dr
                      WHERE dr.company_id = c.id
                        AND dr.review_date = ?
+              )
+              AND NOT EXISTS (
+                    SELECT 1 FROM user_field uf
+                     WHERE uf.company_id = c.id
+                       AND uf.field = 'verdict'
+                       AND TRIM(COALESCE(uf.value, '')) != ''
               )
               AND EXISTS (
                     SELECT 1 FROM company_source cs

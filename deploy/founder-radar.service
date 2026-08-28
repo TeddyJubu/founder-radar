@@ -15,6 +15,9 @@ User=radar
 Group=radar
 WorkingDirectory=/opt/founder-radar/app
 EnvironmentFile=/opt/founder-radar/.env
+# HERMES_BIN / HERMES_HOME — written by deploy/install.sh so Today QA can
+# exec the Agent install that lives under the operator's home.
+EnvironmentFile=-/opt/founder-radar/hermes.env
 Environment=TZ=Europe/London
 
 # Two steps, on purpose.
@@ -28,7 +31,7 @@ Environment=TZ=Europe/London
 # Exit 2 is fatal: nothing was produced, so nothing is sent, and the heartbeat
 # at 09:00 is what tells Aryan (02-architecture §7).
 ExecStart=/opt/founder-radar/venv/bin/founder-radar run
-ExecStart=/opt/founder-radar/venv/bin/founder-radar digest --today --send
+ExecStart=/opt/founder-radar/venv/bin/founder-radar publish --send
 SuccessExitStatus=0 1
 
 TimeoutStartSec=3600
@@ -43,8 +46,11 @@ MemoryMax=1G
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# read-only (not true): Today QA must exec Hermes under HERMES_HOME. install.sh
+# then adds ReadWritePaths for $HERMES_HOME/.hermes so the subagent can log.
+ProtectHome=read-only
 ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs /opt/founder-radar/backups
+# install.sh adds ReadWritePaths for HERMES_HOME/.hermes via hermes.conf drop-in
 
 StandardOutput=append:/opt/founder-radar/logs/run.log
 StandardError=append:/opt/founder-radar/logs/error.log

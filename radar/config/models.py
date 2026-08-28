@@ -297,7 +297,14 @@ class Config(BaseModel):
 
         `errors` is excluded: a transient sheet typo must not silently
         re-partition the score table.
+
+        Source `note` is also excluded: adapters rewrite notes every run
+        (e.g. "document N bytes") and that must not mint a new config_hash
+        that empties Today until the next rescore.
         """
         payload = self.model_dump(mode="json", exclude={"errors"})
+        for source in payload.get("sources") or []:
+            if isinstance(source, dict):
+                source.pop("note", None)
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode()).hexdigest()[:16]

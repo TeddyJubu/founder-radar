@@ -100,6 +100,23 @@ fi
 
 bash "$APP_DIR/deploy/install.sh"
 
+# install.sh already asserts publish --send; double-check the live unit so a
+# hand-edited drop-in cannot quietly restore digest --send.
+unit_live="/etc/systemd/system/founder-radar.service"
+if [ -f "$unit_live" ]; then
+  if ! grep -qE '^ExecStart=.*/founder-radar[[:space:]]+publish[[:space:]]+--send' "$unit_live"; then
+    say "FATAL: $unit_live missing publish --send after install"
+    exit 1
+  fi
+  if grep -qE '^ExecStart=.*/founder-radar[[:space:]]+digest[[:space:]].*--send' "$unit_live"; then
+    say "FATAL: $unit_live has raw digest --send after install"
+    exit 1
+  fi
+fi
+if [ -x "$APP_DIR/deploy/hermes-acl.sh" ]; then
+  "$APP_DIR/deploy/hermes-acl.sh" || say "warn: hermes-acl.sh refresh failed"
+fi
+
 cd "$ROOT"
 run_cli() {
   # Explicit venv binary: do not depend on /usr/local/bin being on PATH
