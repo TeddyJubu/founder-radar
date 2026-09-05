@@ -20,6 +20,7 @@ Today's list is already filtered by the Today QA subagent during
 | Intent | Command |
 |---|---|
 | today's list, what's new | `founder-radar digest --today` |
+| **keep / reject / unsure a company** | `founder-radar decide "<name>" --verdict "…"` |
 | re-check today's list | `founder-radar today-qa` |
 | run it now, scan now | `founder-radar run` |
 | just Northstar / DSW / Outward / Anticus | `founder-radar run --fund <key>` |
@@ -29,6 +30,12 @@ Today's list is already filtered by the Today QA subagent during
 | this week | `founder-radar digest --week` |
 
 Fund keys: northstar · dsw · outward · anticus
+
+Verdict values (exact strings): `worth contacting` · `not for me` · `unsure`
+
+When Aryan asks to reject, keep, or mark unsure a company in Telegram, you
+**must** run `decide`. Replying "done" in chat without the CLI leaves Today,
+Kept, and the Sheet unchanged.
 
 If asked to re-check today's list: run `founder-radar today-qa`, then
 `founder-radar digest --today`. The QA command spawns the Today-check

@@ -294,6 +294,34 @@ def test_a_verdict_made_outside_the_sheet_survives_and_reaches_it(db, sheet):
     assert "worth contacting" in sheet.column(COMPANIES, "Z")
 
 
+def test_sheet_sync_preserves_verdict_updated_at_when_unchanged(db, sheet):
+    """Morning sync must not refresh updated_at for an unchanged Z cell.
+
+    Today hides lasting verdicts with `substr(updated_at,1,10) < today`.
+    Rewriting the same "not for me" with a fresh stamp every run made rejects
+    look same-day-new and resurface on the queue.
+    """
+    ids = seed_companies(db, 2)
+    render(db, sheet)
+    stamp = "2026-08-20T09:00:00Z"
+    db.execute(
+        "INSERT INTO user_field(company_id, field, value, updated_at) VALUES (?,?,?,?)",
+        (ids[0], "verdict", "not for me", stamp),
+    )
+    from radar.render.sheet import mirror_verdict
+    mirror_verdict(ids[0], "not for me", gateway=sheet)
+
+    render(db, sheet)
+
+    row = db.one(
+        "SELECT value, updated_at FROM user_field "
+        "WHERE company_id = ? AND field = 'verdict'",
+        (ids[0],),
+    )
+    assert row["value"] == "not for me"
+    assert row["updated_at"] == stamp
+
+
 def test_web_verdict_mirrors_only_the_matching_companies_cell(db, sheet):
     """A web pick updates Z beside its ID without touching other user cells."""
     ids = seed_companies(db, 3)

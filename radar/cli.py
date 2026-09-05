@@ -209,6 +209,51 @@ def fund(ctx, fund_key, top):
     _emit(render_fund(_db(ctx), fund_key, top=top), ctx.obj["json"])
 
 
+@cli.command("decide")
+@click.argument("name")
+@click.option(
+    "--verdict",
+    type=click.Choice(["worth contacting", "not for me", "unsure"],
+                      case_sensitive=False),
+    required=True,
+    help="Lasting decision — same values as the Today web UI",
+)
+@click.pass_context
+def decide(ctx, name, verdict):
+    """Record a lasting verdict so Today / Kept / the Sheet stay in sync.
+
+    Telegram and Hermes must call this (not just reply in chat) when Aryan
+    rejects or keeps a company — otherwise the dashboard never sees it.
+    """
+    from radar.render.sheet import mirror_verdict
+    from radar.verdict import record_verdict, resolve_company_id
+
+    db = _db(ctx)
+    company_id, candidates = resolve_company_id(db, name)
+    if company_id is None:
+        if candidates:
+            listed = "\n".join(f"  · {c}" for c in candidates)
+            msg = (f'{len(candidates)} companies match "{name}":\n{listed}\n\n'
+                   "Ask again with a full name.")
+        else:
+            msg = f'No company matching "{name}".'
+        _emit(msg, ctx.obj["json"])
+        sys.exit(EXIT_PARTIAL)
+
+    kept = record_verdict(db, company_id, verdict)
+    sheet_sync = "not_configured"
+    try:
+        sheet_sync = str(mirror_verdict(company_id, verdict)["status"])
+    except Exception as exc:  # noqa: BLE001 — mirror must not fail the decide
+        sheet_sync = f"failed:{exc.__class__.__name__}"
+
+    row = db.one("SELECT canonical_name FROM company WHERE id = ?", (company_id,))
+    label = row["canonical_name"] if row else name
+    msg = (f"✓ {label} → {verdict}\n"
+           f"  Kept total: {kept} · sheet: {sheet_sync}")
+    _emit(msg, ctx.obj["json"])
+
+
 @cli.command()
 @click.option("--today", "period", flag_value="today", default=True)
 @click.option("--week", "period", flag_value="week")

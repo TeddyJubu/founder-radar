@@ -70,6 +70,49 @@ def test_today_excludes_a_company_after_a_decision_until_review_again(db):
     assert {row["company_id"] for row in build_today(db.conn)["companies"]} == set(ids)
 
 
+def test_today_hides_yesterday_reject_the_next_morning(db):
+    """A lasting 'not for me' must not resurface after the calendar rolls.
+
+    Regression for Aryan's persistent complaint: rejected companies returned
+    every morning because only same-day daily_review hid them.
+    """
+    from datetime import timedelta
+
+    ids = seed_companies(db, count=2, shortlist=2)
+    set_verdict(db.conn, ids[0], "not for me")
+    # Simulate yesterday's decision: backdate the lasting stamp and clear
+    # today's daily_review marker (as if a new calendar day started).
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    db.execute(
+        "UPDATE user_field SET updated_at = ? "
+        "WHERE company_id = ? AND field = 'verdict'",
+        (f"{yesterday}T12:00:00", ids[0]),
+    )
+    assert reset_daily_review(db.conn) == 1
+
+    payload = build_today(db.conn)
+    shown = {row["company_id"] for row in payload["companies"]}
+    assert ids[0] not in shown
+    assert ids[1] in shown
+    reasons = {row["key"]: row["count"]
+               for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert reasons.get("already_decided") == 1
+
+
+def test_today_hides_explicit_non_uk_country(db):
+    """country_iso2 other than GB must not occupy Today even if scored."""
+    ids = seed_companies(db, count=2, shortlist=2)
+    db.execute("UPDATE company SET country_iso2 = 'DE' WHERE id = ?", (ids[0],))
+
+    payload = build_today(db.conn)
+    shown = {row["company_id"] for row in payload["companies"]}
+    assert ids[0] not in shown
+    assert ids[1] in shown
+    reasons = {row["key"]: row["count"]
+               for row in payload["eligibility_diagnostics"]["reasons"]}
+    assert reasons.get("not_uk") == 1
+
+
 def test_today_does_not_surface_age_unverified_companies(db, config):
     """Registry cards with unknown age stay in the research pool."""
     from radar.pipeline import score_company
