@@ -119,6 +119,9 @@ for unit in founder-radar.service founder-radar.timer \
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
 chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh"
+if [ -f "$HERE/hermes-acl.sh" ]; then
+  chmod 755 "$HERE/hermes-acl.sh"
+fi
 # hermes-dashboard.sh remains in the tree for local ops, but is not published.
 if [ -f "$HERE/hermes-dashboard.sh" ]; then
   chmod 755 "$HERE/hermes-dashboard.sh"
@@ -247,6 +250,10 @@ install_skill() {
     "$home/.hermes/skills/founder-radar/SKILL.md"
   install -m 644 "$APP_DIR/hermes/skills/founder-radar/references/today-check.md" \
     "$home/.hermes/skills/founder-radar/references/today-check.md"
+  if [ -f "$APP_DIR/hermes/skills/founder-radar/references/publish-check.md" ]; then
+    install -m 644 "$APP_DIR/hermes/skills/founder-radar/references/publish-check.md" \
+      "$home/.hermes/skills/founder-radar/references/publish-check.md"
+  fi
   if [ -n "$owner" ] && [ "$owner" != "root" ]; then
     chown -R "$owner" "$home/.hermes/skills/founder-radar"
   fi

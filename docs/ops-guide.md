@@ -35,6 +35,10 @@ in Telegram chat, Hermes must run
 `founder-radar decide "<name>" --verdict "not for me"` — a chat-only reply does
 not update Today, Kept, or the Sheet.
 
+**Morning send path:** systemd runs `founder-radar publish --send` (not raw
+`digest --send`). That path refuses Telegram delivery when the publish gate
+BLOCKs or when Today QA cannot use Hermes while reviewable scores exist.
+
 ---
 
 ## 2. Shortlist vs Kept (easy to confuse)
