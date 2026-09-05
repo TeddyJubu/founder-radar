@@ -198,6 +198,8 @@ class TodayQaReport:
     rejected: int = 0
     skipped: int = 0
     cached: int = 0
+    cards: int = 0
+    hermes_used: bool = False
     warnings: list[str] = field(default_factory=list)
 
 
@@ -341,6 +343,28 @@ def _argv_for_log(argv: list[str]) -> list[str]:
     return [part if len(part) < 64 else f"<{len(part)} chars>" for part in argv[1:]]
 
 
+def resolve_hermes_binary() -> str | None:
+    """Prefer `HERMES_BIN` (hermes.env / systemd); fall back to PATH."""
+    env_bin = (os.environ.get("HERMES_BIN") or "").strip()
+    if env_bin and os.path.isfile(env_bin) and os.access(env_bin, os.X_OK):
+        return env_bin
+    return shutil.which("hermes")
+
+
+def _hermes_subprocess_env() -> dict[str, str]:
+    """Env for Hermes subagents: remap HERMES_HOME to the data dir Hermes expects."""
+    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1"}
+    owner_home = (os.environ.get("HERMES_HOME") or "").strip()
+    if owner_home:
+        hermes_dir = Path(owner_home) / ".hermes"
+        env["HOME"] = owner_home
+        if hermes_dir.is_dir():
+            env["HERMES_HOME"] = str(hermes_dir)
+        else:
+            env.pop("HERMES_HOME", None)
+    return env
+
+
 class HermesSubagent:
     """One-shot Hermes chat as the Today QA subagent.
 
@@ -371,9 +395,15 @@ class HermesSubagent:
         return parse_verdict(text, checker=self.name)
 
     def _run(self, prompt: str) -> str:
-        binary = self._binary or shutil.which("hermes")
+        binary = self._binary or resolve_hermes_binary()
         if not binary:
             raise HermesUnavailable("hermes binary not on PATH")
+        try:
+            from radar.qa.publish import _ensure_hermes_acl
+
+            _ensure_hermes_acl()
+        except Exception:  # noqa: BLE001 — ACL refresh is best-effort
+            pass
         # stdin=True means the prompt is the query body; otherwise it is argv.
         attempts: list[tuple[list[str], bool]] = [
             ([binary, "chat", "-Q", "--query-file", "-"], True),
@@ -381,7 +411,7 @@ class HermesSubagent:
             ([binary, "-z", prompt], False),
         ]
         last: str | None = None
-        env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1"}
+        env = _hermes_subprocess_env()
         for argv, use_stdin in attempts:
             try:
                 completed = self._runner(  # noqa: S603 - fixed argv, no shell
@@ -414,8 +444,9 @@ def build_today_checker(*, checker: TodayChecker | None = None) -> TodayChecker 
         return checker
     if os.environ.get("TODAY_QA", "1") in {"0", "false", "no"}:
         return None
-    if shutil.which("hermes"):
-        return HermesSubagent()
+    binary = resolve_hermes_binary()
+    if binary:
+        return HermesSubagent(binary=binary)
     return None
 
 
@@ -800,6 +831,10 @@ def run_today_qa(
     elif checker is not None:
         active = checker
 
+    report.cards = len(cards)
+    report.hermes_used = bool(
+        active is not None and getattr(active, "name", "") == "hermes"
+    )
     if cards and use_hermes and active is None:
         report.warnings.append("today QA: Hermes not on PATH — rules only")
 
@@ -852,6 +887,7 @@ __all__ = [
     "load_today_cards",
     "parse_verdict",
     "record_check",
+    "resolve_hermes_binary",
     "rules_precheck",
     "run_today_qa",
     "subagent_prompt",

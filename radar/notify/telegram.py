@@ -47,9 +47,9 @@ class DeliveryError(RuntimeError):
 
 def hermes_transport(text: str) -> bool:
     """`hermes send --to telegram <text>`. False for every kind of failure."""
-    import shutil
+    from radar.qa.today import resolve_hermes_binary
 
-    binary = shutil.which("hermes")
+    binary = resolve_hermes_binary()
     if binary is None:
         log.debug("hermes binary not on PATH — using the direct Bot API")
         return False

@@ -32,33 +32,48 @@ class NotBuilt(click.ClickException):
 
 
 def load_env_file(path: Path | None = None) -> int:
-    """Read `.env` into the environment. Returns how many names it set.
+    """Read `.env` (and optional hermes.env) into the environment.
 
-    The systemd unit loads this file with `EnvironmentFile=`, so the server was
-    always fine — but the README's own quick start is `cp .env.example .env`
-    then `founder-radar doctor`, and nothing in the process read it. Following
-    the documented steps exactly, you filled in a Companies House key and were
-    then told the key was missing.
-
-    A real environment variable always wins, so `CH_API_KEY=... founder-radar`
-    still overrides the file, and systemd's copy is untouched. Hand-parsed
-    rather than adding python-dotenv: `KEY=value`, `#` comments, optional
-    `export`, and surrounding quotes stripped is the whole format in use.
+    Returns how many names it set. A real environment variable always wins.
+    Systemd also loads these via EnvironmentFile=; this keeps `doctor` and
+    manual CLI invocations seeing HERMES_BIN the same way the timer does.
     """
-    path = path or Path.cwd() / ".env"
-    if not path.is_file():
-        return 0
+    def _load(file_path: Path) -> int:
+        try:
+            if not file_path.is_file():
+                return 0
+        except PermissionError:
+            return 0
+        count = 0
+        for line in file_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, _, value = line.removeprefix("export ").partition("=")
+            name, value = name.strip(), value.strip().strip('"').strip("'")
+            if not name or not value or name in os.environ:
+                continue
+            os.environ[name] = value
+            count += 1
+        return count
+
     loaded = 0
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, _, value = line.removeprefix("export ").partition("=")
-        name, value = name.strip(), value.strip().strip('"').strip("'")
-        if not name or not value or name in os.environ:
-            continue
-        os.environ[name] = value
-        loaded += 1
+    if path is not None:
+        loaded += _load(path if path.is_file() else Path(path))
+    else:
+        for candidate in (Path.cwd() / ".env", Path("/opt/founder-radar/.env")):
+            if candidate.is_file():
+                loaded += _load(candidate)
+                break
+    hermes_candidates = [
+        Path((os.environ.get("HERMES_ENV_FILE") or "").strip()) if (os.environ.get("HERMES_ENV_FILE") or "").strip() else None,
+        Path.cwd() / "hermes.env",
+        Path("/opt/founder-radar/hermes.env"),
+    ]
+    for candidate in hermes_candidates:
+        if candidate is not None and candidate.is_file():
+            loaded += _load(candidate)
+            break
     return loaded
 
 
@@ -259,16 +274,137 @@ def decide(ctx, name, verdict):
 @click.option("--week", "period", flag_value="week")
 @click.option("--date", "on_date", default=None)
 @click.option("--send", is_flag=True, help="Push to Telegram as well as printing")
+@click.option("--force", is_flag=True,
+              help="Send even if the publish gate would BLOCK "
+                   "(also requires RADAR_ALLOW_FORCE_PUBLISH=1)")
+@click.option("--no-hermes", is_flag=True, help="Skip Hermes publish-check subagent")
+@click.option("--no-heal", is_flag=True, help="Do not auto-rescore on hash drift")
 @click.pass_context
-def digest(ctx, period, on_date, send):
-    """The Telegram digest, printed (and optionally sent)."""
+def digest(ctx, period, on_date, send, force, no_hermes, no_heal):
+    """The Telegram digest, printed (and optionally sent).
+
+    `--send` runs the publish gate first (hash drift, poison, Hermes) and
+    auto-heals by default. Prefer `founder-radar publish --send` (gate +
+    Today QA + send). `--force` bypasses the gate only when
+    `RADAR_ALLOW_FORCE_PUBLISH=1` is also set — last resort.
+    """
     from radar.render.digest import render_digest
 
-    text = render_digest(_db(ctx), period=period, on_date=on_date)
+    db = _db(ctx)
+    if send and force:
+        allow = (os.environ.get("RADAR_ALLOW_FORCE_PUBLISH") or "").strip().lower()
+        if allow not in ("1", "true", "yes"):
+            click.echo(
+                "digest --send --force refused: set RADAR_ALLOW_FORCE_PUBLISH=1 "
+                "(ops escape hatch; not set in systemd)",
+                err=True,
+            )
+            sys.exit(EXIT_FATAL)
+        click.echo(
+            "⚠️  digest --send --force: publish gate bypassed "
+            "(RADAR_ALLOW_FORCE_PUBLISH=1)",
+            err=True,
+        )
+    elif send:
+        from radar.qa.publish import format_publish_report, pre_publish_check
+
+        report = pre_publish_check(db, use_hermes=not no_hermes, heal=not no_heal)
+        click.echo(format_publish_report(report))
+        if not report.ok:
+            click.echo("digest --send refused: publish gate BLOCK", err=True)
+            sys.exit(EXIT_FATAL)
+
+    text = render_digest(db, period=period, on_date=on_date)
     if send:
         from radar.notify.telegram import send_message
 
         send_message(text)
+    _emit(text, ctx.obj["json"])
+
+
+@cli.command("publish-check")
+@click.option("--no-hermes", is_flag=True, help="Deterministic checks only")
+@click.option("--no-heal", is_flag=True, help="Do not auto-rescore / repair")
+@click.pass_context
+def publish_check(ctx, no_hermes, no_heal):
+    """Hermes + deterministic gate: is it safe to publish to Aryan?
+
+    Exit 0 = PASS, exit 2 = BLOCK. Auto-heals config_hash drift when it can.
+    """
+    from radar.qa.publish import format_publish_report, pre_publish_check
+
+    report = pre_publish_check(
+        _db(ctx), use_hermes=not no_hermes, heal=not no_heal,
+    )
+    if ctx.obj["json"]:
+        _emit(report.as_dict(), True)
+    else:
+        click.echo(format_publish_report(report))
+    sys.exit(EXIT_OK if report.ok else EXIT_FATAL)
+
+
+@cli.command("publish")
+@click.option("--send", is_flag=True, help="Push the digest to Telegram on PASS")
+@click.option("--no-hermes", is_flag=True, help="Skip Hermes subagents")
+@click.option("--no-heal", is_flag=True, help="Do not auto-rescore / repair")
+@click.option("--skip-today-qa", is_flag=True, help="Skip per-card Today QA")
+@click.pass_context
+def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
+    """Agent-native publish: gate → Today QA → digest (optional --send).
+
+    This is the only path systemd and Hermes should use to message Aryan.
+    """
+    from radar.config.loader import load_runtime_config
+    from radar.qa.publish import format_publish_report, pre_publish_check
+    from radar.render.digest import render_digest
+
+    db = _db(ctx)
+    report = pre_publish_check(db, use_hermes=not no_hermes, heal=not no_heal)
+    click.echo(format_publish_report(report))
+    if not report.ok:
+        click.echo("publish refused: gate BLOCK", err=True)
+        sys.exit(EXIT_FATAL)
+
+    if not skip_today_qa:
+        from radar.qa.today import run_today_qa
+
+        cfg, _, warnings = load_runtime_config(db)
+        qa = run_today_qa(db, cfg, use_hermes=not no_hermes)
+        click.echo(
+            f"today QA: {qa.cards} cards · {qa.checked} checked, {qa.passed} pass, "
+            f"{qa.rejected} rejected, {qa.cached} cached"
+            + (" · hermes" if qa.hermes_used else " · rules-only")
+        )
+        for line in [*warnings, *qa.warnings]:
+            click.echo(line)
+        allow_rules = (os.environ.get("RADAR_ALLOW_RULES_ONLY_PUBLISH") or "").strip().lower() in {
+            "1", "true", "yes",
+        }
+        if (
+            not no_hermes
+            and qa.cards > 0
+            and not qa.hermes_used
+            and not allow_rules
+        ):
+            click.echo(
+                "publish refused: Today QA did not use Hermes while cards exist "
+                "(set RADAR_ALLOW_RULES_ONLY_PUBLISH=1 to override)",
+                err=True,
+            )
+            sys.exit(EXIT_FATAL)
+
+    report2 = pre_publish_check(db, use_hermes=False, heal=not no_heal)
+    if not report2.ok:
+        click.echo(format_publish_report(report2))
+        click.echo("publish refused after Today QA: gate BLOCK", err=True)
+        sys.exit(EXIT_FATAL)
+
+    text = render_digest(db, period="today")
+    if send:
+        from radar.notify.telegram import send_message
+
+        send_message(text)
+        click.echo("digest sent")
     _emit(text, ctx.obj["json"])
 
 
@@ -293,14 +429,18 @@ def today_qa(ctx, no_hermes):
         "rejected": report.rejected,
         "cached": report.cached,
         "skipped": report.skipped,
+        "cards": report.cards,
+        "hermes_used": report.hermes_used,
         "warnings": [*warnings, *report.warnings],
     }
     if ctx.obj["json"]:
         _emit(payload, True)
         return
     click.echo(
-        f"today QA: {report.checked} checked, {report.passed} pass, "
-        f"{report.rejected} rejected, {report.cached} cached"
+        f"today QA: {report.cards} cards · {report.checked} checked, "
+        f"{report.passed} pass, {report.rejected} rejected, "
+        f"{report.cached} cached"
+        + (" · hermes" if report.hermes_used else " · rules-only")
     )
     for line in payload["warnings"]:
         click.echo(line)
@@ -605,10 +745,12 @@ def doctor(ctx):
         except Exception as exc:  # noqa: BLE001 — doctor must not crash
             checks.append(("Today diagnosis", False, str(exc)))
 
-    hermes = shutil.which("hermes")
+    from radar.qa.today import resolve_hermes_binary
+
+    hermes = resolve_hermes_binary()
     checks.append((
         "hermes binary", bool(hermes),
-        hermes or "optional — Today QA falls back to rules only",
+        hermes or "required for Today QA / publish — set HERMES_BIN in hermes.env",
     ))
 
     try:
