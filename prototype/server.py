@@ -63,6 +63,8 @@ TODAY_DIAGNOSTIC_LABELS = {
     "geography_mismatch": "Does not meet the fund's region rule",
     "missing_provenance": "No usable source URL",
     "reviewed_today": "Already reviewed today",
+    "already_decided": "Already decided (Kept / not for me)",
+    "not_uk": "Not a UK company",
     "display_limit": "Beyond today's display limit",
     "registry_without_venture_signal": "Companies House only, no venture signal",
     "hermes_rejected": "Failed the final Hermes company check",
@@ -187,9 +189,30 @@ def _today_block_reason(
     from radar.config.models import STAGES, canon_enum
     from radar.score.gates import apply_freshness_gates, evaluate_vehicle_gates
 
+    country = _row_value(row, "country_iso2")
+    if country and str(country).upper() != "GB":
+        return "not_uk"
+
     freshness = apply_freshness_gates(row, config, today=today)
     if not freshness.passed:
         return freshness.reason or "freshness_gate"
+    # Lasting verdicts must not reappear the *next* morning. Same-calendar-day
+    # verdicts stay on daily_review so Review Again (which only clears that
+    # table) can restore the queue without erasing Kept / not for me.
+    # Compare the ISO date prefix — morning sheet sync used to refresh
+    # updated_at and break date()-based checks.
+    try:
+        day = today.isoformat() if hasattr(today, "isoformat") else str(today)
+        decided = conn.execute(
+            "SELECT 1 FROM user_field WHERE company_id = ? AND field = 'verdict' "
+            "AND TRIM(COALESCE(value, '')) != '' "
+            "AND substr(updated_at, 1, 10) < ? LIMIT 1",
+            (_row_company_id(row), day),
+        ).fetchone()
+        if decided:
+            return "already_decided"
+    except Exception:
+        pass
     flags = list(freshness.flags)
     age_unknown = (not _row_value(row, "incorporated_on")) or "age_unknown" in flags
     stage = canon_enum(_row_value(row, "stage"), STAGES)
@@ -1525,26 +1548,11 @@ def set_verdict(conn: sqlite3.Connection, company_id: str, verdict: str) -> int:
     dated marker is deliberately separate so Review Again never erases it.
 
     Returns the new Kept count so Today can refresh its badge without a second
-    round-trip.
+    round-trip. Shared with `founder-radar decide` (Telegram / CLI).
     """
-    now = datetime.now().isoformat(timespec="seconds")
-    conn.execute(
-        """INSERT INTO user_field(company_id, field, value, updated_at)
-           VALUES (?, 'verdict', ?, ?)
-           ON CONFLICT(company_id, field)
-           DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
-        (company_id, verdict, now),
-    )
-    conn.execute(
-        """INSERT INTO daily_review(company_id, review_date, verdict, reviewed_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(company_id, review_date)
-           DO UPDATE SET verdict = excluded.verdict,
-                         reviewed_at = excluded.reviewed_at""",
-        (company_id, _today_review_date(), verdict, now),
-    )
-    conn.commit()
-    return kept_count(conn)
+    from radar.verdict import record_verdict
+
+    return record_verdict(conn, company_id, verdict, review_date=_today_review_date())
 
 
 def mirror_verdict_to_sheet(company_id: str, verdict: str) -> str:

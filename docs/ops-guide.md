@@ -30,6 +30,11 @@ Google Sheet (config + optional company mirror)
 The CLI (`founder-radar …`) is the real interface. Telegram calls it; the sheet
 is rendered by it; the prototype reads the same database.
 
+**Decisions must go through the CLI or the web UI.** If Aryan rejects a company
+in Telegram chat, Hermes must run
+`founder-radar decide "<name>" --verdict "not for me"` — a chat-only reply does
+not update Today, Kept, or the Sheet.
+
 ---
 
 ## 2. Shortlist vs Kept (easy to confuse)

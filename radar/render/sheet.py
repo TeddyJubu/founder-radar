@@ -560,6 +560,19 @@ def save_user_fields(db: Any, user: Mapping[str, Mapping[str, str]]) -> int:
                 continue
             for name, value in fields.items():
                 if value:
+                    # Preserve updated_at when the sheet echoes the same verdict
+                    # back. Morning sync used to rewrite every Z-cell with a
+                    # fresh stamp, which made Today’s already_decided check
+                    # (`date(updated_at) < today`) fail every run day — so
+                    # "not for me" companies resurfaced after Aryan rejected
+                    # them. Only a real edit may bump the clock.
+                    existing = db.one(
+                        "SELECT value FROM user_field "
+                        "WHERE company_id = ? AND field = ?",
+                        (company_id, name),
+                    )
+                    if existing is not None and (existing["value"] or "") == value:
+                        continue
                     db.execute(
                         "INSERT INTO user_field(company_id, field, value, updated_at) "
                         "VALUES (?,?,?,?) ON CONFLICT(company_id, field) DO UPDATE SET "
