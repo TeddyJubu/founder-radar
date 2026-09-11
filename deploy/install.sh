@@ -310,6 +310,17 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
     apt-get update -qq && apt-get install -y -qq caddy
   fi
   install -m 644 "$HERE/Caddyfile" /etc/caddy/Caddyfile
+  # Teaching guide static build (Vite base `/guide/`). Optional: tree may be
+  # absent until someone runs `cd guide && npm run build` and syncs dist/.
+  if [ -d "$ROOT/guide/dist" ]; then
+    mkdir -p /opt/founder-radar/guide
+    rsync -a --delete "$ROOT/guide/dist/" /opt/founder-radar/guide/
+    chown -R radar:radar /opt/founder-radar/guide
+    say "teaching guide synced to /opt/founder-radar/guide"
+  elif [ ! -d /opt/founder-radar/guide ]; then
+    mkdir -p /opt/founder-radar/guide
+    chown radar:radar /opt/founder-radar/guide
+  fi
   mkdir -p /etc/systemd/system/caddy.service.d
   {
     printf '[Service]\n'
@@ -322,6 +333,7 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
   # the hermes.* alias when it is newly added to the site address list.
   systemctl restart caddy
   say "review surface live at https://$web_domain (password required)"
+  say "teaching guide (public) at https://$web_domain/guide/"
   if [ -n "$hermes_domain" ] && [ "$hermes_domain" != "$web_domain" ]; then
     say "Hermes hostname https://$hermes_domain is a TLS alias to the same review UI"
   fi

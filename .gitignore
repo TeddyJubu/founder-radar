@@ -7,6 +7,9 @@ htmlcov/
 *.egg-info/
 build/
 dist/
+node_modules/
+guide/dist/
+guide/node_modules/
 
 # secrets — never commit
 .env

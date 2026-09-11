@@ -12,6 +12,10 @@
 # :8787. Hermes Agent itself stays Telegram-only — do not publish its
 # control-plane dashboard on the public internet.
 #
+# /guide is a public static teaching site (no basic auth) so new users and
+# teachers can open it without the scout password. Files live at
+# /opt/founder-radar/guide (Vite build with base `/guide/`).
+#
 # Values come from /opt/founder-radar/.env (and hermes.env for the alias
 # hostname). install.sh writes this file on every deploy.
 #
@@ -33,24 +37,44 @@
 {$RADAR_WEB_DOMAIN}, {$HERMES_WEB_DOMAIN} {
 	encode gzip
 
-	# Basic auth over TLS. One user, one password — a login system for a
-	# single scout would be ceremony, and this is the control the spec's
-	# "no web server" note was protecting against having to design.
-	basic_auth {
-		{$RADAR_WEB_USER} {$RADAR_WEB_PASS_HASH}
+	# Teaching guide — public, static, no password.
+	handle_path /guide/* {
+		root * /opt/founder-radar/guide
+		try_files {path} /index.html
+		file_server
+		header {
+			Cache-Control "public, max-age=300"
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Referrer-Policy "no-referrer"
+			-Server
+		}
 	}
 
-	# The app binds loopback only, so this proxy is the sole way in.
-	reverse_proxy 127.0.0.1:8787
+	# Redirect bare /guide → /guide/ so Vite asset paths resolve.
+	@guideBare path /guide
+	redir @guideBare /guide/ 308
 
-	# The review queue is per-morning and the verdict write must never be
-	# served from a cache.
-	header {
-		Cache-Control "no-store"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "DENY"
-		Referrer-Policy "no-referrer"
-		-Server
+	handle {
+		# Basic auth over TLS. One user, one password — a login system for a
+		# single scout would be ceremony, and this is the control the spec's
+		# "no web server" note was protecting against having to design.
+		basic_auth {
+			{$RADAR_WEB_USER} {$RADAR_WEB_PASS_HASH}
+		}
+
+		# The app binds loopback only, so this proxy is the sole way in.
+		reverse_proxy 127.0.0.1:8787
+
+		# The review queue is per-morning and the verdict write must never be
+		# served from a cache.
+		header {
+			Cache-Control "no-store"
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Referrer-Policy "no-referrer"
+			-Server
+		}
 	}
 
 	log {

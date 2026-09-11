@@ -16,6 +16,9 @@ Day-to-day ops (sheet ↔ web UI ↔ Telegram, Kept storage, editing funds and
 sources): [`docs/ops-guide.md`](docs/ops-guide.md). In the Today prototype the
 same guide is at `/help`.
 
+**Teaching guide** (interactive site for students/teachers — architecture,
+morning loop, funds, PDF handout): [`guide/`](guide/) — `cd guide && npm install && npm run dev`.
+
 ---
 
 ## Quick start

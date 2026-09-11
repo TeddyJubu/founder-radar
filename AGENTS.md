@@ -11,7 +11,7 @@
 - Fund criteria shown in product must match the real fund rules; do not invent descriptors (e.g. “government-backed” for Outward) that are not in criteria.
 - Prefer Hermes to own hard ops and run a pre-publish QA check so bad Today lists are not shipped; treat founder-radar as a tool Hermes drives.
 - When ops are needed on the production VPS, run the commands there rather than only handing back copy-paste instructions.
-- Client (Aryan) wants a clear walkthrough of how sheet, web UI, and Telegram connect end-to-end.
+- Client wants an interactive teaching guide for architecture, usage, and how the system was built, with Easy/Technical audience modes; Easy copy must stay kid-clear plain language.
 
 ## Learned Workspace Facts
 
@@ -21,6 +21,7 @@
 - Hermes must run `founder-radar decide` for Telegram keep/reject/unsure; chat-only replies do not update Today, Kept, or the sheet.
 - Stage ⑥ gate+score is deterministic (no AI, no network); AI may extract prose, map chat to commands, and run Today QA veto — not invent scores or add companies to the sheet.
 - Morning pipeline includes Hermes Today QA before render/publish; `founder-radar today-qa` re-runs that check.
-- Production install lives on the VPS under `/opt/founder-radar` (service user `radar`); local web API is typically `http://127.0.0.1:8787`.
+- Production install lives on the VPS under `/opt/founder-radar` (service user `radar`); local web API is typically `http://127.0.0.1:8787`; SSH host alias `aryan` reaches that box.
 - Ops diagnostics center on `founder-radar doctor`, `why-today`, and rescoring when fund criteria / `config_hash` drift; deploy pull script is `deploy/update-from-main.sh`.
-- Primary docs: `docs/prd/` for product spec and `docs/ops-guide.md` (also `/help` in the Today prototype) for sheet ↔ UI ↔ Telegram runbook.
+- Teaching guide is the Vite + React + shadcn app in `guide/` (pdfcn PDF); production serves it publicly at `/guide/` from `/opt/founder-radar/guide` with no basic auth (Today/Kept stay password-protected).
+- Primary docs: `docs/prd/` for product spec, `docs/ops-guide.md` (also `/help` in the Today prototype) for sheet ↔ UI ↔ Telegram runbook, and the public teaching guide at `/guide/`.
