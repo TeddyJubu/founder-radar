@@ -163,7 +163,7 @@ send_digest = send_message
 #: The nine commands of 07-interfaces §2. Value is the CLI argv, or None for
 #: the two that are answered from a constant and never shell out.
 COMMANDS: dict[str, list[str] | None] = {
-    "/today": ["digest", "--today"],
+    "/today": ["today"],
     "/run": ["run"],
     "/fund": ["fund", "{arg}"],
     "/why": ["show", "{arg}"],
@@ -180,7 +180,9 @@ SHEET_URL_TEMPLATE = "https://docs.google.com/spreadsheets/d/{sheet_id}"
 
 HELP_TEXT = """📡 UK Founder Radar
 
-/today          today's shortlist
+Companies live on the Today dashboard, not in this chat.
+
+/today          dashboard link + counts
 /run            run a scan now (takes a few minutes)
 /run northstar  scan scoped to one fund
 /fund northstar top 10 current matches for a fund

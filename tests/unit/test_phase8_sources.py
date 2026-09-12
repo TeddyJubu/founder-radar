@@ -145,13 +145,10 @@ def test_innovate_uk_parses_committed_fixture():
 
     natural = next(i for i in items if i.structured["company_name"] == "NATURAL NEGATIVE LTD")
     assert natural.structured["crn"] == "15492053"          # Companies House number
+    assert natural.structured["company_number"] == "15492053"
     assert natural.structured["grant_amount_gbp"] == 249900.0
     assert natural.structured["postal_code"] == "BN2 4GL"
     assert natural.published_at == date(2026, 7, 1)         # Excel serial 46204
-
-    # `_route_of` reads `company_number` as "this came off the register", which
-    # would put a Track A source behind the Track B qualification gate.
-    assert all("company_number" not in i.structured for i in items)
 
 
 def test_innovate_uk_detects_layout_change():

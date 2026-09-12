@@ -144,7 +144,7 @@ def test_full_day_shows_the_funnel_and_caps_the_list(full_day):
     assert "\n1. Kelvin Bio" in text
     assert "10. Filler 7" in text
     assert "11. " not in text
-    assert "+2 more in the sheet · /today for the full list" in text
+    assert "+2 more on the dashboard" in text
 
 
 def test_full_day_entry_carries_route_facts_evidence_and_link(full_day):
@@ -406,7 +406,7 @@ def test_digest_cap_is_read_from_settings(db):
         ("cfg1", json.dumps({"settings": {"daily_digest_max": 2}}), 1, f"{DAY}T06:00:00Z"),
     )
     text = render_digest(db, on_date=DAY)
-    assert "+2 more in the sheet" in text
+    assert "+2 more on the dashboard" in text
     assert "3. " not in text
 
 
@@ -591,6 +591,28 @@ def test_the_digest_path_imports_nothing_heavy():
                          timeout=60)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "", f"digest path imported: {out.stdout.strip()}"
+
+
+def test_today_ping_has_no_company_cards(db, monkeypatch):
+    from radar.render.digest import render_today_ping
+
+    monkeypatch.delenv("RADAR_WEB_DOMAIN", raising=False)
+    monkeypatch.delenv("RADAR_WEB_PUBLIC_URL", raising=False)
+    text = render_today_ping(db)
+    assert "dashboard" in text.lower()
+    assert "not in this chat" in text
+    assert "1. " not in text
+    assert "Open the Today page" in text
+
+
+def test_today_ping_includes_the_review_url(db, monkeypatch):
+    from radar.render.digest import render_today_ping, review_url
+
+    monkeypatch.setenv("RADAR_WEB_DOMAIN", "radar.example.test")
+    assert review_url() == "https://radar.example.test/"
+    text = render_today_ping(db)
+    assert "https://radar.example.test/" in text
+    assert "Kelvin" not in text
 
 
 def test_memory_under_700mb(full_day):

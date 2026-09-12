@@ -243,6 +243,8 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "enable --now founder-radar-update.timer" in installer
     assert "chmod 755" in installer and "update-from-main.sh" in installer
     assert "references/today-check.md" in installer
+    assert "retire-v1-scout.sh" in installer
+    assert "uk-founder-radar" in installer
     assert 'cat "$HERE/Caddyfile.hermes"' not in installer
     assert "leaving existing /etc/caddy/Caddyfile in place" not in installer
     # pip as radar from /root dies on an editable path hook. Pin the fix.

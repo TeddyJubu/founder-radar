@@ -91,3 +91,10 @@ def test_skill_requires_decide_and_publish():
     assert "founder-radar decide" in text
     assert "founder-radar publish --send" in text
     assert "publish-check" in text
+    assert "founder-radar today" in text
+    assert "NEVER use" in text
+    assert "uk-founder-radar" in text
+    assert "~/radar" in text
+    assert "Return the output as-is" not in text
+    assert "Never paste" in text
+    assert "dashboard" in text.lower()

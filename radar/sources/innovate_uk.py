@@ -26,11 +26,10 @@ Two deliberate omissions:
 * **`Public Description`** is never read. The structured columns already say
   who won what, where and when, so there is nothing for stage ③ to infer and no
   reason to spend a model call on 100 rows a month.
-* **`company_number`** is not set in `structured`, even though the CRN is right
-  there. `pipeline._route_of` reads that key as "this came off the register"
-  and returns `discovery_route = "registry"`, which would put a Track **A**
-  source behind the Track B qualification gate. The CRN is carried as `crn`
-  instead: a fact, recorded, with no side effect.
+* **`company_number`** is set from the CRN so enrichment can attach
+  incorporation age. `pipeline._route_of` follows `kind_hint` (`grant_award`
+  → grant), not the presence of a CRN, so this stays Track A. `crn` is kept
+  as an alias for older tests and rows.
 """
 
 from __future__ import annotations
@@ -179,6 +178,7 @@ class InnovateUkAdapter:
                 structured={
                     "company_name": company,
                     "crn": crn,
+                    **({"company_number": crn} if crn else {}),
                     "grant_amount_gbp": _money(value("Award Offered (£)")),
                     "funder": "Innovate UK",
                     "grant_reference": reference or None,

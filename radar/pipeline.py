@@ -830,7 +830,7 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
 
     record = Record(
         name=name,
-        ch_number=structured.get("company_number"),
+        ch_number=structured.get("company_number") or structured.get("crn"),
         domain=structured.get("domain") or getattr(item, "domain", None),
         country_iso2=(structured.get("country_iso2")
                       or structured.get("hq_country_iso2")),
@@ -947,10 +947,22 @@ def _refresh_press_count(db: Any, company_id: str) -> None:
 
 
 def _route_of(item: Any, cfg: Any) -> str | None:
-    structured = getattr(item, "structured", None) or {}
-    if structured.get("company_number"):
+    """Discovery route follows *how we met the company*, not whether it has a CRN.
+
+    A Companies House number on an Innovate UK / news item is identity, not
+    Track B. Treating it as `registry` hid grant companies behind the
+    qualification gate and made Today look like a filings dump (client, Sep 2026).
+    """
+    kind = getattr(item, "kind_hint", None)
+    mapped = _ROUTE_BY_KIND.get(kind)
+    if mapped:
+        return mapped
+    if kind == "incorporation":
         return "registry"
-    return _ROUTE_BY_KIND.get(getattr(item, "kind_hint", None), "news")
+    structured = getattr(item, "structured", None) or {}
+    if structured.get("company_number") and kind in (None, ""):
+        return "registry"
+    return "news"
 
 
 def _fields_from_structured(
@@ -974,8 +986,9 @@ def _fields_from_structured(
     spinouts occupied Today.
     """
     fields: dict[str, Any] = {}
-    if structured.get("company_number"):
-        fields["companies_house_no"] = structured["company_number"]
+    number = structured.get("company_number") or structured.get("crn")
+    if number:
+        fields["companies_house_no"] = number
     incorporated = _structured_date(
         structured.get("date_of_creation") or structured.get("incorporated_on")
     )
@@ -1101,7 +1114,8 @@ def extract_stage(items: Iterable[Any], cfg: Any, *, use_llm: bool,
         # Companies House has a company number; TTO adapters stamp
         # `extraction_method=structured`. Both already parsed the page — the
         # reader would only drop the incorporation date they carried.
-        if structured.get("company_number") or structured.get("extraction_method") == "structured":
+        if (structured.get("company_number") or structured.get("crn")
+                or structured.get("extraction_method") == "structured"):
             out.append(item)
             continue
         record = extract(item, ctx)

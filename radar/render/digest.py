@@ -60,6 +60,51 @@ VEHICLES: dict[str, tuple[str, int | None, int | None]] = {
     "fy_growth": ("FY Growth Fund", 100_000, 1_500_000),
 }
 
+
+def review_url(path: str = "/") -> str:
+    """Public Today/Kept URL. Empty when the review surface is unpublished."""
+    raw = (
+        os.environ.get("RADAR_WEB_PUBLIC_URL")
+        or os.environ.get("RADAR_WEB_DOMAIN")
+        or ""
+    ).strip()
+    if not raw:
+        return ""
+    base = raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
+    base = base.rstrip("/")
+    if not path or path == "/":
+        return f"{base}/"
+    return base + (path if path.startswith("/") else f"/{path}")
+
+
+def render_today_ping(db) -> str:
+    """What Telegram should send: counts + dashboard URL, no company cards.
+
+    Aryan reads Today on his phone browser. Dumping `digest --today` into chat
+    is the failure the Sep 2026 feedback named.
+    """
+    from radar.render.today_diagnose import diagnose_today
+
+    report = diagnose_today(db)
+    tiers = report.get("tiers") or {}
+    url = review_url()
+    lines = [
+        "📡 UK Founder Radar",
+        "",
+        "Today's companies are on the dashboard — not in this chat.",
+    ]
+    if url:
+        lines.append(url)
+    else:
+        lines.append("Open the Today page on the review site.")
+    lines.append("")
+    lines.append(
+        f"{int(tiers.get('shortlist') or 0)} shortlisted · "
+        f"{int(tiers.get('watchlist') or 0)} watchlist"
+    )
+    return "\n".join(lines)
+
+
 # Vocabulary that `str.title()` gets wrong.
 PRETTY = {
     "ai_data": "AI / Data",
@@ -644,7 +689,16 @@ def render_digest(db, period: str = "today", on_date: str | None = None) -> str:
 
     remaining = len(entries) - min(limit, len(entries))
     if remaining > 0:
-        lines.append(f"+{remaining} more in the sheet · /today for the full list")
+        url = review_url()
+        if url:
+            lines.append(f"+{remaining} more on the dashboard · {url}")
+        else:
+            lines.append(f"+{remaining} more on the dashboard")
+
+    url = review_url()
+    if url:
+        lines.append("")
+        lines.append(f"Review on the dashboard: {url}")
 
     return "\n".join(lines)
 
@@ -667,6 +721,10 @@ def _zero_day(title: str, when: str, funnel: dict | None) -> str:
     lines.append("")
     lines.append("That's the filter working, not a fault.")
     lines.append("Loosen it in Settings if you want more volume.")
+    url = review_url()
+    if url:
+        lines.append("")
+        lines.append(f"Review on the dashboard: {url}")
     return "\n".join(lines)
 
 

@@ -76,9 +76,18 @@ def test_discovery_route_matches_the_adapter_vocabulary(db, config, kind_hint,
     assert row["discovery_route"] == expected_route
 
 
-def test_a_company_number_still_wins_the_route(db, config):
-    """Register provenance outranks any kind_hint — Track B is Track B."""
+def test_grant_kind_keeps_grant_route_even_with_a_company_number(db, config):
+    """A CRN is identity. Innovate UK / news items stay Track A (client Sep 2026)."""
     cid = resolve_item(db, _item("grant_award", structured={
+        "company_name": "Acme Robotics Ltd", "company_number": "15000001"}), config)
+    assert db.one("SELECT discovery_route FROM company WHERE id = ?",
+                  (cid,))["discovery_route"] == "grant"
+    assert db.one("SELECT companies_house_no FROM company WHERE id = ?",
+                  (cid,))["companies_house_no"] == "15000001"
+
+
+def test_incorporation_with_company_number_is_registry(db, config):
+    cid = resolve_item(db, _item("incorporation", structured={
         "company_name": "Acme Robotics Ltd", "company_number": "15000001"}), config)
     assert db.one("SELECT discovery_route FROM company WHERE id = ?",
                   (cid,))["discovery_route"] == "registry"

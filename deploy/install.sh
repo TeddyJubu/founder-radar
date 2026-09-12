@@ -261,6 +261,11 @@ install_skill() {
 
 if [ -n "$HERMES_HOME" ] && [ -d "$HERMES_HOME/.hermes" ]; then
   install_skill "$HERMES_HOME" "$HERMES_USER"
+  # v1 sheet scout (uk-founder-radar + ~/radar cron) dumped Companies House
+  # lookups into Telegram and never wrote Today. Every deploy must kill it.
+  if [ -x "$HERE/retire-v1-scout.sh" ]; then
+    bash "$HERE/retire-v1-scout.sh" "$HERMES_HOME" "${HERMES_USER:-}"
+  fi
 else
   say "no ~/.hermes yet — install Hermes, then copy"
   say "  $APP_DIR/hermes/skills/founder-radar/"

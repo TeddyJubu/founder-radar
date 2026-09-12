@@ -344,19 +344,20 @@ def publish_check(ctx, no_hermes, no_heal):
 
 
 @cli.command("publish")
-@click.option("--send", is_flag=True, help="Push the digest to Telegram on PASS")
+@click.option("--send", is_flag=True, help="Push a dashboard ping to Telegram on PASS")
 @click.option("--no-hermes", is_flag=True, help="Skip Hermes subagents")
 @click.option("--no-heal", is_flag=True, help="Do not auto-rescore / repair")
 @click.option("--skip-today-qa", is_flag=True, help="Skip per-card Today QA")
 @click.pass_context
 def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
-    """Agent-native publish: gate → Today QA → digest (optional --send).
+    """Agent-native publish: gate → Today QA → dashboard ping (optional --send).
 
     This is the only path systemd and Hermes should use to message Aryan.
+    Telegram gets a short Today URL, not company cards.
     """
     from radar.config.loader import load_runtime_config
     from radar.qa.publish import format_publish_report, pre_publish_check
-    from radar.render.digest import render_digest
+    from radar.render.digest import render_today_ping
 
     db = _db(ctx)
     report = pre_publish_check(db, use_hermes=not no_hermes, heal=not no_heal)
@@ -399,13 +400,25 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
         click.echo("publish refused after Today QA: gate BLOCK", err=True)
         sys.exit(EXIT_FATAL)
 
-    text = render_digest(db, period="today")
+    ping = render_today_ping(db)
     if send:
         from radar.notify.telegram import send_message
 
-        send_message(text)
-        click.echo("digest sent")
-    _emit(text, ctx.obj["json"])
+        send_message(ping)
+        click.echo("dashboard ping sent")
+    _emit(ping, ctx.obj["json"])
+
+
+@cli.command("today")
+@click.pass_context
+def today(ctx):
+    """Dashboard ping: counts + Today URL. No company list.
+
+    Telegram /today and Hermes "what's new" must call this, not digest --today.
+    """
+    from radar.render.digest import render_today_ping
+
+    _emit(render_today_ping(_db(ctx)), ctx.obj["json"])
 
 
 @cli.command("today-qa")
