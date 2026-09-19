@@ -164,7 +164,8 @@ send_digest = send_message
 #: the two that are answered from a constant and never shell out.
 COMMANDS: dict[str, list[str] | None] = {
     "/today": ["today"],
-    "/run": ["run"],
+    "/run": ["search"],
+    "/search": ["search"],
     "/fund": ["fund", "{arg}"],
     "/why": ["show", "{arg}"],
     "/status": ["status"],
@@ -183,7 +184,8 @@ HELP_TEXT = """📡 UK Founder Radar
 Companies live on the Today dashboard, not in this chat.
 
 /today          dashboard link + counts
-/run            run a scan now (takes a few minutes)
+/run            scan now, then the dashboard link (not a company list)
+/search         same as /run
 /run northstar  scan scoped to one fund
 /fund northstar top 10 current matches for a fund
 /why <company>  the full score breakdown
@@ -240,11 +242,11 @@ def route(text: str) -> tuple[str, list[str] | None, str]:
         return command, None, argument
 
     # `/run northstar` — the client's 24 July request. The flag already exists.
-    if command == "/run" and argument:
+    if command in {"/run", "/search"} and argument:
         key = argument.lower()
         if key in FUND_KEYS:
-            return command, ["run", "--fund", key], key
-        return command, ["run"], ""
+            return command, ["search", "--fund", key], key
+        return command, ["search"], ""
 
     argv = [argument if part == "{arg}" else part for part in template]
     return command, argv, argument
@@ -279,7 +281,10 @@ def handle(user_id, text: str, *, runner: Callable[[Sequence[str]], str] | None 
 
     if runner is None:
         return Reply(status="ok", argv=argv)
-    return Reply(status="ok", argv=argv, text=runner(argv), ran_pipeline=argv[0] == "run")
+    return Reply(
+        status="ok", argv=argv, text=runner(argv),
+        ran_pipeline=argv[0] in {"run", "search"},
+    )
 
 
 def skill_commands(path) -> list[list[str]]:

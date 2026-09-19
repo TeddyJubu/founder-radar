@@ -104,3 +104,18 @@ def test_telegram_today_is_the_dashboard_ping():
     assert COMMANDS["/today"] == ["today"]
     _, argv, _ = route("/today")
     assert argv == ["today"]
+    assert COMMANDS["/run"] == ["search"]
+    assert COMMANDS["/search"] == ["search"]
+    _, argv, _ = route("/run")
+    assert argv == ["search"]
+    _, argv, _ = route("/run northstar")
+    assert argv == ["search", "--fund", "northstar"]
+    _, argv, _ = route("/search outward")
+    assert argv == ["search", "--fund", "outward"]
+
+
+def test_bare_start_rewrites_to_run_slash():
+    from radar.notify.search_intent import slash_rewrite
+
+    assert slash_rewrite("Start") == "/run"
+    assert slash_rewrite("/start") is None

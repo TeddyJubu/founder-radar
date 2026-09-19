@@ -92,6 +92,7 @@ def test_skill_requires_decide_and_publish():
     assert "founder-radar publish --send" in text
     assert "publish-check" in text
     assert "founder-radar today" in text
+    assert "founder-radar search" in text
     assert "NEVER use" in text
     assert "uk-founder-radar" in text
     assert "~/radar" in text

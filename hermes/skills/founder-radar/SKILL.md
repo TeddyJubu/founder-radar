@@ -17,6 +17,10 @@ scores, never publish without the gate, never re-litigate Kept companies.
 Aryan reads companies on the **web Today page**, not in Telegram. Chat is
 remote control + a short ping. Company lists in Telegram are a product bug.
 
+Telegram **search / start / /run / /search / what's new** are intercepted by
+the founder-radar-telegram Hermes plugin. Those turns never reach you. If one
+does, reply with `founder-radar today` stdout only — never a company list.
+
 ## When to use
 Any question about startups found, fund matches, scores, running a scan,
 empty Today, keep/reject, or whether it is safe to message Aryan.
@@ -37,20 +41,22 @@ Those were v1. They put Ltd filings in chat and never updated the dashboard.
 5. You explain failures with `why-today` and `doctor` — counts only in chat.
 
 ## Procedure
-Map intent to one command. After it finishes, reply in **2–4 lines** and the
-Today URL from `founder-radar today`. Do not paste CLI company lists.
+Map intent to one command. After it finishes, **your Telegram reply is that
+command's stdout** — for a search that is the dashboard ping. Do not add a
+company list, scores, or source-by-source narration.
 
 | Intent | Command |
 |---|---|
-| today's list / what's new / search now | `founder-radar today` |
+| **search / search now / start / run a scan** | `founder-radar search` |
+| today's list / what's new (no scan) | `founder-radar today` |
 | **keep / reject / unsure** | `founder-radar decide "<name>" --verdict "…"` |
 | **publish to Aryan** | `founder-radar publish --send` |
 | check if safe to publish | `founder-radar publish-check` |
 | why is Today empty | `founder-radar why-today` |
 | health / env / hash | `founder-radar doctor` |
 | re-check Today's cards | `founder-radar today-qa` |
-| run the daily scan | `founder-radar run` |
 | heal empty generation | `founder-radar rescore --all` |
+| fill missing incorporation dates | `founder-radar hydrate-ages` then `rescore --all` |
 | top matches for a fund | `founder-radar fund <key>` |
 | why this company | `founder-radar show "<name>"` |
 | is it working / cost | `founder-radar status` |
@@ -66,7 +72,7 @@ run `decide`. Replying "done" / "rejected" in chat without the CLI leaves
 Today, Kept, and the Sheet unchanged — that is how rejects resurfaced before.
 
 ### Publish workflow (required)
-When asked to send the morning list, or after `run` completes:
+When asked to send the morning list, or after `search` completes:
 1. `founder-radar publish-check` — must PASS (auto-heals hash drift when it can)
 2. If BLOCK: run the ACTIONS it names (`rescore --all`, `repair-fund-criteria`,
    `doctor`), then check again. Do **not** call `digest --send` yourself.
@@ -80,18 +86,25 @@ scores. `--force` alone does **not** bypass the gate — ops must also set
 
 ### Empty Today
 Run `why-today`. If it says scores exist only under an older config_hash,
-run `rescore --all` then `publish-check`. Do not tell Aryan "nothing cleared
-the bar" until the active hash has scores. Then send him the Today URL.
+run `rescore --all` then `publish-check`. If watchlist exists but the
+dashboard is empty, run `hydrate-ages` then `rescore --all` — grant companies
+often have a CRN and no date, which hides them as unknown age. Do not tell
+Aryan "nothing cleared the bar" until the active hash has scores. Then send
+him the Today URL.
 
 ## Pitfalls
 - Never invent a score or a company. If the command returns nothing, say so.
-- Never paste `digest --today`, `fund`, or `show` output into Telegram as
-  the answer to "what's new" / "search now". Point at the dashboard.
+- Never paste `digest --today`, `fund`, `show`, or `run` JSON into Telegram
+  as the answer to "what's new" / "search now" / "start". Point at the
+  dashboard. `founder-radar search` already prints the ping — send that.
 - Never search Companies House from chat. The register is verification inside
   `founder-radar`, not a discovery tool.
 - Never put a `VERDICT: REJECT` company back on Today's list.
 - Never re-surface companies that already have a lasting verdict (Kept /
   not for me) — that is intentional.
 - A run takes several minutes. Say "running, I'll message you when it's done."
+  Run as the `radar` user with `/opt/founder-radar/.env` and `hermes.env`
+  loaded (the systemd unit does this). A bare `sudo -u radar founder-radar`
+  still writes the database; Today QA may time out without that env.
 - Quiet Hermes: deterministic gate still blocks hash drift; zero-day PASS is OK
   only when there are no reviewable scores. With cards present, Hermes must run.

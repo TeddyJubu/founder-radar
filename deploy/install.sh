@@ -259,8 +259,55 @@ install_skill() {
   fi
 }
 
+install_telegram_plugin() {
+  local home="$1"
+  local owner="$2"
+  local src="$APP_DIR/hermes/plugins/founder-radar-telegram"
+  local dest="$home/.hermes/plugins/founder-radar-telegram"
+  if [ ! -f "$src/plugin.yaml" ] || [ ! -f "$src/__init__.py" ]; then
+    say "telegram plugin missing in checkout — skip"
+    return 0
+  fi
+  local need_restart=0
+  if [ ! -f "$dest/__init__.py" ] || ! cmp -s "$src/__init__.py" "$dest/__init__.py" \
+     || [ ! -f "$dest/plugin.yaml" ] || ! cmp -s "$src/plugin.yaml" "$dest/plugin.yaml"; then
+    need_restart=1
+  fi
+  install -d "$dest"
+  install -m 644 "$src/plugin.yaml" "$dest/plugin.yaml"
+  install -m 644 "$src/__init__.py" "$dest/__init__.py"
+  if [ -n "$owner" ] && [ "$owner" != "root" ]; then
+    chown -R "$owner" "$home/.hermes/plugins/founder-radar-telegram"
+  fi
+  if [ -n "${HERMES_BIN:-}" ] && [ -x "$HERMES_BIN" ] && [ -n "$owner" ] && [ "$owner" != "root" ]; then
+    # --no-allow-tool-override keeps enable non-interactive. Never print config.
+    sudo -H -u "$owner" "$HERMES_BIN" plugins enable founder-radar-telegram \
+      --no-allow-tool-override </dev/null >/dev/null 2>&1 || true
+  fi
+  if [ "$need_restart" = 1 ]; then
+    restart_hermes_gateway "$owner"
+  fi
+}
+
+restart_hermes_gateway() {
+  local owner="$1"
+  if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^hermes-gateway.service'; then
+    systemctl restart hermes-gateway.service 2>/dev/null || true
+    return 0
+  fi
+  if [ -n "$owner" ] && [ "$owner" != "root" ]; then
+    local uid
+    uid="$(id -u "$owner" 2>/dev/null || true)"
+    if [ -n "$uid" ]; then
+      sudo -u "$owner" XDG_RUNTIME_DIR="/run/user/$uid" \
+        systemctl --user restart hermes-gateway.service 2>/dev/null || true
+    fi
+  fi
+}
+
 if [ -n "$HERMES_HOME" ] && [ -d "$HERMES_HOME/.hermes" ]; then
   install_skill "$HERMES_HOME" "$HERMES_USER"
+  install_telegram_plugin "$HERMES_HOME" "$HERMES_USER"
   # v1 sheet scout (uk-founder-radar + ~/radar cron) dumped Companies House
   # lookups into Telegram and never wrote Today. Every deploy must kill it.
   if [ -x "$HERE/retire-v1-scout.sh" ]; then
@@ -270,6 +317,8 @@ else
   say "no ~/.hermes yet — install Hermes, then copy"
   say "  $APP_DIR/hermes/skills/founder-radar/"
   say "  to ~/.hermes/skills/founder-radar/"
+  say "  $APP_DIR/hermes/plugins/founder-radar-telegram/"
+  say "  to ~/.hermes/plugins/founder-radar-telegram/"
 fi
 
 if [ -z "$hermes_domain" ] && [ -n "$web_domain" ]; then

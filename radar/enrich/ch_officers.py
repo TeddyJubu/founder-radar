@@ -329,6 +329,18 @@ def _get(http: Any, url: str, api_key: str) -> Any:
         return None
 
 
+def fetch_company_profile(
+    http: Any, number: str, *, api_key: str, base_url: str = CH_API_BASE
+) -> Any:
+    """GET /company/{number} — date_of_creation, SIC, registered office.
+
+    Grant and news companies often arrive with a CRN and no age. Today then
+    hides them as maturity_unknown even though the register already has the
+    date. This is verification, not discovery: the route stays grant/news.
+    """
+    return _get(http, f"{base_url.rstrip('/')}/company/{number}", api_key)
+
+
 def fetch_officers(http: Any, number: str, *, api_key: str, base_url: str = CH_API_BASE) -> Any:
     return _get(http, f"{base_url.rstrip('/')}/company/{number}/officers", api_key)
 

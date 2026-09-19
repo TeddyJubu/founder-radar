@@ -20,7 +20,7 @@ from radar.enrich.ch_filings import qualifying_share_issues, record_share_issues
 from radar.score.derive import Company, derive_geography, derive_stage, geography_from_outcode
 from radar.store.db import now_iso
 
-from tests.factories import store_company
+from tests.factories import C, store_company
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "api"
 
@@ -111,3 +111,112 @@ def test_budget_counts_requests_not_companies():
     assert b.spend(1)
     assert b.exhausted
     assert b.remaining == 0
+
+
+class _Resp:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status = status
+        self.text = ""
+
+    @property
+    def ok(self):
+        return 200 <= self.status < 400
+
+    def json(self):
+        if self._payload is not None:
+            return self._payload
+        raise ValueError("no json payload")
+
+
+class _ProfileHttp:
+    def __init__(self, payload, status=200):
+        self.requests: list[str] = []
+        self.payload = payload
+        self.status = status
+
+    def get(self, url, **kw):  # noqa: ARG002
+        self.requests.append(url)
+        return _Resp(self.payload, self.status)
+
+
+PROFILE = {
+    "company_number": "15021884",
+    "date_of_creation": "2025-04-02",
+    "sic_codes": ["72110"],
+    "registered_office_address": {
+        "locality": "Newcastle Upon Tyne",
+        "postal_code": "NE1 4ST",
+    },
+}
+
+
+def test_hydrate_missing_ages_fills_grant_crn_without_changing_route(db):
+    """Telegram search wrote Innovate UK CRNs; Today hid them as unknown age."""
+    from radar.enrich import RequestBudget, hydrate_missing_ages
+
+    cid = store_company(db, C(
+        canonical_name="Grant Co",
+        norm_key="grantco",
+        companies_house_no="15021884",
+        discovery_route="grant",
+        incorporated_on=None,
+        stage=None,
+    ))
+    http = _ProfileHttp(PROFILE)
+    result = hydrate_missing_ages(
+        db, http, api_key="k", budget=RequestBudget(limit=4),
+    )
+    row = db.one(
+        "SELECT incorporated_on, age_source, discovery_route, hq_postcode "
+        "FROM company WHERE id = ?",
+        (cid,),
+    )
+    assert result.ages_hydrated == 1
+    assert row["incorporated_on"] == "2025-04-02"
+    assert row["age_source"] == "companies_house"
+    assert row["discovery_route"] == "grant"
+    assert row["hq_postcode"] == "NE1 4ST"
+    assert any(url.rstrip("/").endswith("/company/15021884") for url in http.requests)
+    signal = db.one(
+        "SELECT kind, source_key FROM signal WHERE company_id = ?", (cid,),
+    )
+    assert signal["kind"] == "verification"
+    assert signal["source_key"] == "companies_house"
+
+
+def test_hydrate_missing_ages_does_not_overwrite_an_existing_date(db):
+    from radar.enrich import RequestBudget, hydrate_missing_ages
+
+    cid = store_company(db, C(
+        canonical_name="Dated Co",
+        norm_key="datedco",
+        companies_house_no="15021884",
+        discovery_route="grant",
+        incorporated_on=date(2024, 1, 1),
+    ))
+    result = hydrate_missing_ages(
+        db, _ProfileHttp(PROFILE), api_key="k", budget=RequestBudget(limit=4),
+    )
+    assert result.ages_hydrated == 0
+    row = db.one("SELECT incorporated_on FROM company WHERE id = ?", (cid,))
+    assert row["incorporated_on"] == "2024-01-01"
+
+
+def test_hydrate_missing_ages_marks_a_404_so_it_does_not_retry(db):
+    from radar.enrich import RequestBudget, hydrate_missing_ages, missing_age_queue
+
+    store_company(db, C(
+        canonical_name="Gone Co",
+        norm_key="goneco",
+        companies_house_no="15021884",
+        discovery_route="news",
+        incorporated_on=None,
+    ))
+    http = _ProfileHttp(None, status=404)
+    hydrate_missing_ages(db, http, api_key="k", budget=RequestBudget(limit=4))
+    assert missing_age_queue(db) == []
+    second = hydrate_missing_ages(
+        db, http, api_key="k", budget=RequestBudget(limit=4),
+    )
+    assert second.enrich_requests == 0

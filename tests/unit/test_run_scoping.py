@@ -209,3 +209,29 @@ def test_since_narrows_the_companies_house_window(config):
     assert adapter._days_back(
         FetchContext(http=None, config=config, db=None, now=TODAY)
     ) != 38
+
+
+def test_search_cli_prints_the_dashboard_ping_not_the_run_json(monkeypatch, tmp_path):
+    """Telegram search must land Aryan on Today, not dump the pipeline summary."""
+    from click.testing import CliRunner
+
+    from radar.cli import cli
+
+    monkeypatch.setattr(
+        "radar.pipeline.run_pipeline",
+        lambda *a, **k: SimpleNamespace(
+            status="ok", summary=lambda: {"shortlisted": 3, "companies_new": 12},
+        ),
+    )
+    monkeypatch.setattr(
+        "radar.render.digest.render_today_ping",
+        lambda _db: "Today's companies are on the dashboard — not in this chat.\nhttps://radar.example.test/",
+    )
+    result = CliRunner().invoke(
+        cli, ["--db", str(tmp_path / "r.db"), "search", "--no-llm"], obj={},
+    )
+    assert result.exit_code == 0, result.output
+    assert "https://radar.example.test/" in result.output
+    assert "not in this chat" in result.output
+    assert "companies_new" not in result.output
+    assert '"shortlisted": 3' not in result.output
