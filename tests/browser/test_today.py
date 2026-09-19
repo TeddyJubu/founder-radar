@@ -307,10 +307,15 @@ def test_b17_companies_house_badge_follows_verification_signal(page, server, dem
             conn.commit()
 
 
-def test_b8_b9_progress_dots(today, api):
-    dots = today.locator(tid("progress-dot"))
-    assert dots.count() == min(len(api["companies"]), 12)
-    assert today.locator(f'{tid("progress-dot")}[data-state="now"]').count() == 1
+def test_b8_b9_progress_count(today, api):
+    n = len(api["companies"])
+    progress = today.locator(tid("progress"))
+    assert progress.inner_text() == f"{n} left"
+    today.keyboard.press("ArrowRight")
+    assert progress.inner_text() == f"{n - 1} left"
+    _review_each_card(today, n, "3")
+    assert today.locator(tid("done-state")).count() == 1
+    assert progress.inner_text() == ""
 
 
 def test_b10_b11_verdict_bar(today):
