@@ -127,7 +127,9 @@ def test_hermes_host_is_tls_alias_to_review_ui():
     assert "systemctl restart caddy" in installer
     assert "disable --now hermes-dashboard.service" in installer
     assert "probe_hermes_dashboard" not in installer
-    assert "npm run build" not in installer
+    # The Hermes dashboard SPA build is gone; the guide's `npm run build`
+    # mention is a comment about a manual step, not a hermes build.
+    assert "build_hermes_spa" not in installer
     assert "HERMES_DASHBOARD_PUBLIC_URL" in installer
     assert "hermes.env" in installer
     # Still never source .env (bcrypt `$2y$` under `set -u`).
@@ -243,6 +245,8 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "enable --now founder-radar-update.timer" in installer
     assert "chmod 755" in installer and "update-from-main.sh" in installer
     assert "references/today-check.md" in installer
+    assert "founder-radar-telegram" in installer
+    assert "plugins enable" in installer
     assert "retire-v1-scout.sh" in installer
     assert "uk-founder-radar" in installer
     assert 'cat "$HERE/Caddyfile.hermes"' not in installer

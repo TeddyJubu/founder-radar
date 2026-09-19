@@ -31,8 +31,8 @@ h1 {
   white-space: nowrap;      /* "Monday / 10 / August" over three lines, once */
 }
 
-/* One quiet way out to the explanation. It sits before the dots so it is
-   never mistaken for progress. */
+/* One quiet way out to the explanation. It sits before the progress
+   count so it is never mistaken for progress. */
 .help {
   flex: none; width: 24px; height: 24px; border-radius: 50%;
   display: grid; place-items: center;
@@ -59,15 +59,14 @@ h1 {
 }
 .kept-badge:empty, .kept-badge[data-count="0"] { display: none; }
 
-/* Progress: dots, not "2 of 6". A count invites counting; dots are glanceable. */
-.dots { display: flex; gap: 6px; align-items: center; }
-.dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--label-3);
-  transition: background .3s var(--spring), transform .3s var(--spring);
+/* Progress: a remaining count ("10 left"), not dots. Dots capped at 12
+   and were hard to track across a ~10-company pass; the count names it. */
+.progress-count {
+  flex: none; white-space: nowrap;
+  font-size: var(--footnote); line-height: var(--footnote-lh);
+  color: var(--label-2); font-variant-numeric: tabular-nums;
 }
-.dot.done { background: var(--label-2); }
-.dot.now  { background: var(--blue); transform: scale(1.45); }
+.progress-count:empty { display: none; }
 
 /* ─────────────────────────────────────────────────────────── card */
 
@@ -259,7 +258,12 @@ main {
 }
 .fund-scores {
   width: 100%;
+  margin: var(--s5) 0 0;
   display: flex; flex-direction: column; gap: 8px;
+}
+.fund-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
 }
 .fund-scores-head h3 {
   margin: 0;
@@ -280,16 +284,12 @@ main {
   background: color-mix(in srgb, var(--blue) 8%, var(--fill));
   border-color: color-mix(in srgb, var(--blue) 22%, transparent);
 }
-.fund-score-top {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: var(--s2);
-}
 .fund-score-name {
   min-width: 0;
-  display: flex; align-items: baseline; gap: 8px;
+  display: flex; align-items: baseline; gap: 2px 8px; flex-wrap: wrap;
 }
 .fund-score .n {
-  flex: none;
+  margin-top: 2px;
   font-size: 15px; line-height: 20px; font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -472,9 +472,9 @@ main {
   font-size: var(--subhead); line-height: var(--subhead-lh);
   color: var(--label-2); text-align: right;
 }
-/* `--label-3` is 0.30 alpha — about 1.7:1 on white. It is right for a
-   progress dot and wrong for anything anyone has to read, so the unknown
-   row keeps `--label-2` and lets the dashed mark carry the de-emphasis. */
+/* `--label-3` is 0.30 alpha — about 1.7:1 on white — wrong for anything
+   anyone has to read, so the unknown row keeps `--label-2` and lets the
+   dashed mark carry the de-emphasis. */
 .led-row[data-status="missed"] .led-val { color: var(--red); }
 
 /* The sentence only appears where it earns its place: a met criterion needs
@@ -708,7 +708,7 @@ button.no  { color: var(--red); }
 }
 @media (max-width: 460px) {
   header { flex-wrap: wrap; row-gap: var(--s2); }
-  .dots { flex-basis: 100%; justify-content: flex-end; }
+  .progress-count { flex-basis: 100%; text-align: right; }
   .date { display: none; }             /* the header already says Today */
   button .kbd { display: none; }       /* no hardware keyboard to hint at */
 }
@@ -722,7 +722,7 @@ button.no  { color: var(--red); }
     <a class="help dashboard-link" href="/dashboard" data-testid="nav-dashboard" title="Calendar and kept history">Dashboard</a>
     <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept<span class="kept-badge" id="kept-badge" data-testid="kept-badge" data-count="0"></span></a>
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
-    <div class="dots" id="dots" data-testid="progress" aria-hidden="true"></div>
+    <div class="progress-count" id="progress" data-testid="progress"></div>
   </header>
 
   <main id="main" data-testid="today-main" aria-live="polite"></main>
@@ -1012,6 +1012,7 @@ function renderFundScores(c) {
       <h3>Match breakdown</h3>
       <p class="fund-scores-hint" data-testid="fund-scores-hint">The same four funds on every company. Each bar is this company against that fund's own rules — not a share of 100%. Send to mixes fund fit with how new it is, so the tallest bar is not always the route.</p>
     </div>
+    <div class="fund-grid">
     ${scores.map(s => {
       const value = s.fit === null || s.fit === undefined ? null : Number(s.fit);
       const hasFit = Number.isFinite(value);
@@ -1031,19 +1032,18 @@ function renderFundScores(c) {
                    data-coverage="${s.coverage == null ? "" : esc(s.coverage)}"
                    data-tier="${esc(s.tier || "unscored")}"
                    title="${esc(title)}">
-                 <div class="fund-score-top">
-                   <div class="fund-score-name">
-                     <div class="k">${esc(s.fund_name)}</div>
-                     ${best ? `<span class="fund-tag">Send to</span>` : ""}
-                   </div>
-                   <div class="n">${display}</div>
+                 <div class="fund-score-name">
+                   <div class="k">${esc(s.fund_name)}</div>
+                   ${best ? `<span class="fund-tag">Send to</span>` : ""}
                  </div>
+                 <div class="n">${display}</div>
                  <div class="fund-bar" aria-hidden="true">
                    <span class="fund-bar-fill" style="width:${width}%"></span>
                  </div>
                  ${why ? `<p class="fund-why" data-testid="fund-why">${esc(why)}</p>` : ""}
                </div>`;
     }).join("")}
+    </div>
     ${also}
   </div>`;
 }
@@ -1225,7 +1225,7 @@ function renderDone() {
     ${keptLine}
     <button class="review-again" data-testid="review-again" type="button">Review Again</button></div>`;
   footer.hidden = true;
-  renderDots();
+  renderProgress();
 }
 
 function render() {
@@ -1241,7 +1241,7 @@ function render() {
     }
     main.innerHTML = `${renderDiagnostics()}<div class="empty" data-testid="empty-state"><h2>Nothing to review</h2>
       <p style="color:var(--label-2)">No company cleared the gates in the last run.</p></div>`;
-    footer.hidden = true; renderDots(); return;
+    footer.hidden = true; renderProgress(); return;
   }
   if (i >= pending.length) {
     renderDone(); return;
@@ -1321,9 +1321,10 @@ function render() {
             </div>
           </div>
           <div class="score-hint" data-testid="score-hint">Match is fund fit for the Send to fund. Fresh is how new it looks to them.</div>
-          ${renderFundScores(c)}
         </div>
       </div>
+
+      ${renderFundScores(c)}
 
       <div class="route" data-testid="route" data-fund="${esc(c.fund)}">
         <span class="route-kicker">Send to</span>
@@ -1344,15 +1345,13 @@ function render() {
     </article>`;
 
   footer.hidden = false;
-  renderDots();
+  renderProgress();
 }
 
-function renderDots() {
+function renderProgress() {
   const n = data?.companies?.length || 0;
-  $("#dots").innerHTML = Array.from({length: Math.min(n, 12)}, (_, k) =>
-    `<span class="dot ${k < i ? "done" : ""} ${k === i ? "now" : ""}"
-            data-testid="progress-dot"
-            data-state="${k < i ? "done" : (k === i ? "now" : "todo")}"></span>`).join("");
+  const left = Math.max(n - i, 0);
+  $("#progress").textContent = left > 0 ? `${left} left` : "";
 }
 
 function toast(msg) {

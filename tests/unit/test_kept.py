@@ -110,7 +110,8 @@ def test_today_hides_explicit_non_uk_country(db):
     assert ids[1] in shown
     reasons = {row["key"]: row["count"]
                for row in payload["eligibility_diagnostics"]["reasons"]}
-    assert reasons.get("not_uk") == 1
+    # Canonical gate key (06-scoring §1), via apply_freshness_gates.
+    assert reasons.get("min_uk_presence") == 1
 
 
 def test_today_does_not_surface_age_unverified_companies(db, config):

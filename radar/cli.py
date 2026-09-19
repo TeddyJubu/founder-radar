@@ -38,11 +38,14 @@ def load_env_file(path: Path | None = None) -> int:
     Systemd also loads these via EnvironmentFile=; this keeps `doctor` and
     manual CLI invocations seeing HERMES_BIN the same way the timer does.
     """
-    def _load(file_path: Path) -> int:
+    def _is_file(file_path: Path) -> bool:
         try:
-            if not file_path.is_file():
-                return 0
+            return file_path.is_file()
         except PermissionError:
+            return False
+
+    def _load(file_path: Path) -> int:
+        if not _is_file(file_path):
             return 0
         count = 0
         for line in file_path.read_text(encoding="utf-8").splitlines():
@@ -59,10 +62,10 @@ def load_env_file(path: Path | None = None) -> int:
 
     loaded = 0
     if path is not None:
-        loaded += _load(path if path.is_file() else Path(path))
+        loaded += _load(path if _is_file(path) else Path(path))
     else:
         for candidate in (Path.cwd() / ".env", Path("/opt/founder-radar/.env")):
-            if candidate.is_file():
+            if _is_file(candidate):
                 loaded += _load(candidate)
                 break
     hermes_candidates = [
@@ -71,7 +74,7 @@ def load_env_file(path: Path | None = None) -> int:
         Path("/opt/founder-radar/hermes.env"),
     ]
     for candidate in hermes_candidates:
-        if candidate is not None and candidate.is_file():
+        if candidate is not None and _is_file(candidate):
             loaded += _load(candidate)
             break
     return loaded
@@ -107,21 +110,12 @@ def cli(ctx: click.Context, db_path: str | None, as_json: bool) -> None:
 # ------------------------------------------------------------------- the run
 
 
-@cli.command()
-@click.option("--fund", "fund_key", default=None, help="Scope the run to one fund")
-@click.option("--source", "source_key", default=None, help="Run one adapter in isolation")
-@click.option("--since", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
-              help="Only items published on or after YYYY-MM-DD")
-@click.option("--dry-run", is_flag=True, help="Do everything, write nothing")
-@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. Zero AI cost.")
-@click.pass_context
-def run(ctx, fund_key, source_key, since, dry_run, no_llm):
-    """The daily run: fetch → extract → resolve → enrich → score → render."""
+def _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm):
     from radar.extract.llm import build_llm
     from radar.pipeline import run_pipeline
 
     try:
-        result = run_pipeline(
+        return run_pipeline(
             # `click.DateTime` hands back a datetime; the adapters compare it
             # against `published_at`, which is a date. Mixing the two raises.
             _db(ctx), fund_key=fund_key, source_key=source_key,
@@ -134,8 +128,105 @@ def run(ctx, fund_key, source_key, since, dry_run, no_llm):
         )
     except ValueError as exc:                 # unknown --fund, before any crawl
         raise click.BadParameter(str(exc), param_hint="--fund") from exc
+
+
+@cli.command()
+@click.option("--fund", "fund_key", default=None, help="Scope the run to one fund")
+@click.option("--source", "source_key", default=None, help="Run one adapter in isolation")
+@click.option("--since", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
+              help="Only items published on or after YYYY-MM-DD")
+@click.option("--dry-run", is_flag=True, help="Do everything, write nothing")
+@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. Zero AI cost.")
+@click.pass_context
+def run(ctx, fund_key, source_key, since, dry_run, no_llm):
+    """The daily run: fetch → extract → resolve → enrich → score → render."""
+    result = _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm)
     _emit(result.summary(), ctx.obj["json"])
     sys.exit(EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
+
+
+@cli.command("search")
+@click.option("--fund", "fund_key", default=None, help="Scope the run to one fund")
+@click.option("--source", "source_key", default=None, help="Run one adapter in isolation")
+@click.option("--since", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
+              help="Only items published on or after YYYY-MM-DD")
+@click.option("--dry-run", is_flag=True, help="Do everything, write nothing")
+@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. Zero AI cost.")
+@click.option("--send", "send_ping", is_flag=True,
+              help="Also push the dashboard ping to Telegram when the scan finishes")
+@click.option("--background", is_flag=True,
+              help="Start the scan and print the dashboard ping immediately")
+@click.pass_context
+def search(ctx, fund_key, source_key, since, dry_run, no_llm, send_ping, background):
+    """Telegram-facing scan: run the pipeline, then print the dashboard ping.
+
+    stdout is the Today URL + counts, never a company list. Hermes "search now"
+    / "start" / `/run` must call this so the dashboard is the product, not chat.
+    """
+    from radar.notify.telegram_intercept import kickoff_search, mark_search_done
+    from radar.render.digest import render_today_ping
+
+    if background:
+        since_s = since.date().isoformat() if since else None
+        _started, text = kickoff_search(
+            fund_key=fund_key, source_key=source_key, since=since_s,
+            dry_run=dry_run, no_llm=no_llm,
+        )
+        click.echo(text)
+        return
+
+    db = _db(ctx)
+    try:
+        result = _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm)
+        ping = render_today_ping(db)
+        if send_ping:
+            from radar.notify.telegram import send_message
+
+            send_message(ping)
+        if ctx.obj["json"]:
+            _emit({"run": result.summary(), "ping": ping}, True)
+        else:
+            click.echo(ping)
+        sys.exit(EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
+    finally:
+        mark_search_done()
+
+
+@cli.command("hydrate-ages")
+@click.option("--limit", type=int, default=None,
+              help="Max Companies House profile requests this call")
+@click.pass_context
+def hydrate_ages(ctx, limit):
+    """Fill incorporated_on from Companies House for companies that already have a CRN.
+
+    Does not crawl sources. Follow with `rescore --all` so Today can use the dates.
+    """
+    from radar.config.loader import load_runtime_config
+    from radar.enrich import RequestBudget, hydrate_missing_ages, missing_age_queue
+    from radar.enrich.ch_officers import CH_API_BASE
+    from radar.pipeline import _make_http
+    from radar.sources.companies_house import api_key_from_env
+
+    db = _db(ctx)
+    cfg, _, _ = load_runtime_config(db)
+    key = api_key_from_env()
+    if not key:
+        click.echo("no Companies House API key", err=True)
+        sys.exit(EXIT_FATAL)
+    default_limit = int(getattr(cfg.settings, "max_enrichment_requests_per_run", 500) or 500)
+    budget = RequestBudget(limit if limit is not None else default_limit)
+    result = hydrate_missing_ages(
+        db, _make_http(), api_key=key, budget=budget, base_url=CH_API_BASE,
+    )
+    _emit(
+        {
+            "ages_hydrated": result.ages_hydrated,
+            "budget_spent": budget.spent,
+            "budget_limit": budget.limit,
+            "still_missing": len(missing_age_queue(db)),
+        },
+        ctx.obj["json"],
+    )
 
 
 @cli.command()

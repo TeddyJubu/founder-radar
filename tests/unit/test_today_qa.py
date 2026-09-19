@@ -341,8 +341,11 @@ def test_skill_maps_today_qa_to_the_cli():
     argv = skill_commands("hermes/skills/founder-radar/SKILL.md")
     assert ["today-qa"] in argv
     assert ["today"] in argv
+    assert ["search"] in argv
     assert "today-qa" in cli.commands
     assert "today" in cli.commands
+    assert "search" in cli.commands
+    assert "hydrate-ages" in cli.commands
     prompt = Path("hermes/skills/founder-radar/references/today-check.md")
     assert prompt.is_file()
     assert "WRONG" in prompt.read_text()

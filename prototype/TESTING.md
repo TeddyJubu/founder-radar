@@ -100,8 +100,7 @@ const all = (id) => document.querySelectorAll(`[data-testid="${id}"]`);
 | Caveat | `caveat` | `data-flag` | raw flag name, e.g. `age_unknown` |
 | Also fits | `also-fits` | | absent when no other fund matched — never a generic “several funds can match” caption |
 | Fit criteria panel | `criteria-panel` | `data-panel` = `matched` / `missing` / `against` | present only when that bucket has rows. Unknown fit rows go in `missing`; missed fit rows go in `against`; met/partial in `matched`. Edge rows stay in `criteria-group[data-group=edge]` |
-| Progress | `progress` | | |
-| Progress dot | `progress-dot` | `data-state` = `done` / `now` / `todo` | |
+| Progress | `progress` | | remaining-companies count (`10 left`); empty on done/empty states |
 | Verdict bar | `verdict-bar` | | `hidden` on the done state |
 | Verdict buttons | `verdict-worth-contacting`, `verdict-unsure`, `verdict-not-for-me` | | |
 | Toast | `toast` | | `.show` class when visible |
@@ -155,8 +154,8 @@ Run before the UI suites. If A fails, every later failure is a symptom.
 | B5 | Scores are integers | both `score-value` match `/^\d+$/` |
 | B6 | Fund present | `route-fund` text length > 0 |
 | B7 | Explanation present | `explanation` text length > 20 |
-| B8 | Dots match count | `progress-dot` count == `min(companies.length, 12)` |
-| B9 | One current dot | exactly one `progress-dot[data-state="now"]` |
+| B8 | Count matches queue | `progress` text is `{n} left` for n companies |
+| B9 | Count tracks review | ArrowRight shows `{n-1} left`; empty once all are reviewed |
 | B10 | Three buttons | the three `verdict-*` testids each present exactly once |
 | B11 | Bar visible | `verdict-bar` not `hidden` while cards remain |
 | B15 | Four fund matches | exactly four `fund-score` elements in order `dsw`, `northstar`, `outward`, `anticus`, labelled DSW Ventures / Northstar Ventures / Outward VC / Anticus Partners; each displayed `data-value` matches the corresponding API `fund_scores[*].fit`; `fund-scores-hint` explains they are not a share of 100%; four `fund-why` lines |

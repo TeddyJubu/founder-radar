@@ -1158,6 +1158,7 @@ def enrich_stage(db: Db, cfg: Any, http: Any, *, api_key: str | None = None,
         "budget_limit": result.budget_limit,
         "budget_spent": result.budget_spent,
         "share_issues": result.share_issues,
+        "ages_hydrated": result.ages_hydrated,
     }
 
 

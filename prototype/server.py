@@ -64,7 +64,6 @@ TODAY_DIAGNOSTIC_LABELS = {
     "missing_provenance": "No usable source URL",
     "reviewed_today": "Already reviewed today",
     "already_decided": "Already decided (Kept / not for me)",
-    "not_uk": "Not a UK company",
     "display_limit": "Beyond today's display limit",
     "registry_without_venture_signal": "Companies House only, no venture signal",
     "hermes_rejected": "Failed the final Hermes company check",
@@ -188,10 +187,6 @@ def _today_block_reason(
     """
     from radar.config.models import STAGES, canon_enum
     from radar.score.gates import apply_freshness_gates, evaluate_vehicle_gates
-
-    country = _row_value(row, "country_iso2")
-    if country and str(country).upper() != "GB":
-        return "not_uk"
 
     freshness = apply_freshness_gates(row, config, today=today)
     if not freshness.passed:

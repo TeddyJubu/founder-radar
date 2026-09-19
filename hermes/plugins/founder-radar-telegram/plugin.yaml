@@ -1,0 +1,11 @@
+name: founder-radar-telegram
+version: 1.0.0
+description: >
+  Telegram search/today always start founder-radar and reply with the Today
+  dashboard URL. Bypasses the LLM so company lists never land in chat.
+author: founder-radar
+provides_hooks:
+  - pre_gateway_dispatch
+  - pre_llm_call
+  - pre_tool_call
+  - transform_llm_output

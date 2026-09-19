@@ -23,7 +23,7 @@ import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from radar.enrich import ch_filings, ch_officers, postcode
 from radar.enrich.ch_filings import (
@@ -41,6 +41,7 @@ from radar.enrich.ch_officers import (
     PscHolder,
     apply_psc,
     fetch_appointments,
+    fetch_company_profile,
     fetch_officers,
     fetch_psc,
     founder_candidates,
@@ -88,6 +89,10 @@ FILINGS_CHECKED_PREFIX = "ch_filings_checked:"
 #: Keep that state separate from `enriched_at`, so repeat-founder evidence is
 #: not silently lost when a company was only partially hydrated.
 APPOINTMENTS_COMPLETE_PREFIX = "ch_appointments_complete:"
+#: Pass 0: company profile → `incorporated_on`. Separate from `enriched_at`
+#: because officer hydration used to mark rows complete without ever fetching
+#: the date, which is how Innovate UK cards vanished from Today.
+PROFILE_CHECKED_PREFIX = "ch_profile_checked:"
 
 
 # ------------------------------------------------------------------ budget
@@ -154,6 +159,7 @@ class BackfillResult:
     signals_new: int = 0
     founders: int = 0
     share_issues: int = 0
+    ages_hydrated: int = 0
     enriched: int = 0
     queued: int = 0
     budget_limit: int = 0
@@ -362,6 +368,151 @@ def _mark_appointments_complete(db: Any, company_id: str) -> None:
     db.set_meta(APPOINTMENTS_COMPLETE_PREFIX + company_id, now_iso())
 
 
+def _profile_checked(db: Any, company_id: str) -> bool:
+    return db.get_meta(PROFILE_CHECKED_PREFIX + company_id) is not None
+
+
+def _mark_profile_checked(db: Any, company_id: str) -> None:
+    db.set_meta(PROFILE_CHECKED_PREFIX + company_id, now_iso())
+
+
+def missing_age_queue(db: Any, limit: int | None = None) -> list[dict]:
+    """Companies that have a CRN but no incorporation date.
+
+    Innovate UK (and other Track A sources) store the number as identity.
+    Enrichment used to skip the profile lookup, so Today treated them as
+    maturity_unknown and the Telegram search looked like it never landed.
+    Reviewable scores go first so a budget-capped run unblocks the dashboard.
+    """
+    sql = """
+        SELECT c.id, c.companies_house_no, c.canonical_name, c.incorporated_on
+        FROM company c
+        WHERE c.companies_house_no IS NOT NULL
+          AND TRIM(c.companies_house_no) != ''
+          AND c.incorporated_on IS NULL
+          AND c.merged_into IS NULL
+          AND NOT EXISTS (
+                SELECT 1 FROM _meta m WHERE m.key = ? || c.id
+          )
+        ORDER BY EXISTS(
+                   SELECT 1 FROM score s
+                    WHERE s.company_id = c.id
+                      AND s.tier IN ('shortlist', 'watchlist')
+                 ) DESC,
+                 c.last_seen DESC,
+                 c.id
+    """
+    params: tuple[Any, ...] = (PROFILE_CHECKED_PREFIX,)
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    return [dict(r) for r in db.query(sql, params)]
+
+
+def apply_company_profile(
+    db: Any,
+    company_id: str,
+    profile: Mapping[str, Any],
+    *,
+    source_url: str,
+) -> bool:
+    """Write register facts onto an existing company. Never changes route.
+
+    Returns True when `incorporated_on` was filled in this call.
+    """
+    row = db.one(
+        "SELECT canonical_name, incorporated_on, hq_postcode, hq_city, sic_codes "
+        "FROM company WHERE id = ?",
+        (company_id,),
+    )
+    if row is None:
+        return False
+
+    created = str(profile.get("date_of_creation") or "").strip()[:10] or None
+    if created and len(created) < 10:
+        created = None
+    address = profile.get("registered_office_address") or {}
+    postal = (address.get("postal_code") or "").strip() or None
+    city = (address.get("locality") or "").strip() or None
+    sic = profile.get("sic_codes") or []
+    sic_json = json.dumps(sic) if sic else None
+
+    assignments: list[str] = []
+    params: list[Any] = []
+    wrote_age = False
+    if created and not row["incorporated_on"]:
+        assignments.extend([
+            "incorporated_on = ?",
+            "age_source = 'companies_house'",
+            "date_confidence = 'exact'",
+        ])
+        params.append(created)
+        wrote_age = True
+        _observe_once(
+            db, company_id, "incorporated_on", created, source_url=source_url,
+        )
+        db.execute(
+            """INSERT OR IGNORE INTO signal
+                 (company_id, kind, occurred_on, headline, detail, source_key,
+                  source_url, first_seen)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                company_id, "verification", created,
+                f"{row['canonical_name']} verified on Companies House, "
+                f"incorporated {created}",
+                None, SOURCE_KEY, source_url, now_iso(),
+            ),
+        )
+    if postal and not row["hq_postcode"]:
+        assignments.append("hq_postcode = ?")
+        params.append(postal)
+    if city and not row["hq_city"]:
+        assignments.append("hq_city = ?")
+        params.append(city)
+    if sic_json and not row["sic_codes"]:
+        assignments.append("sic_codes = ?")
+        params.append(sic_json)
+
+    stamp = now_iso()
+    assignments.append("updated_at = ?")
+    params.append(stamp)
+    params.append(company_id)
+    db.execute(
+        f"UPDATE company SET {', '.join(assignments)} WHERE id = ?",
+        params,
+    )
+    return wrote_age
+
+
+def hydrate_missing_ages(
+    db: Any,
+    http: Any,
+    *,
+    api_key: str,
+    budget: RequestBudget,
+    base_url: str = CH_API_BASE,
+    result: BackfillResult | None = None,
+    max_companies: int | None = None,
+) -> BackfillResult:
+    """Pass 0: fill `incorporated_on` from the Companies House profile."""
+    result = result or BackfillResult()
+    queue = missing_age_queue(db, max_companies)
+    for row in queue:
+        if not budget.spend(1):
+            break
+        result.enrich_requests += 1
+        number = normalise_ch_number(row["companies_house_no"]) or row["companies_house_no"]
+        raw = fetch_company_profile(
+            http, number, api_key=api_key, base_url=base_url,
+        )
+        _mark_profile_checked(db, row["id"])
+        if not raw:
+            continue
+        source_url = CH_PROFILE_URL.format(number)
+        if apply_company_profile(db, row["id"], raw, source_url=source_url):
+            result.ages_hydrated += 1
+    return result
+
+
 def enrichment_queue(db: Any, limit: int | None = None) -> list[dict]:
     """Companies waiting for enrichment, ordered by expected value.
 
@@ -410,6 +561,23 @@ def enrich_companies(
     companies never earn a qualifier and never reach scoring.
     """
     result = result or BackfillResult()
+
+    # ---- pass 0: profile → incorporated_on (1 request each)
+    # Must run before filings/officers. A 500-request budget that only looks
+    # at SH01 leaves grant companies undated, and Today stays empty while
+    # Telegram reports "132 new companies".
+    if budget.remaining:
+        officer_backlog = enrichment_queue(db, 1)
+        age_cap = budget.remaining
+        if officer_backlog and age_cap > 1:
+            age_cap = max(1, (age_cap * 2) // 3)
+        sliced = RequestBudget(age_cap)
+        hydrate_missing_ages(
+            db, http, api_key=api_key, budget=sliced,
+            base_url=base_url, result=result, max_companies=max_companies,
+        )
+        budget.spent += sliced.spent
+
     queue = enrichment_queue(db, max_companies)
 
     # ---- pass 1: filing history → SH01 (1 request each)

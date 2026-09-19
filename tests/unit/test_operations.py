@@ -566,6 +566,16 @@ def _payload_for(url: str):
         }]}
     if "/appointments" in url:
         return {"total_results": 1, "items": []}
+    if "/company/" in url:
+        return {
+            "date_of_creation": "2026-01-15",
+            "company_status": "active",
+            "sic_codes": ["72110"],
+            "registered_office_address": {
+                "postal_code": "NE1 4ST",
+                "locality": "Newcastle",
+            },
+        }
     return {}
 
 
