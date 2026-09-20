@@ -5,6 +5,8 @@ Verified against the codebase (prototype + `radar/`). Spec depth lives in
 [`docs/prd/`](prd/); this page is the short version.
 
 The same walkthrough is served in the web prototype at **`/help`**.
+A silent captioned video of a real morning pass lives in the teaching guide
+at **`/guide/#use-video`**.
 
 ---
 
