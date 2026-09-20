@@ -39,13 +39,21 @@ if [ "$(id -u)" -eq 0 ]; then
   chown "${APP_USER}:${APP_USER}" "$LOG" 2>/dev/null || true
 fi
 
+say() {
+  # Under systemd the unit already appends our stdout to $LOG, so tee would
+  # print every line twice. Manual runs still need the tee.
+  if [ -n "${INVOCATION_ID:-}" ]; then
+    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+  else
+    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG"
+  fi
+}
+
 exec 9>"$LOCK"
 if ! flock -n 9; then
-  echo "another founder-radar update is already running — skipping" | tee -a "$LOG"
+  say "another founder-radar update is already running — skipping"
   exit 0
 fi
-
-say() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
 
 run_git() {
   if [ "$(id -u)" -eq 0 ]; then
