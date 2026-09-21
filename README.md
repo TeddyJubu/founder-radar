@@ -17,7 +17,8 @@ sources): [`docs/ops-guide.md`](docs/ops-guide.md). In the Today prototype the
 same guide is at `/help`.
 
 **Teaching guide** (interactive site for students/teachers — architecture,
-morning loop, funds, PDF handout): [`guide/`](guide/) — `cd guide && npm install && npm run dev`.
+morning loop, funds, captioned usage video, PDF handout): [`guide/`](guide/) —
+`cd guide && npm install && npm run dev`. Watch the morning pass at `/guide/#use-video`.
 
 ---
 
