@@ -22,8 +22,9 @@ export function ArchitectureSection() {
     >
       <Reveal>
         <p className="mb-6 max-w-3xl text-base leading-relaxed text-muted-foreground md:text-lg">
-          Everything important lives in one notebook. The other screens are just different
-          ways to look at it — or talk to it.
+          Everything important lives in one notebook. Companies arrive through two doors —
+          Track A and Track B — and the Google Sheet is the rule book, not the morning desk.
+          Tap a box. A card opens with that part, and some boxes open a second diagram.
         </p>
       </Reveal>
 
