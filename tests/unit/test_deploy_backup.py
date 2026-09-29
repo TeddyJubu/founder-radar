@@ -352,7 +352,7 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "leaving existing /etc/caddy/Caddyfile in place" not in installer
     # pip as radar from /root dies on an editable path hook. Pin the fix.
     assert 'cd "$APP_DIR"' in installer
-    assert 'sudo -H -u "$APP_USER"' in installer
+    assert 'chown -R root:root "$VENV"' in installer
     # bcrypt `$2y$` in .env is `$2` under bash `set -u` and used to abort
     # install.sh after the timer was enabled. Presence-check the keys
     # without sourcing the file.

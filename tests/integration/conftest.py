@@ -22,6 +22,7 @@ from tests.fakes import CountingGateway
 # A spreadsheet must always keep at least one sheet, so the survivor of a wipe
 # is named `Outreach` — one of the twelve, and the one the system never touches.
 PLACEHOLDER = "Outreach"
+SCRATCH_MARKER = "FOUNDER_RADAR_TEST_SCRATCH"
 
 
 @pytest.fixture(autouse=True)
@@ -43,10 +44,10 @@ def _network_for_integration():
 
 @pytest.fixture(scope="session")
 def sheet_credentials() -> tuple[str, str]:
-    sheet_id = os.environ.get("SHEET_ID")
+    sheet_id = os.environ.get("TEST_SHEET_ID")
     sa_json = os.environ.get("GOOGLE_SA_JSON")
     if not sheet_id or not sa_json:
-        pytest.skip("SHEET_ID and GOOGLE_SA_JSON are not set — no scratch spreadsheet")
+        pytest.skip("TEST_SHEET_ID and GOOGLE_SA_JSON are not set — no scratch spreadsheet")
     if not Path(sa_json).expanduser().is_file():
         pytest.skip(f"GOOGLE_SA_JSON does not exist: {sa_json}")
     return sheet_id, str(Path(sa_json).expanduser())
@@ -60,12 +61,14 @@ def blank(gateway: Any) -> None:
     day-one state `test_sheet_roundtrip` claims to exercise.
     """
     existing = dict(gateway.sheets())
+    if SCRATCH_MARKER not in existing:
+        raise ValueError("missing scratch-sheet marker; refusing to wipe")
     if PLACEHOLDER not in existing:
         existing.update(gateway.add_tabs([PLACEHOLDER]))
     keep = existing[PLACEHOLDER]
 
     requests: list[dict] = [{"deleteSheet": {"sheetId": sid}}
-                            for sid in existing.values() if sid != keep]
+                            for sid in existing.values() if sid not in (keep, existing[SCRATCH_MARKER])]
     requests.append({"updateCells": {"range": {"sheetId": keep}, "fields": "*"}})
     requests.append({"updateSheetProperties": {
         "properties": {"sheetId": keep, "title": PLACEHOLDER, "index": 0,

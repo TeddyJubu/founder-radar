@@ -188,3 +188,14 @@ rules-only override is enabled or per-card QA was skipped.
 Publish-time QA changes refresh the Sheet before the Telegram ping. A Sheet
 outage is reported as a warning; the approved dashboard can still be announced,
 but the Sheet may be behind until the next successful sync.
+### Trusted auto-updates
+
+The installation root, application checkout and Python environment are root-owned.
+Radar can write data, logs, backups and secrets, but cannot edit code run by root.
+The timer runs a root-owned helper under `/usr/local/libexec/founder-radar`.
+Updates refuse writable inputs, symlinks and writable parent directories before Git runs.
+An administrator must review and reinstall an older radar-owned checkout before enabling this timer.
+Runtime packages are installed from `deploy/requirements.lock`, generated from `uv.lock`,
+with versions and artifact hashes checked. Python build tooling remains supplied by pip's isolated build.
+Integration tests require `TEST_SHEET_ID` and a tab named `FOUNDER_RADAR_TEST_SCRATCH`;
+the marker survives resets. Never put that marker on a real customer spreadsheet.

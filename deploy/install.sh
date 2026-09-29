@@ -40,7 +40,8 @@ if ! id -u "$APP_USER" >/dev/null 2>&1; then
   adduser --system --group --home "$ROOT" "$APP_USER"
 fi
 
-install -d -o "$APP_USER" -g "$APP_USER" -m 755 "$ROOT" "$ROOT/data" "$ROOT/logs" "$ROOT/backups"
+install -d -o root -g root -m 755 "$ROOT"
+install -d -o "$APP_USER" -g "$APP_USER" -m 755 "$ROOT/data" "$ROOT/logs" "$ROOT/backups"
 # 0700 on secrets: the directory listing is itself information.
 install -d -o "$APP_USER" -g "$APP_USER" -m 700 "$SECRETS_DIR"
 
@@ -58,18 +59,25 @@ if [ ! -d "$APP_DIR/.git" ] && [ ! -f "$APP_DIR/pyproject.toml" ]; then
   echo "no checkout at $APP_DIR — clone the repository there first" >&2
   exit 1
 fi
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+chown -R root:root "$APP_DIR"
+chmod -R go-w "$APP_DIR"
 
 say "python environment"
 # pip as $APP_USER inherits the caller's cwd. Running install.sh from /root
 # then dies with PermissionError on an editable path hook under root's home.
 # Always install from the checkout, with the service user's HOME.
 cd "$APP_DIR"
-if [ ! -x "$VENV/bin/python" ]; then
-  sudo -H -u "$APP_USER" python3 -m venv "$VENV"
+if [ -d "$VENV" ]; then
+  chown -R root:root "$VENV"
+  chmod -R go-w "$VENV"
 fi
-sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet --upgrade pip
-sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet -e .
+if [ ! -x "$VENV/bin/python" ]; then
+  python3 -m venv "$VENV"
+fi
+"$VENV/bin/pip" install --quiet --require-hashes -r deploy/requirements.lock
+"$VENV/bin/pip" install --quiet --no-deps -e .
+chown -R root:root "$VENV"
+chmod -R go-w "$VENV"
 # Hermes (operator user) cannot read radar-owned .env — install a wrapper that
 # re-execs as $APP_USER so Telegram ops work without hand-rolled sudo.
 install -m 755 "$HERE/founder-radar-wrap.sh" /usr/local/bin/founder-radar
@@ -128,6 +136,7 @@ say "environment file mode: $(stat -c '%a %U:%G' "$ENV_FILE")"
 say "root-owned helpers"
 install -d -o root -g root -m 755 "$(dirname "$LIBEXEC")" "$LIBEXEC"
 install -o root -g root -m 755 "$HERE/hermes-acl.sh" "$LIBEXEC/hermes-acl.sh"
+install -o root -g root -m 755 "$HERE/update-from-main.sh" "$LIBEXEC/update-from-main.sh"
 
 if command -v visudo >/dev/null 2>&1 && [ -d "$SUDOERS_DIR" ]; then
   sudoers_tmp="$(mktemp)"
