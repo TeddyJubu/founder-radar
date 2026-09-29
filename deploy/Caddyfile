@@ -87,3 +87,7 @@
 # app (HERMES_WEBUI_PASSWORD) — do not add Caddy basic_auth here.
 # Fragment is written by ops on the box; import is a no-op until present.
 import /etc/caddy/hermes-webui.caddy
+
+# ChatGPT Custom GPT Actions API. Bearer API key is the gate — no Caddy
+# basic_auth. Fragment is written by install.sh; import is a no-op until present.
+import /etc/caddy/chatgpt-actions.caddy

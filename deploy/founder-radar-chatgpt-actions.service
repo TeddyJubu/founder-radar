@@ -1,0 +1,41 @@
+# /etc/systemd/system/founder-radar-chatgpt-actions.service
+#
+# Authenticated ChatGPT Custom GPT Actions API (product ops only).
+# Binds 127.0.0.1:8790 — Caddy terminates TLS at actions.<host>.
+# Requires RADAR_CHATGPT_API_KEY in /opt/founder-radar/.env.
+
+[Unit]
+Description=UK Founder Radar ChatGPT Actions API
+Documentation=file:/opt/founder-radar/app/docs/chatgpt-actions.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radar
+Group=radar
+WorkingDirectory=/opt/founder-radar/app
+EnvironmentFile=/opt/founder-radar/.env
+EnvironmentFile=-/opt/founder-radar/hermes.env
+Environment=TZ=Europe/London
+Environment=RADAR_ROOT=/opt/founder-radar
+
+ExecStart=/opt/founder-radar/venv/bin/python -m radar.chatgpt_actions
+
+Restart=on-failure
+RestartSec=5
+
+MemoryMax=256M
+Nice=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs
+
+StandardOutput=append:/opt/founder-radar/logs/chatgpt-actions.log
+StandardError=append:/opt/founder-radar/logs/chatgpt-actions-error.log
+
+[Install]
+WantedBy=multi-user.target

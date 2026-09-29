@@ -1,0 +1,344 @@
+openapi: 3.1.0
+info:
+  title: UK Founder Radar — ChatGPT Actions
+  version: "1.0.0"
+  description: |
+    Authenticated product-ops API for the UK Founder Radar Custom GPT.
+    Wraps allowlisted `founder-radar` CLI commands only.
+
+    Hard rules for the GPT:
+    - Never invent Fit/Edge scores or company lists — return CLI output only.
+    - For today / search, prefer the dashboard URL over dumping companies into chat.
+    - Poll async jobs until status is done or failed.
+    - Out of scope: systemd, deploy, git, `.env` edits, `forget`, `db restore`.
+servers:
+  - url: https://actions.srv1821489.hstgr.cloud
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Liveness (no auth)
+      security: []
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/today:
+    get:
+      operationId: today
+      summary: Today dashboard ping (counts + URL, no company dump)
+      responses:
+        "200":
+          description: CLI today output plus dashboard_url
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/status:
+    get:
+      operationId: status
+      summary: Pipeline / DB status
+      responses:
+        "200":
+          description: Status report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/doctor:
+    get:
+      operationId: doctor
+      summary: Operator doctor checks
+      responses:
+        "200":
+          description: Doctor checks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/why-today:
+    get:
+      operationId: whyToday
+      summary: Explain empty or thin Today list (counts only)
+      responses:
+        "200":
+          description: Diagnosis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/companies/{name}:
+    get:
+      operationId: showCompany
+      summary: Full record for one company (founder-radar show)
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          description: Company show output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/funds/{key}:
+    get:
+      operationId: fundTop
+      summary: Top matches for one fund
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [northstar, dsw, outward, anticus]
+        - name: top
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        "200":
+          description: Fund top list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/decide:
+    post:
+      operationId: decide
+      summary: Record lasting verdict (worth contacting | not for me | unsure)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, verdict]
+              properties:
+                name:
+                  type: string
+                  maxLength: 200
+                verdict:
+                  type: string
+                  enum:
+                    - worth contacting
+                    - not for me
+                    - unsure
+      responses:
+        "200":
+          description: Verdict recorded (or ambiguous name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/publish-check:
+    post:
+      operationId: publishCheck
+      summary: Pre-publish gate (Hermes + deterministic)
+      responses:
+        "200":
+          description: Gate report (ok or blocked)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/publish:
+    post:
+      operationId: publish
+      summary: Publish path; only endpoint that may Telegram-ping when send=true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                send:
+                  type: boolean
+                  default: false
+                  description: When true, push the dashboard ping to Telegram
+      responses:
+        "200":
+          description: Publish result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/today-qa:
+    post:
+      operationId: todayQa
+      summary: Re-run Today QA veto (does not rewrite scores)
+      responses:
+        "200":
+          description: QA summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CliResult"
+  /v1/jobs/search:
+    post:
+      operationId: startSearch
+      summary: Start an async scan (poll /v1/jobs/{id}; prefer dashboard URL)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fund:
+                  type: string
+                  enum: [northstar, dsw, outward, anticus]
+                source:
+                  type: string
+                since:
+                  type: string
+                no_llm:
+                  type: boolean
+                  default: false
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+  /v1/jobs/rescore:
+    post:
+      operationId: startRescore
+      summary: Start an async rescore (optional --all)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                all:
+                  type: boolean
+                  default: false
+                  description: Pass --all to founder-radar rescore
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+  /v1/jobs/{id}:
+    get:
+      operationId: jobStatus
+      summary: Poll async job until done or failed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{32}$"
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  job:
+                    $ref: "#/components/schemas/Job"
+        "404":
+          description: Unknown job id
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Value of RADAR_CHATGPT_API_KEY from the VPS
+        `/opt/founder-radar/.env`. Header name Authorization,
+        value `Bearer <key>`.
+  schemas:
+    CliResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        exit_code:
+          type: integer
+        argv:
+          type: array
+          items:
+            type: string
+        stdout:
+          type: string
+        stderr:
+          type: string
+        result:
+          description: Parsed JSON from CLI stdout when available
+        dashboard_url:
+          type: string
+          nullable: true
+        hint:
+          type: string
+    JobAccepted:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        accepted:
+          type: boolean
+        job_id:
+          type: string
+        status:
+          type: string
+        dashboard_url:
+          type: string
+          nullable: true
+        poll:
+          type: string
+        hint:
+          type: string
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        command:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, done, failed]
+        created_at:
+          type: number
+        updated_at:
+          type: number
+        dashboard_url:
+          type: string
+          nullable: true
+        exit_code:
+          type: integer
+          nullable: true
+        stdout:
+          type: string
+        stderr:
+          type: string
+        error:
+          type: string
+          nullable: true
+        message:
+          type: string

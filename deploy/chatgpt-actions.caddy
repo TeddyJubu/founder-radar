@@ -1,0 +1,18 @@
+# ChatGPT Custom GPT Actions API (product ops).
+# Auth is Bearer RADAR_CHATGPT_API_KEY on the app — do NOT add Caddy basic_auth.
+# DNS: actions.* resolves via the existing wildcard to this VPS (same as webui.*).
+actions.srv1821489.hstgr.cloud {
+	encode gzip
+	reverse_proxy 127.0.0.1:8790
+	header {
+		Cache-Control "no-store"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	log {
+		output file /var/log/caddy/chatgpt-actions.log
+		format console
+	}
+}

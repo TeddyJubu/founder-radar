@@ -117,6 +117,7 @@ for unit in founder-radar.service founder-radar.timer \
             founder-radar-heartbeat.service founder-radar-heartbeat.timer \
             founder-radar-backup.service founder-radar-backup.timer \
             founder-radar-web.service \
+            founder-radar-chatgpt-actions.service \
             founder-radar-update.service founder-radar-update.timer; do
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
@@ -158,6 +159,18 @@ systemctl enable --now founder-radar-web.service
 # enable --now does not reload an already-running unit; always restart so
 # code and config already on disk become the live process.
 systemctl restart founder-radar-web.service
+
+# ChatGPT Actions API (loopback :8790). Starts only when RADAR_CHATGPT_API_KEY
+# is set — the process refuses to bind without it. Optional; skip quietly.
+if grep -qE '^[[:space:]]*RADAR_CHATGPT_API_KEY=.+' "$ENV_FILE" 2>/dev/null; then
+  say "ChatGPT Actions API"
+  systemctl enable --now founder-radar-chatgpt-actions.service
+  systemctl restart founder-radar-chatgpt-actions.service
+else
+  say "RADAR_CHATGPT_API_KEY unset — ChatGPT Actions unit not enabled"
+  say "  generate: openssl rand -hex 32"
+  say "  then add RADAR_CHATGPT_API_KEY=… to $ENV_FILE and re-run install"
+fi
 
 unquote() {
   local v="$1"
@@ -377,6 +390,9 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
   install -m 644 "$HERE/Caddyfile" /etc/caddy/Caddyfile
   if [ -f "$HERE/hermes-webui.caddy" ]; then
     install -m 644 "$HERE/hermes-webui.caddy" /etc/caddy/hermes-webui.caddy
+  fi
+  if [ -f "$HERE/chatgpt-actions.caddy" ]; then
+    install -m 644 "$HERE/chatgpt-actions.caddy" /etc/caddy/chatgpt-actions.caddy
   fi
   # Teaching guide static build (Vite base `/guide/`). Optional: tree may be
   # absent until someone runs `cd guide && npm run build` and syncs dist/.
