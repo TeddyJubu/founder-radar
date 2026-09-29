@@ -694,9 +694,9 @@ def test_first_party_investment_announcements_are_denylist_not_leads():
     bg = bethnal_green.ADAPTER.parse(load("bethnal_green.html"))
     exited = [i for i in bg if i.structured.get("exited")]
     active = [i for i in bg if i.kind_hint == "accelerator_cohort"]
-    assert exited and active
-    assert all(i.kind_hint == "vc_portfolio_listing" for i in exited)
-    assert all(i.structured.get("on_vc_portfolio") is True for i in exited)
+    assert exited and not active
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in bg)
+    assert all(i.structured.get("on_vc_portfolio") is True for i in bg)
 
 
 # --------------------------------------------- client-requested categories

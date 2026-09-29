@@ -452,3 +452,23 @@ def test_usd_amount_is_flagged_not_silently_converted(offline_llm):
     assert got.amount_currency == "USD"
     assert got.amount_raised_gbp is None
     assert got.needs_review is True
+
+
+@pytest.mark.parametrize('product,sector', [
+    ('legaltech software for law firms','legaltech'),
+    ('proptech software for property managers','proptech'),
+    ('cybersecurity tools for businesses','cybersecurity'),
+    ('HR software for employers','hr_tech'),
+    ('data infrastructure for developers','data_infrastructure'),
+])
+def test_heuristic_sector_uses_explicit_company_product(product,sector):
+    from radar.extract.heuristic import heuristic_extract
+    result=heuristic_extract(title='Acme raises £2m',text=f'Acme develops {product}.')
+    assert result.sector==sector
+
+
+def test_heuristic_does_not_copy_investor_or_customer_sector():
+    from radar.extract.heuristic import heuristic_extract
+    result=heuristic_extract(title='Acme raises £2m from a cybersecurity investor',
+                            text='The investor specialises in cybersecurity. Acme builds software for businesses.')
+    assert result.sector is None

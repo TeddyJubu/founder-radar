@@ -1,19 +1,9 @@
-"""UKTN — JSON index plus a per-article fetch. The one with the robots trap.
+"""UKTN — public HTML index plus a bounded per-article fetch.
 
-⚠️ **UKTN's robots.txt disallows `/*?`.** Every URL this adapter builds is
-therefore path-only: no `per_page`, no `page`, no cache-buster, no UTM, ever.
-That single rule shapes the whole file —
-
-* the index is `/wp-json/wp/v2/posts/latest`, a custom route that is *not*
-  disallowed, unlike `/feed`, `/*/feed` and `/page/`;
-* `latest` returns titles, links and dates but **no body**, so the text costs
-  one fetch per article;
-* `_assert_no_query` is called on every URL before it leaves the file, and it
-  raises rather than stripping — a silent strip would let a future edit
-  reintroduce the violation and never fail a test.
-
-Highest-volume UK-only funding coverage in the ledger (25–50 companies/month),
-which is why it is worth the extra fetches at all.
+The old JSON endpoint carries noindex. The public homepage supplies real
+article links and some dates; a date embedded in an article slug is also valid
+evidence. Unknown dates remain unknown. robots disallows query strings, so
+all requests are path-only. Archived JSON captures remain parseable offline.
 """
 
 from __future__ import annotations
@@ -37,7 +27,7 @@ from radar.sources._common import (
 from radar.sources.base import FetchContext, RawItem
 
 BASE = "https://www.uktech.news"
-INDEX = f"{BASE}/wp-json/wp/v2/posts/latest"
+INDEX = f"{BASE}/"
 
 #: Fetch at most this many article bodies per run. UKTN publishes ~10 a day;
 #: the cap is a circuit breaker for the day the index returns 500 items.
@@ -91,6 +81,14 @@ class UktnAdapter:
         import json
 
         body = payload.decode("utf-8", "replace") if isinstance(payload, bytes) else payload
+        if body.lstrip().startswith('<'):
+            from radar.sources._public_news import public_posts
+            posts, self.last_fingerprint = public_posts(body,self.key,BASE,'article')
+            return [RawItem(source_key=self.key,source_url=p['link'],external_id=p['id'],
+                            published_at=p['date'],title=p['title'],body_text=p['excerpt'] or None,
+                            structured={'date_confidence': 'exact' if p['date'] else 'unknown',
+                                        'needs_article_fetch':True,'full_text_in_feed':False},
+                            kind_hint='news_mention') for p in posts]
         try:
             data = json.loads(body)
         except json.JSONDecodeError as exc:
