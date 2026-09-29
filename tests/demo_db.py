@@ -101,6 +101,8 @@ def build(path: str) -> int:
         enrich_stage(db, cfg, http, api_key="demo")
         for row in db.query("SELECT id FROM company"):
             score_company(db, row["id"], cfg, today=TODAY)
+        from radar.qa.today import run_today_qa
+        run_today_qa(db, cfg, use_hermes=False)
         return db.scalar("SELECT COUNT(*) FROM company")
     finally:
         db.close()

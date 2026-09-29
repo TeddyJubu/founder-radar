@@ -68,12 +68,14 @@ def demo_db(tmp_path_factory) -> Path:
 
 @pytest.fixture(autouse=True)
 def fresh_daily_review(demo_db: Path):
-    """Keep browser tests isolated without clearing lasting verdicts."""
+    """Reset disposable review state so each test starts with the demo queue."""
     from prototype.server import reset_daily_review
 
     conn = sqlite3.connect(str(demo_db))
     try:
         reset_daily_review(conn)
+        conn.execute("DELETE FROM user_field")
+        conn.commit()
     finally:
         conn.close()
 
