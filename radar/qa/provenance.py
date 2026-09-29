@@ -181,7 +181,8 @@ def apply_repair(db, plan: dict, *, expected_hash: str) -> int:
                        (change['new'],change['rowid'],change['old']))
             affected.add(change['company_id'])
         for cid in affected:
-            db.execute('DELETE FROM today_check WHERE company_id=?', (cid,))
+            # Keep the audit trail. Changing the citation changes the card hash,
+            # so an old approval cannot approve the repaired card.
             db.execute('UPDATE score_snapshot SET approved_snapshot_hash=NULL WHERE company_id=?', (cid,))
     return len(actual['changes'])
 

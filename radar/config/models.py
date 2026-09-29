@@ -25,7 +25,8 @@ SECTORS: tuple[str, ...] = (
     "fintech", "insurtech", "wealthtech", "lending", "regtech", "b2b_saas",
     "vertical_saas", "ai_data", "climate_tech", "healthy_ageing", "life_sciences",
     "healthcare", "deeptech", "developer_tools", "consumer", "marketplace",
-    "industrial_tech", "other",
+    "industrial_tech", "legaltech", "proptech", "cybersecurity", "hr_tech",
+    "data_infrastructure", "other",
 )
 
 GEOGRAPHIES: tuple[str, ...] = (

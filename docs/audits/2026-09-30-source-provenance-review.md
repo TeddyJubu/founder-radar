@@ -58,8 +58,8 @@ python -m radar.qa.provenance --db /absolute/path/to/radar.db --apply --plan-has
 This does not migrate or fetch anything. It only replaces Innovate UK's
 fabricated GtR citations in company_source, signal and observation with the
 relevant permanent publication plus project/participant lookup. It preserves
-evidence values and external IDs; deletes affected current QA checks and
-clears historical snapshot approvals, requiring new verification. A changed
+evidence values, external IDs and the QA audit trail. It clears affected
+snapshot approvals; the changed card hash requires new verification. A changed
 plan or mismatched approval hash aborts the entire transaction. Genuine
 ukri_gtr citations remain unchanged.
 

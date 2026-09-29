@@ -69,12 +69,15 @@ def test_repair_is_reviewed_exact_and_invalidates_old_checks(db):
     db.execute("INSERT INTO company_source VALUES (?,?,?,?,?,?)",(cid,'innovate_uk','12345:12345678',old,'2020','2020'))
     db.execute("INSERT INTO observation(company_id,field,value_json,source_key,source_type,source_url,confidence,observed_at,extractor_ver) VALUES (?,?,?,?,?,?,?,?,?)",(cid,'sector','null','innovate_uk','grant',old,1,'2020','test'))
     db.execute("INSERT INTO signal(company_id,kind,headline,source_key,source_url,first_seen) VALUES (?,?,?,?,?,?)",(cid,'grant_award','Grant','innovate_uk',old,'2020'))
+    db.execute("INSERT INTO today_check(company_id,snapshot_hash,verdict,checker,prompt_version,checked_at) VALUES (?,?,?,?,?,?)",(cid,'old-card','reject','hermes','test','2020'))
+    checks_before = db.scalar('SELECT count(*) FROM today_check WHERE company_id=?',(cid,))
     plan=repair_plan(db)
     assert len(plan['changes'])==3
     with pytest.raises(ValueError): apply_repair(db,plan,expected_hash='wrong')
     apply_repair(db,plan,expected_hash=plan['hash'])
     assert repair_plan(db)['changes']==[]
-    assert not db.scalar('SELECT count(*) FROM today_check WHERE company_id=?',(cid,))
+    assert db.scalar('SELECT count(*) FROM today_check WHERE company_id=?',(cid,)) == checks_before
+    assert db.scalar('SELECT verdict FROM today_check WHERE company_id=? AND snapshot_hash=?',(cid,'old-card')) == 'reject'
     assert all(PUBLICATION in db.scalar(f'SELECT source_url FROM {table} WHERE source_key=?',('innovate_uk',)) for table in ['company_source','signal','observation'])
 
 

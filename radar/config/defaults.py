@@ -57,9 +57,11 @@ VEHICLES: list[dict[str, Any]] = [
         geo_rule="HARD", geo_values=["uk_wide"], max_age_years=None,
         hard_rejects={"round_max": 5_000_000, "prior_total_max": 20_000_000,
                       "uk_exec_pct_min": 66},
-        sectors_plus=["fintech", "insurtech", "regtech", "lending", "wealthtech", "ai_data"],
+        sectors_plus=["fintech", "insurtech", "regtech", "lending", "wealthtech", "ai_data",
+                      "legaltech", "proptech", "cybersecurity", "healthcare", "hr_tech",
+                      "data_infrastructure", "vertical_saas"],
         sectors_minus=["consumer"],
-        one_liner="Send if finance is the product or an essential layer in the workflow.",
+        one_liner="Early-stage technology for complex, regulated industries, including finance, insurance, property, legal services and healthcare.",
     ),
     # ---- DSW Ventures — 3 vehicles (every deal requires SEIS/EIS)
     dict(
@@ -222,6 +224,14 @@ _MATRIX_ROWS: dict[str, dict[str, tuple[int, int, int, int]]] = {
         "consumer":        (1, 0, 0, 1),
         "marketplace":     (0, 0, 0, 1),
         "industrial_tech": (1, 2, 0, 1),
+        # New vocabulary from Outward's published September 2026 thesis.
+        # These preference strengths are model defaults, not fund promises.
+        # Existing client-authored matrix rows above remain unchanged.
+        "legaltech":        (2, 1, 4, 1),
+        "proptech":         (2, 1, 4, 1),
+        "cybersecurity":    (3, 2, 4, 1),
+        "hr_tech":          (2, 1, 3, 1),
+        "data_infrastructure": (3, 2, 3, 1),
         "other":           (0, 0, 0, 0),
     },
     "geography": {
@@ -296,7 +306,9 @@ def default_weights() -> Weights:
 
 SIC_SECTOR: dict[str, dict[str, str]] = {
     "exact": {
-        "62012": "b2b_saas", "62020": "b2b_saas", "62090": "b2b_saas",
+        # Software development/consultancy codes do not prove the company
+        # sells a subscription product to businesses. Keep the sector unknown
+        # until a company-specific source actually describes its product.
         "63110": "ai_data", "63120": "ai_data", "63990": "ai_data",
         "72190": "deeptech", "71121": "deeptech", "71122": "deeptech", "71129": "deeptech",
         "26110": "industrial_tech", "26120": "industrial_tech", "26200": "industrial_tech",
@@ -404,6 +416,9 @@ VALUE_LABELS: dict[str, str] = {
     "us": "US", "global": "Global",
     "pre_seed": "Pre-seed", "series_a": "Series A", "series_b_plus": "Series B+",
     "b2b_saas": "B2B SaaS", "ai_data": "AI/Data", "vertical_saas": "Vertical SaaS",
+    "legaltech": "Legal technology", "proptech": "Property technology",
+    "cybersecurity": "Cybersecurity", "hr_tech": "Work / HR technology",
+    "data_infrastructure": "Data infrastructure",
     "research_spinout": "research/spinout", "generalist_unclear": "generalist/unclear",
     "clinical_grant_validation": "clinical/grant validation",
     "pre_revenue_concept": "pre-revenue concept",
@@ -518,7 +533,8 @@ DEFAULT_SOURCES = [
     SourceConfig(key="sheffield", track="A", note="Sheffield commercialisation news"),
     SourceConfig(key="edinburgh_innovations", track="A", note="Edinburgh Innovations news"),
     SourceConfig(key="carbon13", track="A", note="Carbon13 climate venture builder"),
-    SourceConfig(key="bethnal_green", track="A", note="Bethnal Green Ventures portfolio"),
+    SourceConfig(key="bethnal_green", track="A",
+                 note="Denylist — Bethnal Green Ventures portfolio companies are already invested"),
     SourceConfig(key="techstars_london", track="A", note="Techstars London newsroom"),
     SourceConfig(key="bdaily_regional", track="A", note="Bdaily North East regional RSS"),
     SourceConfig(key="startups_magazine", track="A", note="Startups Magazine WordPress feed"),

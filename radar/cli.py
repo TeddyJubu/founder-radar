@@ -533,8 +533,10 @@ def today(ctx):
 @cli.command("today-qa")
 @click.option("--no-hermes", is_flag=True,
               help="Rules only — skip the Hermes subagent")
+@click.option("--limit", type=click.IntRange(1, 500), default=24, show_default=True,
+              help="Maximum new company checks; completed approvals do not use these slots")
 @click.pass_context
-def today_qa(ctx, no_hermes):
+def today_qa(ctx, no_hermes, limit):
     """Re-run the Hermes Today QA subagent on Today's list.
 
     Veto only: a reject hides the card from Today. Scores are not rewritten.
@@ -544,7 +546,7 @@ def today_qa(ctx, no_hermes):
 
     db = _db(ctx)
     cfg, _, warnings = load_runtime_config(db)
-    report = run_today_qa(db, cfg, use_hermes=not no_hermes)
+    report = run_today_qa(db, cfg, use_hermes=not no_hermes, limit=limit)
     payload = {
         "checked": report.checked,
         "passed": report.passed,
