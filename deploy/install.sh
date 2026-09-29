@@ -33,6 +33,21 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# BEGIN maintenance service control
+# A clean rebuild can install files and migrate the DB without reopening any
+# service or timer. The operator starts them explicitly after rescore and QA.
+systemctl() {
+  if [ "${INSTALL_MAINTENANCE:-0}" = 1 ]; then
+    case " $* " in
+      *" enable "*|*" start "*|*" restart "*|*" try-restart "*|*" reload "*|*" reload-or-restart "*)
+        printf 'maintenance: deferred systemctl %s\n' "$*"
+        return 0 ;;
+    esac
+  fi
+  command systemctl "$@"
+}
+# END maintenance service control
+
 # BEGIN trusted install checks
 # Changing ownership does not remove malicious Git hooks, pip launchers or .pth
 # files. Refuse old untrusted inputs before executing any of them as root.
@@ -251,6 +266,16 @@ if [ -f "$UNIT_DIR/hermes-webui.service.d/acl.conf" ] \
     "$UNIT_DIR/hermes-webui.service.d/acl.conf"
 fi
 
+# --------------------------------------------------- schema before services
+
+say "database"
+# Run from $ROOT, not the caller's cwd: the CLI loads .env from the working
+# directory, and RADAR_DB=$ROOT/data/radar.db lives there. Run from anywhere
+# else and migrate creates a shadow db under app/data/ that silently absorbs
+# manual CLI runs while the timers write the real one.
+cd "$ROOT"
+sudo -u "$APP_USER" "$VENV/bin/founder-radar" db migrate
+
 systemctl daemon-reload
 systemctl enable --now founder-radar.timer
 systemctl enable --now founder-radar-heartbeat.timer
@@ -413,7 +438,7 @@ install_telegram_plugin() {
   if [ -n "$owner" ] && [ "$owner" != "root" ]; then
     chown -R "$owner" "$home/.hermes/plugins/founder-radar-telegram"
   fi
-  if [ -n "${HERMES_BIN:-}" ] && [ -x "$HERMES_BIN" ] && [ -n "$owner" ] && [ "$owner" != "root" ]; then
+  if [ "${INSTALL_MAINTENANCE:-0}" != 1 ] && [ -n "${HERMES_BIN:-}" ] && [ -x "$HERMES_BIN" ] && [ -n "$owner" ] && [ "$owner" != "root" ]; then
     # --no-allow-tool-override keeps enable non-interactive. Never print config.
     sudo -H -u "$owner" "$HERMES_BIN" plugins enable founder-radar-telegram \
       --no-allow-tool-override </dev/null >/dev/null 2>&1 || true
@@ -424,6 +449,7 @@ install_telegram_plugin() {
 }
 
 restart_hermes_gateway() {
+  if [ "${INSTALL_MAINTENANCE:-0}" = 1 ]; then return 0; fi
   local owner="$1"
   if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^hermes-gateway.service'; then
     systemctl restart hermes-gateway.service 2>/dev/null || true
@@ -544,16 +570,6 @@ else
   say "    caddy hash-password --plaintext 'choose-a-password'"
   say "  then add RADAR_WEB_DOMAIN, RADAR_WEB_USER and RADAR_WEB_PASS_HASH."
 fi
-
-# ------------------------------------------------------------------ 6. schema
-
-say "database"
-# Run from $ROOT, not the caller's cwd: the CLI loads .env from the working
-# directory, and RADAR_DB=$ROOT/data/radar.db lives there. Run from anywhere
-# else and migrate creates a shadow db under app/data/ that silently absorbs
-# manual CLI runs while the timers write the real one.
-cd "$ROOT"
-sudo -u "$APP_USER" "$VENV/bin/founder-radar" db migrate
 
 say "done. next:"
 say "  sudo -u $APP_USER founder-radar doctor"

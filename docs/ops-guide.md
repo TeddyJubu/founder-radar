@@ -234,3 +234,12 @@ A previously approved Monday result remains available in Monday's history after
 its current score changes; an unchecked Monday result cannot borrow a later
 approval. The latest QA rejection still vetoes historical display. Old snapshot
 rows without recorded approval stay withheld until valid evidence is recorded.
+
+
+For a clean rebuild, run the trusted installer with `INSTALL_MAINTENANCE=1`
+after stopping writers and timers and preserving a verified database backup.
+It installs files and migrates the database before any service starts; maintenance
+mode defers service/timer enables and restarts, including Caddy and Hermes gateway.
+After configuration, rescore, completed Today QA and Sheet verification, explicitly
+start the chosen services and timers. The ACL helper grants operator write access
+to mutable data/logs, never the protected application checkout or Python environment.

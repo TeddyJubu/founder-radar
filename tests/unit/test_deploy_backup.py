@@ -434,3 +434,64 @@ def test_update_from_main_fast_forwards_and_skips_when_current(tmp_path):
     assert head_after == origin_head
     assert "dry-run" in second.stdout + second.stderr + (
         root / "logs" / "update.log").read_text()
+
+
+def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    home = tmp_path / "operator"
+    (home / ".hermes").mkdir(parents=True)
+    root = tmp_path / "install"
+    for name in ("app", "venv", "data", "logs", "backups"):
+        (root / name).mkdir(parents=True)
+    calls = tmp_path / "acl-calls"
+    bodies = {
+        "id": "echo 0",
+        "getent": 'printf "operator:x:1000:1000::%s:/bin/sh\\n" "$TEST_OPERATOR_HOME"',
+        "setfacl": 'printf "%s\\n" "$*" >> "$TEST_ACL_CALLS"',
+        "find": "exit 0",
+        "chown": "exit 0",
+        "chmod": "exit 0",
+    }
+    for name, body in bodies.items():
+        tool = tools / name
+        tool.write_text("#!/bin/sh\n" + body + "\n")
+        tool.chmod(0o755)
+    env = _hermetic_env(tmp_path, PATH=str(tools) + ":/usr/bin:/bin", ROOT=str(root),
+                        HERMES_USER="operator", TEST_OPERATOR_HOME=str(home),
+                        TEST_ACL_CALLS=str(calls))
+    result = subprocess.run([_BASH, str(DEPLOY_DIR / "hermes-acl.sh")],
+                            env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text()
+    assert str(root / "app") not in recorded
+    assert str(root / "venv") not in recorded
+    assert str(root / "data") in recorded
+    assert str(home / ".hermes") in recorded
+
+
+def test_install_migrates_before_starting_any_service_or_timer():
+    installer = INSTALL_SH.read_text()
+    migration = installer.index('"$VENV/bin/founder-radar" db migrate')
+    for start in ('systemctl enable --now founder-radar.timer',
+                  'systemctl enable --now founder-radar-update.timer',
+                  'systemctl enable --now founder-radar-web.service',
+                  'systemctl restart founder-radar-web.service'):
+        assert migration < installer.index(start), start
+
+
+def test_install_maintenance_suppresses_service_starts(tmp_path):
+    installer = INSTALL_SH.read_text()
+    assert "# BEGIN maintenance service control" in installer
+    wrapper = installer.split("# BEGIN maintenance service control")[1].split("# END maintenance service control")[0]
+    commands = tmp_path / "systemctl-calls"
+    tool = tmp_path / "systemctl"
+    tool.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_CALLS"\n')
+    tool.chmod(0o755)
+    payload = wrapper + "\nsystemctl enable --now founder-radar.timer\nsystemctl restart founder-radar-web.service\nsystemctl --user restart hermes-gateway.service\nsystemctl daemon-reload\n"
+    result = subprocess.run([_BASH, "-c", payload],
+                            env=_hermetic_env(tmp_path, INSTALL_MAINTENANCE="1", TEST_CALLS=str(commands)),
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert commands.read_text().splitlines() == ["daemon-reload"]
+    assert 'if [ "${INSTALL_MAINTENANCE:-0}" = 1 ]; then return 0; fi' in installer

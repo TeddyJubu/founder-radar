@@ -147,15 +147,14 @@ fi
 
 # --- Founder Radar tree: Hermes operator may edit / operate --------------
 # Secrets stay 0600 radar-only (.env, secrets/). Ops go through the
-# founder-radar wrapper (sudo -u radar). Code + data + logs are shared.
+# founder-radar wrapper (sudo -u radar). Only mutable data and logs are shared.
+# app/venv are protected root inputs: never grant writable ACLs on them.
 if [[ "$(id -u)" -eq 0 ]] && [[ -d "$ROOT" ]]; then
   for path in \
-    "$ROOT/app" \
     "$ROOT/data" \
     "$ROOT/logs" \
     "$ROOT/guide" \
-    "$ROOT/backups" \
-    "$ROOT/venv"
+    "$ROOT/backups"
   do
     [[ -e "$path" ]] || continue
     acl_tree "$path" "$HERMES_USER"
