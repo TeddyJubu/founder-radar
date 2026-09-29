@@ -332,9 +332,10 @@ def _withheld_fixture(db):
         verdict="incomplete", checker="hermes", summary="timeout"))
     record_check(db, _card(ids[1], "B"), TodayCheckResult(
         verdict="reject", reason="ipo", checker="hermes"))
-    record_check(db, _card(ids[2], "C"), TodayCheckResult(
+    current = {card.company_id: card for card in qa_today.load_today_cards(db, default_config())}
+    record_check(db, current[ids[2]], TodayCheckResult(
         verdict="pass", checker="hermes"))
-    record_check(db, _card(ids[3], "D"), TodayCheckResult(verdict="pass", checker="hermes"))
+    record_check(db, current[ids[3]], TodayCheckResult(verdict="pass", checker="hermes"))
     return ids
 
 

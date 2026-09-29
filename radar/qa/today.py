@@ -599,7 +599,7 @@ def qa_state(db: Any, company_id: str) -> str | None:
     try:
         row = _one(
             db,
-            "SELECT verdict, checker, checked_at FROM today_check WHERE company_id = ? "
+            "SELECT verdict, checker, checked_at, snapshot_hash FROM today_check WHERE company_id = ? "
             "ORDER BY checked_at DESC, rowid DESC LIMIT 1",
             (company_id,),
         )
@@ -609,6 +609,9 @@ def qa_state(db: Any, company_id: str) -> str | None:
         return None
     state = _state_of(row["verdict"], row["checker"])
     if state == "pass":
+        cards = load_today_cards(db, _config_for(db, None), company_id=company_id, limit=1)
+        if not cards or cards[0].snapshot_hash() != row["snapshot_hash"]:
+            return "incomplete"
         changed = _one(db, "SELECT MAX(scored_at) AS stamp FROM score WHERE company_id = ?",
                        (company_id,))
         if changed and changed["stamp"] and changed["stamp"] > row["checked_at"]:
@@ -753,6 +756,7 @@ def load_today_cards(
     cfg: Any = None,
     *,
     limit: int = QA_LIMIT,
+    company_id: str | None = None,
 ) -> list[TodayCard]:
     """The companies Today *would* consider, in Today order, capped.
 
@@ -764,6 +768,8 @@ def load_today_cards(
     config_hash = _active_config_hash(db)
     hash_sql = "AND s.config_hash = ?" if config_hash else ""
     hash_params: tuple[Any, ...] = (config_hash,) if config_hash else ()
+    company_sql = "AND s.company_id = ?" if company_id is not None else ""
+    company_params = (company_id,) if company_id is not None else ()
     track_sql = ",".join("?" * len(TRACK_A))
     rows = _query(
         db,
@@ -777,6 +783,7 @@ def load_today_cards(
             FROM score s
            WHERE s.tier IN (?, ?)
              {hash_sql}
+             {company_sql}
         )
         SELECT c.id AS company_id, c.canonical_name, c.hq_city, c.hq_region,
                c.stage, c.one_liner, c.incorporated_on, c.discovery_route,
@@ -788,7 +795,7 @@ def load_today_cards(
          ORDER BY CASE WHEN c.discovery_route IN ({track_sql}) THEN 0 ELSE 1 END,
                   s.priority DESC, c.canonical_name
         """,
-        (*REVIEWABLE, *hash_params, *TRACK_A),
+        (*REVIEWABLE, *hash_params, *company_params, *TRACK_A),
     )
     cards: list[TodayCard] = []
     for row in rows:
