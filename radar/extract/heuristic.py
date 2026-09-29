@@ -330,6 +330,20 @@ def heuristic_extract(
     description = find_one_line_description(text, name)
     if description:
         data["one_line_description"] = description
+        # Classify only an explicit product label in the company's own
+        # description. Investor prose and generic "software" do not prove
+        # the market, business model or a particular industry.
+        labels = {
+            'legaltech': r'\blegal[- ]?tech\b',
+            'proptech': r'\bprop[- ]?tech\b',
+            'cybersecurity': r'\bcyber[- ]?security\b',
+            'hr_tech': r'\b(?:HR software|HR tech|human resources software)\b',
+            'data_infrastructure': r'\bdata infrastructure\b',
+        }
+        found_sectors = [sector for sector, pattern in labels.items()
+                         if re.search(pattern, description, re.I)]
+        if len(found_sectors) == 1:
+            data['sector'] = found_sectors[0]
 
     found = find_amount(title, text)
     if found:

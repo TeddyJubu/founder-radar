@@ -315,6 +315,9 @@ def test_today_uses_latest_score_history_before_picking_primary_route(db):
          "Current config score.", None, "new-config", "1", new_stamp),
     )
 
+    # The changed current score needs an approval of its actual new card.
+    from tests.factories import approve_cards
+    approve_cards(db, [company_id])
     row = build_today(db.conn)["companies"][0]
 
     assert row["fund"] == "dsw"

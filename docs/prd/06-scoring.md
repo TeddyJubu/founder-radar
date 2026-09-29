@@ -79,7 +79,7 @@ A lookup table in the `Lists` tab, tab column `SIC → Sector`. Seeded values:
 
 | SIC | Sector | SIC | Sector |
 |---|---|---|---|
-| 62012, 62020, 62090 | `b2b_saas` | 21100, 21200, 32500, 26600 | `life_sciences` |
+| 62012, 62020, 62090 | unknown until product evidence | 21100, 21200, 32500, 26600 | `life_sciences` |
 | 63110, 63120, 63990 | `ai_data` | 72110 | `life_sciences` |
 | 72190, 71121, 71122, 71129 | `deeptech` | 86xxx | `healthcare` |
 | 26110, 26120, 26200, 26511, 26701 | `industrial_tech` | 35xxx, 38xxx | `climate_tech` |
@@ -218,11 +218,11 @@ These exact strings are what `test_vehicle_routing` and `test_worked_example_met
 | Stage | pre-seed · seed · pre-Series A |
 | Cheque | £250,000 – £2,500,000 |
 | Sectors + | fintech, insurtech, regtech, lending, wealthtech, legaltech, proptech, cybersecurity, healthtech, HR tech, AI-native enterprise software, data infrastructure |
-| Sectors − | generic SaaS with no finance layer, deeptech with no fintech use case, consumer apps |
+| Sectors − | consumer apps; generic software without evidence of a complex-industry use case is a weaker preference, not a hard finance-only exclusion |
 | Geography | **HARD: UK.** Registered address UK, principal place of business UK, ≥66% of the exec team UK tax resident *(ECF mandate)* |
 | Hard rejects | `round_max:5000000` · `prior_total_max:20000000` · `uk_exec_pct_min:66` |
 | Age cap | none — not an EIS fund |
-| One-liner | *"Send if finance is the product or an essential layer in the workflow."* |
+| One-liner | *"Early-stage technology for complex, regulated industries."* |
 
 ### 4.2 DSW Ventures — 3 vehicles
 

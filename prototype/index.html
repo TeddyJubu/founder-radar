@@ -740,7 +740,7 @@ button.no  { color: var(--red); }
 
 <script>
 const $ = (s) => document.querySelector(s);
-let data = null, i = 0, history = [], sessionReviewed = new Set();
+let data = null, i = 0, history = [], sessionReviewed = new Set(), reviewedAtTotals = 0;
 // One server round-trip at a time (decide, undo, review again). While one is
 // pending, navigation, a second decision and the background refresh are all
 // ignored: each of them moves `i` or replaces `data`, which is exactly what a
@@ -1043,7 +1043,7 @@ function renderFundScores(c) {
                    title="${esc(title)}">
                  <div class="fund-score-name">
                    <div class="k">${esc(s.fund_name)}</div>
-                   ${best ? `<span class="fund-tag">Send to</span>` : ""}
+                   ${best ? `<span class="fund-tag">Suggested fund</span>` : ""}
                  </div>
                  <div class="n">${display}</div>
                  <div class="fund-bar" aria-hidden="true">
@@ -1131,6 +1131,17 @@ function safeUrl(value) {
 // for every mention, so it is the fallback that guarantees a link whenever
 // one exists. Registry companies legitimately have neither: Companies House
 // is not an article, and inventing a link to it would be worse than no button.
+function sourceCitationLabel(key, url, externalId) {
+  if (key === "innovate_uk") {
+    let project = "";
+    try { project = new URLSearchParams(new URL(url).hash.slice(1)).get("project") || ""; }
+    catch { /* missing fragment can still use the recorded project reference */ }
+    project = project || String(externalId || "");
+    return "Innovate UK funded-projects data" + (project ? ` · project ${project}` : "");
+  }
+  return sourceName(key);
+}
+
 function articleLinks(c) {
   const seen = new Set();
   const out = [];
@@ -1138,7 +1149,7 @@ function articleLinks(c) {
     seen.add(c.source_url);
     out.push({
       url: c.source_url,
-      label: `Found at ${sourceName(c.source_key)}`,
+      label: `Found at ${sourceCitationLabel(c.source_key, c.source_url, c.source_external_id)}`,
       kind: "source",
     });
   }
@@ -1150,7 +1161,7 @@ function articleLinks(c) {
   for (const s of c.sources || []) {
     if (!s.source_url || seen.has(s.source_url)) continue;
     seen.add(s.source_url);
-    out.push({ url: s.source_url, label: sourceName(s.source_key), kind: "source" });
+    out.push({ url: s.source_url, label: sourceCitationLabel(s.source_key, s.source_url, s.external_id), kind: "source" });
   }
   return out;
 }
@@ -1229,7 +1240,8 @@ function renderDone() {
     ? `<p><a href="/kept" data-testid="done-kept-link">${kept} kept</a> — open Kept any time to track them. Decisions are mirrored to the Google Sheet.</p>`
     : `<p>Nothing kept this round. Press <b>1</b> next time to save a company to <a href="/kept" data-testid="done-kept-link">Kept</a>.</p>`;
   main.innerHTML = `${renderDiagnostics()}<div class="done-state" data-testid="done-state"><div class="tick">✓</div>
-    <h2>You've reviewed today's companies.</h2>
+    <h2>${Number(data.totals?.awaiting_final_check) ? "You've reviewed the ready companies." : "You've reviewed today's companies."}</h2>
+    ${Number(data.totals?.awaiting_final_check) ? `<p>${Number(data.totals.awaiting_final_check)} more awaiting final check. They will appear after approval.</p>` : ""}
     <p>${reviewed} ${reviewed === 1 ? "company" : "companies"} reviewed today. Verdicts saved for the next tuning sweep.</p>
     ${keptLine}
     <button class="review-again" data-testid="review-again" type="button">Review Again</button></div>`;
@@ -1249,7 +1261,7 @@ function render() {
       renderDone(); return;
     }
     main.innerHTML = `${renderDiagnostics()}<div class="empty" data-testid="empty-state"><h2>Nothing to review</h2>
-      <p style="color:var(--label-2)">No company cleared the gates in the last run.</p></div>`;
+      <p style="color:var(--label-2)">${Number(data.totals?.awaiting_final_check) ? `${Number(data.totals.awaiting_final_check)} companies are awaiting their final check. Approved companies will appear here.` : "No company cleared the gates in the last run."}</p></div>`;
     footer.hidden = true; renderProgress(); return;
   }
   if (i >= pending.length) {
@@ -1338,6 +1350,7 @@ function render() {
       <div class="route" data-testid="route" data-fund="${esc(c.fund)}">
         <span class="route-kicker">Send to</span>
         <div>
+          ${(c.recommendation_reason || c.recommendation_warning) ? `<p data-testid="recommendation-note">${esc(c.recommendation_reason || c.recommendation_warning)}</p>` : ""}
           <div class="fund" data-testid="route-fund">${esc(c.fund_name || c.fund)}</div>
           <div class="veh" data-testid="route-vehicle">${esc(c.vehicle || "")}${cheque ? " · " + cheque : ""}</div>
         </div>
@@ -1364,8 +1377,10 @@ function renderProgress() {
   const base = Number.isFinite(totalsRemaining)
     ? totalsRemaining
     : (data?.companies?.length || 0);
-  const left = Math.max(base - sessionReviewed.size, 0);
-  $("#progress").textContent = left > 0 ? `${left} left` : "";
+  const left = Math.max(base - (sessionReviewed.size - reviewedAtTotals), 0);
+  const pending = Number(data?.totals?.awaiting_final_check) || 0;
+  $("#progress").textContent = `${left} ready to review` +
+    (pending ? ` · ${pending} awaiting final check` : "");
 }
 
 function toast(msg) {
@@ -1514,7 +1529,7 @@ async function loadToday() {
   data = await (await fetch("/api/today", {cache: "no-store"})).json();
   $("#date").textContent = new Date(data.date + "T00:00:00").toLocaleDateString("en-GB",
     { weekday: "long", day: "numeric", month: "long" });
-  i = 0; history = []; sessionReviewed = new Set();
+  i = 0; history = []; sessionReviewed = new Set(); reviewedAtTotals = 0;
   render();
 }
 
@@ -1553,9 +1568,20 @@ async function refresh() {
     // A decision may have started while this fetch was in flight; replacing
     // `data` now would leave its response advancing the wrong queue.
     if (busy) return;
-    if (shortlistSig(next) === shortlistSig(data)) return;   // nothing new
+    // Fresh totals already include saved decisions. Keep the visible card and
+    // undo history while reviewing; new queue membership loads on the next page.
+    const current = data?.companies?.[i];
+    const stillReady = current && (next.ready_company_ids ||
+      (next.companies || []).map(c => c.company_id)).includes(current.company_id);
+    if (stillReady || (!current && shortlistSig(next) === shortlistSig(data))) {
+      data.totals = next.totals;
+      data.eligibility_diagnostics = next.eligibility_diagnostics;
+      reviewedAtTotals = sessionReviewed.size;
+      renderProgress();
+      return;
+    }
     data = next;
-    i = 0; history = []; sessionReviewed = new Set();
+    i = 0; history = []; sessionReviewed = new Set(); reviewedAtTotals = 0;
     render();
     toast("New run loaded — showing the latest shortlist");
   } catch (e) { /* transient db lock or network — retry next tick */ }

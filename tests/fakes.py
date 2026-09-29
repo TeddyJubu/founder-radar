@@ -35,6 +35,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from radar.qa.provenance import verify_source as _verify_fixture_source
 from radar.render.formatting import col_index
 from radar.render.sheet import USER_ENTERED, ValueRange
 
@@ -389,3 +390,20 @@ __all__ = [
     "seed_companies",
     "seed_failed_source",
 ]
+
+
+def source_link_proof(db, url: str, *, status: int = 200):
+    """Record real verifier output from an explicit offline HTTP response.
+
+    Call deliberately in fixtures that claim a production model approval.
+    Ordinary seed_companies does not create proof, so missing-proof regressions
+    remain testable. No DNS, robots fetch, or socket is used by this HTTP double.
+    """
+    from radar.fetch.http import Response
+
+    class FixtureHttp:
+        def get(self, requested):
+            assert requested == url.split('#', 1)[0]
+            return Response(requested, status, '', {})
+
+    return _verify_fixture_source(db, url, http=FixtureHttp(), resolve=False, force=True)

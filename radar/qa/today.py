@@ -46,7 +46,7 @@ import shutil
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -76,6 +76,8 @@ REJECT_REASONS = (
     "geography_mismatch",
     "parent_or_investor",
     "already_large",
+    "source_dead",
+    "invalid_source",
 )
 
 VERDICT_RE = re.compile(
@@ -172,6 +174,8 @@ class TodayCard:
     on_vc_portfolio: bool = False
     sector: str | None = None
     explanation: str | None = None
+    recommendation_reason: str | None = None
+    recommendation_warning: str | None = None
 
     def blob(self) -> str:
         """Stable serialisation — the cache key and the prompt body."""
@@ -195,6 +199,8 @@ class TodayCard:
             "on_vc_portfolio": self.on_vc_portfolio,
             "sector": self.sector,
             "explanation": self.explanation,
+            "recommendation_reason": self.recommendation_reason,
+            "recommendation_warning": self.recommendation_warning,
         }
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -634,6 +640,21 @@ def qa_state(db: Any, company_id: str) -> str | None:
                        (company_id,))
         if changed and changed["stamp"] and changed["stamp"] > row["checked_at"]:
             return "incomplete"
+        # Once a URL has been checked, its stale or unusable outcome cannot
+        # be hidden behind a model approval. This is a pure database read.
+        try:
+            link = _one(db, "SELECT state, expires_at FROM source_link_check WHERE url = ?",
+                        (cards[0].source_url.split("#", 1)[0],))
+        except sqlite3.OperationalError:
+            link = None
+        if not link and row["checker"] == "hermes":
+            return "incomplete"
+        if link:
+            expired = datetime.fromisoformat(link["expires_at"]) <= datetime.now(timezone.utc)
+            if not expired and link["state"] in {"dead", "invalid"}:
+                return "reject"
+            if expired or link["state"] != "reachable":
+                return "incomplete"
     return state
 
 
@@ -833,6 +854,7 @@ def load_today_cards(
         SELECT c.id AS company_id, c.canonical_name, c.hq_city, c.hq_region,
                c.stage, c.one_liner, c.incorporated_on, c.discovery_route,
                c.website_url, c.on_vc_portfolio, c.sector, c.merged_into,
+               c.country_iso2, c.hq_postcode, c.companies_house_no, c.total_funding_gbp,
                s.fund_key, s.vehicle_key, s.tier, s.priority, s.explanation
           FROM latest s
           JOIN company c ON c.id = s.company_id
@@ -842,8 +864,16 @@ def load_today_cards(
         """,
         (*REVIEWABLE, *hash_params, *company_params, *decision_params, *TRACK_A),
     )
+    from radar.selection import rank_today_rows, deterministic_block_reason, recommend_today_rows
+    cfg = cfg or _config_for(db, None)
+    rows = recommend_today_rows(db, rows, cfg, config_hash=config_hash)
     cards: list[TodayCard] = []
+    eligible_rows = []
     for row in rows:
+        if company_id is None and deterministic_block_reason(
+            db, row, cfg or _config_for(db, None), today=date.today(), config_hash=config_hash,
+        ):
+            continue
         source_key, source_url = _http_source(db, row["company_id"])
         if not source_url:
             continue
@@ -873,15 +903,20 @@ def load_today_cards(
             on_vc_portfolio=bool(_row_get(row, "on_vc_portfolio") or 0),
             sector=_row_get(row, "sector"),
             explanation=_row_get(row, "explanation"),
+            recommendation_reason=_row_get(row, "recommendation_reason"),
+            recommendation_warning=_row_get(row, "recommendation_warning"),
         )
         if company_id is None:
             cached = cached_check(db, card)
             if cached is not None and cached.verdict == "reject":
                 continue
         cards.append(card)
-        if len(cards) >= max(1, int(limit)):
-            break
-    return cards
+        eligible_rows.append(row)
+    if company_id is not None:
+        return cards[:max(1, int(limit))]
+    by_id = {card.company_id: card for card in cards}
+    ranked = rank_today_rows(db, eligible_rows, config_hash=config_hash)
+    return [by_id[row["company_id"]] for row in ranked[:max(1, int(limit))]]
 
 
 # ----------------------------------------------------------------- runner
@@ -957,6 +992,7 @@ def check_one(
     checker: TodayChecker | None,
     rules_only: bool = False,
     unavailable: str = "Hermes unavailable",
+    source_verifier: Any = None,
 ) -> TodayCheckResult:
     """Rules first; a checker on whatever rules cannot prove is wrong.
 
@@ -969,14 +1005,36 @@ def check_one(
     something unparseable. Incomplete rows are not reused as cache hits.
     """
     cached = cached_check(db, card)
-    if _reusable(cached, rules_only=rules_only):
-        record_check(db, card, cached)
-        return cached  # type: ignore[return-value]
-
     rules = rules_precheck(card)
     if rules is not None and rules.verdict == "reject":
         record_check(db, card, rules)
         return rules
+
+    # A completed veto remains a veto even if the evidence site is temporarily
+    # unavailable. Only approvals need refreshed reachability proof.
+    if cached is not None and cached.verdict == "reject":
+        return cached
+
+    # Network validation belongs here, after scoring and before approval.
+    # Injected offline checkers may also inject a verifier; the real Hermes
+    # path always supplies one. An earlier model pass cannot bypass this GET.
+    if source_verifier is not None:
+        outcome = source_verifier(db, card.source_url)
+        if outcome.state != "reachable":
+            definitive = outcome.state in {"dead", "invalid"}
+            result = TodayCheckResult(
+                verdict="reject" if definitive else "incomplete",
+                reason=("source_dead" if outcome.state == "dead" else "invalid_source")
+                       if definitive else None,
+                checker="source",
+                summary=f"Source link: {outcome.reason}. Company held back until usable evidence is checked.",
+            )
+            record_check(db, card, result)
+            return result
+
+    if _reusable(cached, rules_only=rules_only):
+        record_check(db, card, cached)
+        return cached  # type: ignore[return-value]
 
     if checker is None:
         if rules_only:
@@ -1030,6 +1088,7 @@ def run_today_qa(
     checker: TodayChecker | None = None,
     use_hermes: bool = True,
     limit: int = QA_LIMIT,
+    source_verifier: Any = None,
 ) -> TodayQaReport:
     """Check the companies selected for Today. Never raises into the run.
 
@@ -1047,8 +1106,6 @@ def run_today_qa(
         report.warnings.append(f"today QA skipped: {report.aborted}")
         log.warning("today QA could not load cards: %s", exc)
         return report
-    cards = candidates[: max(1, int(limit))]
-    report.uncovered = len(candidates) - len(cards)
 
     active: TodayChecker | None = None
     if use_hermes:
@@ -1062,6 +1119,20 @@ def run_today_qa(
 
     rules_only = active is None and rules_only_mode(use_hermes=use_hermes)
     is_hermes = bool(active is not None and getattr(active, "name", "") == "hermes")
+    if source_verifier is None and (checker is None or isinstance(active, HermesSubagent)):
+        from radar.qa.provenance import verify_source
+        source_verifier = verify_source
+    # Completed current approvals remain in the report, but never spend the
+    # budget intended for unfinished checks. check_one still visits them so
+    # provenance validation can veto an expired or newly dead source link.
+    completed, unfinished = [], []
+    for card in candidates:
+        cached = cached_check(db, card)
+        target = completed if (cached and cached.verdict == "pass"
+                               and _reusable(cached, rules_only=rules_only)) else unfinished
+        target.append(card)
+    cards = completed + unfinished[:max(1, int(limit))]
+    report.uncovered = max(0, len(unfinished) - max(1, int(limit)))
     report.cards = len(cards)
     report.rules_only = rules_only
     if cards and active is None:
@@ -1081,6 +1152,7 @@ def run_today_qa(
                 db, card, checker=live, rules_only=rules_only,
                 unavailable=("Hermes abandoned after repeated failures"
                              if abandoned else "Hermes unavailable"),
+                source_verifier=source_verifier,
             )
         except Exception as exc:  # noqa: BLE001 - one company, not the run
             report.skipped += 1
@@ -1092,7 +1164,7 @@ def run_today_qa(
 
         if result.verdict == "incomplete":
             report.incomplete += 1
-            if live is not None:
+            if live is not None and result.checker != "source":
                 report.hermes_failures += 1
                 consecutive += 1
                 if consecutive >= MAX_CONSECUTIVE_FAILURES:

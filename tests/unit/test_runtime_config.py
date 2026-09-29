@@ -403,8 +403,9 @@ def test_sheet_lists_tab_keeps_sic_map_and_j25_qualifiers():
     assert not errors
     table = cfg.lists["sic_sector"]
     assert isinstance(table, dict)
-    assert "62012" in table["exact"]
-    assert derive_sector(["62012"], cfg) == "b2b_saas"
+    assert "72190" in table["exact"]
+    assert derive_sector(["72190"], cfg) == "deeptech"
+    assert derive_sector(["62012"], cfg) is None
 
     admitted = _admitting_qualifiers(cfg)
     assert "website" not in admitted
@@ -430,8 +431,8 @@ def test_stringified_sic_sector_column_does_not_crash_derive():
         ["pre_seed", "", "prefix"],
     ])
     assert isinstance(lists["sic_sector"], dict)
-    assert lists["sic_sector"]["exact"]["62012"] == "b2b_saas"
-    assert derive_sector(["62012"], type("C", (), {"lists": lists})()) == "b2b_saas"
+    assert lists["sic_sector"]["exact"]["72190"] == "deeptech"
+    assert derive_sector(["72190"], type("C", (), {"lists": lists})()) == "deeptech"
 
     raw = {"Lists": [["stage", "sic_code", "sic_sector"], ["seed", "", "exact"]]}
     cfg, errors = load_config(raw)
@@ -463,8 +464,8 @@ def test_lists_grid_round_trips_the_sic_map():
     assert "sic_code" in header and "sic_sector" in header
     parsed = parse_lists(grid)
     codes, _ = sic_columns_from_map(cfg.lists["sic_sector"])
-    assert parsed["sic_sector"]["exact"]["62012"] == "b2b_saas"
+    assert parsed["sic_sector"]["exact"]["72190"] == "deeptech"
     assert len(parsed["sic_sector"]["exact"]) == len(cfg.lists["sic_sector"]["exact"])
-    assert "62012" in codes
+    assert "72190" in codes
     assert "website" not in parsed["qualifiers"]
     assert "repeat_founder" not in parsed["qualifiers"]

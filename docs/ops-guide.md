@@ -134,6 +134,37 @@ founder-radar sync-sheet
 
 ## 6. Day-to-day path (recommended)
 
+Today shows **ready to review** separately from **waiting for final checks**.
+Both counts cover the whole eligible, undecided pool, even when only 20 cards
+fit on a page. Kept and rejected companies are excluded. Waiting companies
+become available after their evidence links and current company cards pass
+the final check; an unfinished check does not mean approval.
+
+The morning order softly spreads available companies across source families,
+funds and sectors. Match and Fresh are unchanged. The list can still be uneven
+when few genuine alternatives exist; there are no invented matches or fixed
+four-fund quotas. For a London company, a suitable alternative fund is
+suggested ahead of regional DSW EIS, with the reason and all scores visible.
+DSW EIS remains eligible. DSW SEIS keeps its existing place restriction.
+
+To check a larger waiting batch without sending a Telegram message:
+
+```bash
+founder-radar today-qa --limit 80
+```
+
+Completed current approvals do not spend these new-check slots. A broken
+source page is held back; blocked or timed-out evidence remains unknown and
+can be checked later. Innovate UK workbook links identify the project to
+find in the official dataset rather than pretending a missing GtR profile
+exists.
+
+The scheduled scan can run the installed, root-owned Hermes permission-repair
+helper before and after QA. Its service permits that narrow sudo rule; the
+web service retains `NoNewPrivileges`. A privileged stop hook repairs shared
+permissions even when a scan fails. This prevents a normal Hermes launch from
+leaving the next scheduled check unable to open the operator's files.
+
 1. Open **Today** in the web UI after the morning run (or after Telegram pings).
 2. Decide with 1 / 2 / 3. Kept updates live; open **Kept** to track everything
    you have saved, or **Dashboard** to revisit the dated history.

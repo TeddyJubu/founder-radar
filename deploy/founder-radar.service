@@ -26,6 +26,7 @@ Environment=TZ=Europe/London
 # The root-owned copy (deploy/install.sh puts it there): `+` runs it as root, so
 # it must not be a file the service user can edit.
 ExecStartPre=+/usr/local/libexec/founder-radar/hermes-acl.sh
+ExecStopPost=+/usr/local/libexec/founder-radar/hermes-acl.sh
 
 # Two steps, on purpose.
 #
@@ -51,7 +52,11 @@ Nice=10
 MemoryMax=1G
 
 # Hardening. The service needs exactly one writable tree.
-NoNewPrivileges=true
+# Each QA call uses the narrowly permitted, root-owned ACL repair helper.
+# Hermes owner launches can clear the shared directory mask between cards.
+# NoNewPrivileges would silently prevent that sudo repair. The web service
+# retains NoNewPrivileges; the scan account has no general sudo permission.
+NoNewPrivileges=false
 PrivateTmp=true
 ProtectSystem=strict
 # read-only (not true): Today QA must exec Hermes under HERMES_HOME. install.sh

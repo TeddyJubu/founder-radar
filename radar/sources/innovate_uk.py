@@ -40,7 +40,7 @@ import zipfile
 from datetime import date, timedelta
 from typing import Iterable, Iterator
 from html import unescape
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, quote
 from xml.etree import ElementTree as ET
 
 from radar.sources._common import (
@@ -102,7 +102,7 @@ class InnovateUkAdapter:
         url = self.discover(page.text)
         today = ctx.now or date.today()
         since = ctx.since or today - timedelta(days=LOOKBACK_DAYS)
-        return list(unique_by_id(self.parse(_download(ctx.http, url), since=since)))
+        return list(unique_by_id(self.parse(_download(ctx.http, url), since=since, source_url=url)))
 
     def discover(self, html: str) -> str:
         """The dated download link, from the page that always exists."""
@@ -128,7 +128,7 @@ class InnovateUkAdapter:
         filename = urlsplit(url).path.rsplit("/", 1)[-1].lower()
         return "2016" in filename and "present" in filename
 
-    def parse(self, payload: bytes | str, *, since: date | None = None) -> list[RawItem]:
+    def parse(self, payload: bytes | str, *, since: date | None = None, source_url: str = PUBLICATION) -> list[RawItem]:
         blob = payload.encode("utf-8", "replace") if isinstance(payload, str) else payload
         try:
             book = zipfile.ZipFile(io.BytesIO(blob))
@@ -169,8 +169,7 @@ class InnovateUkAdapter:
             crn = value("CRN") or None
             out.append(RawItem(
                 source_key=self.key,
-                source_url=f"https://gtr.ukri.org/projects?ref={reference}"
-                           if reference else PUBLICATION,
+                source_url=citation_url(source_url, reference, company),
                 external_id=f"{reference}:{crn or norm_key(company)}",
                 published_at=awarded,
                 title=value("Project Title") or company,
@@ -182,6 +181,8 @@ class InnovateUkAdapter:
                     "grant_amount_gbp": _money(value("Award Offered (£)")),
                     "funder": "Innovate UK",
                     "grant_reference": reference or None,
+                    "source_publication": "Innovate UK funded projects since 2004",
+                    "source_workbook_url": source_url,
                     "competition": value("Competition Title") or None,
                     "postal_code": value("Postcode") or None,
                     "enterprise_size": value("Enterprise Size") or None,
@@ -197,6 +198,16 @@ class InnovateUkAdapter:
         guard_nonempty(self.key, [seen] if seen else [],
                        detail="worksheet has a header but no data rows", document=blob)
         return out
+
+
+def citation_url(url: str, reference: str, company: str) -> str:
+    """Project numbers in this workbook are not GtR UUIDs.
+
+    Cite the actual downloaded workbook (or official publication for an offline
+    capture) and retain the participant/project lookup in a descriptive fragment.
+    The fragment is a human lookup aid, not a claimed XLSX deep-link feature.
+    """
+    return f"{url.split('#', 1)[0]}#project={quote(reference, safe='')}&participant={quote(company, safe='')}"
 
 
 # ---------------------------------------------------------------- xlsx reading

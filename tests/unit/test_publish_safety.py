@@ -36,7 +36,7 @@ from radar.qa.today import (
     record_check,
     run_today_qa,
 )
-from tests.fakes import seed_companies as _seed_companies
+from tests.fakes import seed_companies as _seed_companies, source_link_proof
 
 def seed_companies(db, **kwargs):
     ids = _seed_companies(db, **kwargs)
@@ -261,7 +261,7 @@ def test_a_missing_hermes_binary_is_incomplete_not_a_pass(db, monkeypatch):
     monkeypatch.setattr("radar.qa.today.resolve_hermes_binary", lambda: None)
     monkeypatch.delenv("RADAR_ALLOW_RULES_ONLY_PUBLISH", raising=False)
     monkeypatch.delenv("TODAY_QA", raising=False)
-    report = run_today_qa(db, default_config(), use_hermes=True)
+    report = run_today_qa(db, default_config(), use_hermes=True, source_verifier=source_link_proof)
     assert report.incomplete == 2 and report.passed == 0
     assert report.hermes_used is False
     assert qa_today.qa_state(db, ids[0]) == "incomplete"
@@ -278,7 +278,7 @@ def test_legacy_skip_passes_no_longer_stand_in_for_a_check(db):
                                   summary="Hermes unavailable; rules found no obvious veto."))
     assert qa_today.qa_state(db, ids[0]) == "incomplete"
     checker = Ok()
-    run_today_qa(db, default_config(), checker=checker)
+    run_today_qa(db, default_config(), checker=checker, source_verifier=source_link_proof)
     assert checker.calls == [name] or len(checker.calls) == 1
     assert qa_today.qa_state(db, ids[0]) == "pass"
 
@@ -288,13 +288,13 @@ def test_an_explicit_rules_only_run_still_works_but_never_counts_as_a_model_chec
     one): rules-only passes stay visible. They must not satisfy a later run
     that DOES have Hermes."""
     ids = seed_companies(db, count=2, shortlist=2)
-    report = run_today_qa(db, default_config(), use_hermes=False)
+    report = run_today_qa(db, default_config(), use_hermes=False, source_verifier=source_link_proof)
     assert report.passed == 2 and report.incomplete == 0
     assert qa_today.qa_state(db, ids[0]) == "pass"
     assert {r["checker"] for r in db.query("SELECT checker FROM today_check")} == {"rules"}
 
     ok = Ok()
-    run_today_qa(db, default_config(), checker=ok)
+    run_today_qa(db, default_config(), checker=ok, source_verifier=source_link_proof)
     assert len(ok.calls) == 2, "Hermes must re-ask cards only rules had passed"
     assert {r["checker"] for r in db.query("SELECT checker FROM today_check")} == {"hermes"}
 
@@ -333,6 +333,8 @@ def _withheld_fixture(db):
     record_check(db, _card(ids[1], "B"), TodayCheckResult(
         verdict="reject", reason="ipo", checker="hermes"))
     current = {card.company_id: card for card in qa_today.load_today_cards(db, default_config())}
+    source_link_proof(db, current[ids[2]].source_url)
+    source_link_proof(db, current[ids[3]].source_url)
     record_check(db, current[ids[2]], TodayCheckResult(
         verdict="pass", checker="hermes"))
     record_check(db, current[ids[3]], TodayCheckResult(verdict="pass", checker="hermes"))
@@ -391,7 +393,7 @@ def test_when_qa_is_unavailable_nothing_unchecked_reaches_any_surface(db, monkey
     monkeypatch.delenv("TODAY_QA", raising=False)
     monkeypatch.delenv("RADAR_WEB_DOMAIN", raising=False)
     monkeypatch.delenv("RADAR_WEB_PUBLIC_URL", raising=False)
-    run_today_qa(db, default_config(), use_hermes=True)
+    run_today_qa(db, default_config(), use_hermes=True, source_verifier=source_link_proof)
     assert build_today(db.conn)["companies"] == []
     assert "0 shortlisted · 0 watchlist" in render_today_ping(db)
     assert all(qa_today.qa_state(db, cid) == "incomplete" for cid in ids)

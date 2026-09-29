@@ -108,8 +108,8 @@ The requested categories all exist as adapters:
 | Category | Adapters |
 |---|---|
 | University spinouts | cambridge_enterprise, oxford_innovation, ucl_ventures, edinburgh_innovations, sheffield, converge, entrepreneur_first |
-| Accelerators / cohorts | northern_accelerator, conception_x, techstars_london, carbon13, bethnal_green (active) |
-| VC denylist (inverted) | vc_portfolios, zinc_vc, founders_factory (Investing-in), bethnal_green (Exited) |
+| Accelerators / cohorts | northern_accelerator, conception_x, techstars_london, carbon13 |
+| VC denylist (inverted) | vc_portfolios, zinc_vc, founders_factory (Investing-in), bethnal_green (all invested portfolio) |
 | Innovate UK / grants | innovate_uk, ukri_gtr, govuk_search |
 
 - `test_phase8_sources.py` — grant adapters parse committed fixtures, detect

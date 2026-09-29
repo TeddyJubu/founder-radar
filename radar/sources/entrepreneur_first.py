@@ -1,16 +1,12 @@
-"""Entrepreneur First — HTML portfolio, snapshot-diff, `Crawl-delay: 10`.
+"""Entrepreneur First — public portfolio and explicit alumni evidence.
 
-Company-builder output is pre-seed by construction: EF forms the company, so
-everything on this page was incorporated recently by definition. 04-sources
-gives it ~5 UK companies a month with a London filter and a founded-year filter.
+A portfolio includes mature alumni. Read stated Founded/Funded by metadata;
+do not infer pre-seed or turn founder social profiles into company websites.
+Explicit third-party funding is denylist evidence, including old alumni.
+Unfunded/unstated records still require the normal company age and stage gates.
 
-**The politeness detail that makes this file different.** joinef.com publishes
-`Crawl-delay: 10`. `HttpClient` already reads that from robots.txt and hands it
-to the per-host limiter, but this adapter fetches one page and stops rather than
-walking pagination, because at ten seconds a request a paginated crawl is
-minutes of wall-clock for five companies a month. `ensure_crawl_delay` also
-asserts the floor explicitly, so the day someone constructs an `HttpClient`
-with `obey_robots=False` for debugging, this source still waits.
+joinef.com publishes Crawl-delay: 10; the shared HTTP client respects it and
+this adapter retains its explicit floor. No pagination crawl is performed.
 """
 
 from __future__ import annotations
@@ -18,6 +14,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from typing import Iterable
+from urllib.parse import urlsplit
 
 from radar.sources._common import (
     absolute_url,
@@ -108,7 +105,7 @@ class EntrepreneurFirstAdapter:
             ctx.db, self.key, [item.external_id for item in items])
         out = []
         for item in items:
-            if item.external_id not in new_ids:
+            if item.external_id not in new_ids and item.kind_hint != 'vc_portfolio_listing':
                 continue
             structured = dict(item.structured or {})
             structured["bootstrap"] = bootstrap
@@ -124,6 +121,8 @@ class EntrepreneurFirstAdapter:
 
     def _wanted(self, item: RawItem, min_year: int | None) -> bool:
         """London filter and founded-year filter (04-sources §2, row 10)."""
+        if item.kind_hint == 'vc_portfolio_listing':
+            return True  # Old funded alumni are denial evidence, not fresh leads.
         structured = item.structured or {}
         location = (structured.get("location") or "").lower()
         if location and not any(word in location for word in LONDON):
@@ -155,13 +154,22 @@ class EntrepreneurFirstAdapter:
         website = None
         for node in card.css("a[href]"):
             link = node.attributes.get("href", "")
-            if link.startswith("http") and "joinef.com" not in link:
+            host = (urlsplit(link).hostname or '').lower()
+            social = any(host == h or host.endswith('.'+h) for h in
+                         ('linkedin.com','twitter.com','x.com','facebook.com','instagram.com'))
+            if link.startswith("http") and "joinef.com" not in host and not social:
                 website = link
                 break
 
         location = (attr_of(card, None, "data-location")
                     or first_text(card, LOCATION_SELECTORS))
         year_text = attr_of(card, None, "data-year") or text_of(card, ".portfolio__year")
+        metadata = {}
+        for row in card.css('.meta__row'):
+            cells = row.css('.meta__row__name')
+            if len(cells) == 2:
+                metadata[cells[0].text(strip=True).lower()] = cells[1].text(strip=True)
+        year_text = year_text or metadata.get('founded')
         year_match = _YEAR.search(year_text or "")
         founded_year = int(year_match.group(0)) if year_match else None
 
@@ -174,13 +182,24 @@ class EntrepreneurFirstAdapter:
             "hq_city": "London" if location and "london" in location.lower() else None,
             "hq_country_iso2": "GB" if location and any(
                 w in location.lower() for w in LONDON) else None,
-            "stage": "pre_seed",
+            "stage": None,  # A portfolio includes mature alumni, not just new cohorts.
             "date_confidence": "inferred",
             "age_source": "unknown",
         }
+        source_url = PORTFOLIO
+        if href and 'joinef.com' in (urlsplit(absolute_url(BASE, href) or '').hostname or ''):
+            source_url = absolute_url(BASE, href) or PORTFOLIO
+        funded_by = metadata.get('funded by')
+        if funded_by:
+            from radar.sources.denylist import listing
+            return listing(source_key=self.key,source_url=source_url,
+                           external_id=slug or name.lower().replace(' ','-'),
+                           published_at=None,title=name,body_text=structured['one_line_description'],
+                           company_name=name,vc_slug='entrepreneur_first',vc_name=funded_by,
+                           date_confidence='inferred',extra=structured)
         return RawItem(
             source_key=self.key,
-            source_url=absolute_url(BASE, href) or PORTFOLIO,
+            source_url=source_url,
             external_id=slug or slug_of(href or "") or name.lower().replace(" ", "-"),
             published_at=None,
             title=name,

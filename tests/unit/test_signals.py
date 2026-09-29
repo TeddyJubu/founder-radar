@@ -234,7 +234,7 @@ def test_every_source_declares_the_track_the_ledger_gives_it():
         "bdaily_regional": "A",
         "edinburgh_innovations": "A",
         "ucl_ventures": "A",
-        "bethnal_green": "A",
+        "bethnal_green": "—",  # Every portfolio member has BGV equity investment.
         "carbon13": "A",
         "converge": "A",
         "sheffield": "A",

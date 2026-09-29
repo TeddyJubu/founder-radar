@@ -1,18 +1,8 @@
-"""Startups Magazine — WordPress JSON (04-sources Tier 2).
+"""Startups Magazine — the public articles index.
 
-The third wp-json adapter, and it exists mostly to prove the helper was worth
-writing: host, `kind_hint` and a funding-word list are the whole difference
-from `cambridge_enterprise`.
-
-One thing the endpoint choice is doing: `startupsmagazine.co.uk` also
-publishes RSS, and the RSS carries **summaries only**. wp-json carries the
-full `content.rendered`, which is what stage ③ needs to extract a company from
-prose. Taking the feed would have meant one extra article fetch per item for
-strictly less text.
-
-Volume is the trade-off. This is a general startup outlet rather than a UK
-regional one, so the prefilter drops a lot of it — which is exactly why the
-source is Tier 2 and off the critical path.
+The API carries noindex. Read the permitted public article cards, preserving
+stated dates and excerpts; extraction must fetch the individual article.
+Archived JSON captures remain parseable for replay and fixture compatibility.
 """
 
 from __future__ import annotations
@@ -23,7 +13,7 @@ from radar.sources._common import after, unique_by_id, wp_fingerprint, wp_posts
 from radar.sources.base import FetchContext, RawItem
 
 BASE = "https://startupsmagazine.co.uk"
-ENDPOINT = f"{BASE}/wp-json/wp/v2/posts"
+ENDPOINT = f"{BASE}/articles"
 PER_PAGE = 50
 
 FUNDING_WORDS = ("raise", "raises", "raised", "funding", "investment", "seed",
@@ -41,7 +31,7 @@ class StartupsMagazineAdapter:
     homepage = BASE
 
     def fetch(self, ctx: FetchContext) -> Iterable[RawItem]:
-        resp = ctx.http.get(ENDPOINT, params={"per_page": PER_PAGE, "page": 1})
+        resp = ctx.http.get(ENDPOINT)
         if resp.status == 304:
             return []
         if not resp.ok:
@@ -49,8 +39,14 @@ class StartupsMagazineAdapter:
         return list(after(unique_by_id(self.parse(resp.text)), ctx.since))
 
     def parse(self, payload: str | bytes) -> list[RawItem]:
-        posts = wp_posts(payload, self.key)
-        self.last_fingerprint = wp_fingerprint(posts)
+        body = payload.decode('utf-8', 'replace') if isinstance(payload, bytes) else payload
+        if body.lstrip().startswith('<'):
+            from radar.sources._public_news import public_posts
+            posts, self.last_fingerprint = public_posts(body,self.key,BASE,'.post')
+        else:
+            # Backward-compatible parsing of already captured JSON fixtures.
+            posts = wp_posts(payload, self.key)
+            self.last_fingerprint = wp_fingerprint(posts)
         return [self._item(post) for post in posts]
 
     def _item(self, post: dict) -> RawItem:
@@ -67,7 +63,7 @@ class StartupsMagazineAdapter:
                 "date_confidence": "exact",
                 # wp-json gives the whole article, so stage ③ never needs a
                 # second request for this source.
-                "full_text_in_feed": True,
+                "full_text_in_feed": post.get("full_text_in_feed", True),
             },
             kind_hint=("funding_round"
                        if any(w in haystack for w in FUNDING_WORDS)

@@ -1,0 +1,254 @@
+[
+  {
+    "title": "Your control room and logins",
+    "subtitle": "Three places to bookmark · passwords supplied separately",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Review companies",
+        "text": "https://srv1821489.hstgr.cloud/\n/kept · /dashboard · /help\nReview username + password"
+      },
+      {
+        "title": "Talk to Hermes",
+        "text": "Hermex / browser:\nhttps://webui.srv1821489.hstgr.cloud\nApp password · no custom headers"
+      },
+      {
+        "title": "Rules and teaching",
+        "text": "Your shared Google Sheet link\nSources · Fund Criteria · Settings\nPublic guide: review host + /guide/"
+      }
+    ],
+    "note": "hermes.srv1821489.hstgr.cloud is a review-page alias, not the Hermes chat address.",
+    "text": "Now let us make you the owner of the day to day operation. Bookmark the review website, the shared Google Sheet, and the Hermes Web UI address shown here. Today, Kept, Dashboard, and Help use the review login. The teaching guide is public. Hermex connects to the webui address, using its app password, without custom headers. The similar hermes address is a review page alias, not the chat service. Use the Sheet link supplied with your handover. Passwords, your server key, and account invitations must be supplied privately. This video deliberately does not display them."
+  },
+  {
+    "title": "Ask Hermes for an action you can verify",
+    "subtitle": "Plain-language requests · saved results · clear confirmation",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Scan or search",
+        "text": "Run a fresh Founder Radar scan.\nComplete the final checks, then give me the Today link.\nRun a new UK company search."
+      },
+      {
+        "title": "Save a choice",
+        "text": "Mark [exact company] worth contacting.\nSave it with founder-radar decide.\nShow that it appears in Kept."
+      },
+      {
+        "title": "Change a setting",
+        "text": "Ask Hermes to explain the exact row and proposed change.\nEdit the cell yourself in Google Sheet.\nThen ask Hermes to rescore and complete QA."
+      }
+    ],
+    "note": "A chat acknowledgement is not proof. Ask for the saved result and Today link.",
+    "text": "You can speak to Hermes through Telegram or Hermex. Be specific about the outcome. Say: run a fresh Founder Radar scan, complete the final checks, and give me the Today link. For research, ask it to run a new UK company search and give you the Today link. To keep or reject a company, name it precisely and ask Hermes to save the decision with founder radar decide. Then confirm the saved result. For sources or fund rules, Hermes can explain the row and proposed change. Edit the accepted cell yourself in Google Sheet, then ask Hermes to rescore and complete the final checks. A brand new source website needs a developer to add a tested connector."
+  },
+  {
+    "title": "Your daily and weekly checklist",
+    "subtitle": "A short habit keeps a quiet failure from becoming a lost week",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Each morning",
+        "text": "Open Today.\nCheck ready versus waiting.\nReview evidence and save choices.\nCheck that Kept contains your picks."
+      },
+      {
+        "title": "Each week",
+        "text": "Ask for latest successful scan.\nCheck source health and Sheet sync.\nCheck free disk and newest backup.\nReview any failed service or alert."
+      },
+      {
+        "title": "Each month",
+        "text": "Check real fund criteria.\nLook for a source stuck at zero.\nReview provider costs and renewals.\nCheck your off-server backup."
+      }
+    ],
+    "note": "A source returning zero repeatedly deserves investigation, even when it says OK.",
+    "text": "Each morning, check Today, the ready and waiting counts, and your saved choices. If the list is empty, ask why rather than assuming the scan failed. Once a week, ask Hermes for a health summary: the most recent successful scan, source failures, Sheet synchronization, available disk, and the newest backup. Ask it to show dates, not just say everything is fine. Once a month, review fund criteria, recurring costs, and backup access. A source that returns nothing for weeks can have a broken page layout, even when it reports success. Your routine is to notice that pattern and ask Hermes to investigate it."
+  },
+  {
+    "title": "Three useful checks, in plain language",
+    "subtitle": "Diagnose first · do not bypass an unfinished check",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Is the system healthy?",
+        "text": "READ ONLY\nfounder-radar doctor\nChecks configuration, database, disk and connected access."
+      },
+      {
+        "title": "Why is Today thin?",
+        "text": "READ ONLY\nfounder-radar why-today\nExplains counts, gates and what is waiting."
+      },
+      {
+        "title": "Finish company checks",
+        "text": "UPDATES CHECK STATUS\nfounder-radar today-qa --limit 80\nChecks pending candidates; can withhold bad cards."
+      }
+    ],
+    "note": "Chat works but final QA repeatedly fails? Ask Hermes to check shared access, use the installed repair, then recheck.",
+    "text": "Doctor means the system health check. Why today means an explanation of the candidate counts and the reasons companies are excluded. These are good first diagnostic steps. Ask Hermes to run them on the actual server and explain failures in plain English. Today QA is different: it performs and saves the final company checks, and may withhold a bad card. The limit eighty example checks a larger pending batch; completed current approvals do not use those new check slots. If a check cannot finish, keep the company waiting. If chat works but final checks repeatedly fail, ask Hermes to check shared access, use the installed repair, then recheck. Do not solve an empty list by switching off the protection or forcing an unchecked digest to send."
+  },
+  {
+    "title": "What runs on the VPS",
+    "subtitle": "The VPS is the always-on computer · services are its running jobs",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Website",
+        "text": "founder-radar-web.service\nRuns as radar\nCaddy serves the secure public address"
+      },
+      {
+        "title": "Hermes conversations",
+        "text": "hermes-gateway.service\nhermes-webui.service\nBoth run as aryan"
+      },
+      {
+        "title": "Scheduled jobs",
+        "text": "founder-radar.timer\nfounder-radar-backup.timer\nfounder-radar-heartbeat.timer\nfounder-radar-update.timer"
+      }
+    ],
+    "note": "Use /usr/local/bin/founder-radar; it safely switches to the radar account.",
+    "text": "The VPS is the computer that stays on when your laptop is closed. A service is one running job. The Founder Radar web service serves the review app. Caddy handles its public secure address. The Hermes gateway handles conversations, and the Hermes Web UI supports Hermex. Hermes runs as aryan; the company database work runs as radar. Use the supported founder radar command wrapper, which switches to the correct account. Do not fix a permission problem by making everything writable or changing ownership of the application. To check the machine, ask Hermes to inspect failed services, timers, free disk, and recent error logs without printing secrets. Administration needs an owner account with verified permission; the command wrapper does not grant general administrator access."
+  },
+  {
+    "title": "Updates, schedules and sensible reboots",
+    "subtitle": "Project updates and operating-system security updates are separate",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "London-time schedule",
+        "text": "05:00 database backup\n06:30 scan + up to 5 minutes delay\n09:00 missed-run heartbeat\nMain code checked about every 5 minutes"
+      },
+      {
+        "title": "Before an update",
+        "text": "Confirm a recent backup.\nCheck running scans and current versions.\nUse the trusted updater.\nTest Today, Hermex and final QA afterwards."
+      },
+      {
+        "title": "Before a reboot",
+        "text": "Check /var/run/reboot-required.\nAsk what needs it and why.\nPick a quiet time; confirm the plan.\nVerify services after the machine returns."
+      }
+    ],
+    "note": "Security-update timers are enabled. Automatic reboot is not promised.",
+    "text": "The scheduled jobs use London time. Database backup is at five, the scan starts around six thirty with a small delay, and the heartbeat checks for a missed morning at nine. The trusted project updater checks approved main branch changes about every five minutes. The server also has automatic operating system security updates enabled. These are different update paths. For a Hermes upgrade, ask it to check the installed runtime and compatibility first, back up configuration, and test conversations and final QA afterwards. Do not paste a random reinstall command. Reboot only when a real maintenance reason requires it, at a quiet time, after reviewing the plan. Automatic reboot is not guaranteed."
+  },
+  {
+    "title": "Backups protect choices. Recovery needs a plan.",
+    "subtitle": "A backup on the same VPS is not a complete disaster-recovery copy",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Daily database snapshots",
+        "text": "/opt/founder-radar/backups/\nradar-YYYY-MM-DD.db\n14 days retained\nAsk for newest date + integrity check"
+      },
+      {
+        "title": "Complete recovery copy",
+        "text": "Database + private configuration\nHermes configuration + Sheet rules\nCode/version information\nEncrypted copy in your own off-server storage"
+      },
+      {
+        "title": "Before restoring",
+        "text": "Confirm the exact backup and lost changes.\nStop writers and relevant timers.\nBack up the current state first.\nUse Founder Radar’s restore command, then check everything."
+      }
+    ],
+    "note": "Never copy over a live database or send a secrets archive in ordinary chat.",
+    "text": "The daily database snapshots are in the folder shown here, with fourteen days retained. Ask Hermes to confirm the newest file and test that it is readable. This protects stored companies and choices, but a local database backup alone does not protect against losing the entire server. Keep an encrypted complete recovery copy in storage you control, including private configuration and Sheet rules. That off-server copy has not been confirmed by this handover. Before restoring, ask for the exact backup, the choices that would be lost, and a recovery plan. Stop writers, preserve the current state, and use the validated restore command. Confirm a destructive recovery before it happens."
+  },
+  {
+    "title": "When Today, Telegram or Hermex stops",
+    "subtitle": "Find the broken connection before restarting the whole machine",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Today will not open",
+        "text": "Check the address and review login.\nAsk for web + Caddy service status.\nIf it opens but is empty: doctor + why-today.\nAn awaiting check is not a website outage."
+      },
+      {
+        "title": "Telegram is silent",
+        "text": "Send a simple message.\nCheck gateway, latest scan and publish gate.\nIf Hermex works, use it to request diagnosis.\nDo not repeatedly trigger scans."
+      },
+      {
+        "title": "Hermex will not connect",
+        "text": "Use the webui address and app password.\nTry that same address in a browser.\nCheck hermes-webui.service.\nUse the VPS console if all chats are down."
+      }
+    ],
+    "note": "Ask for a targeted repair, then verify the original surface. A whole-server reboot is not the first step.",
+    "text": "If Today will not open, check its address and review login, then ask about the web service and Caddy. If Today opens but is empty, use doctor and why today; an unfinished company check is not a website outage. If Telegram is silent, try a simple message, check the gateway, and check whether the latest scan and publication gate completed. Use Hermex if that channel still works. If Hermex fails, verify its webui address and app password, try the same address in a browser, and check the Web UI service. If all conversation channels are down, use your VPS console or authorized SSH access. Diagnose, repair the specific service, then test the original channel again."
+  },
+  {
+    "title": "When the Google Sheet is behind",
+    "subtitle": "Configuration lives in the Sheet · saved verdicts live in the app database",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "First diagnose",
+        "text": "Run doctor.\nCheck service-account Editor access.\nCheck the Sheet link and configuration Status cells.\nCheck the last successful sync."
+      },
+      {
+        "title": "Catch up the mirror",
+        "text": "Ask Hermes to run:\nfounder-radar sync-sheet\nThen verify the intended rows.\nThis writes the Sheet mirror."
+      },
+      {
+        "title": "Rules changed?",
+        "text": "Do not rename fund or vehicle ID keys.\nInvalid settings may use the last-good copy.\nCheck warnings, rescore and complete QA.\nDo not clear saved verdicts to fix sync."
+      }
+    ],
+    "note": "A failed mirror write does not erase a choice already saved in SQLite.",
+    "text": "If the Sheet is behind but Kept contains your choices, do not delete or re-enter everything. The app database is the main saved record. Ask Hermes to run doctor, confirm that the Google service account, the account the server uses, still has Editor permission to change the Sheet, and inspect the latest synchronization. Then request sync sheet and verify the intended rows; this action writes the Sheet mirror. For changed rules, check the Status cells. Invalid settings can fall back to the last good copy, so a saved cell is not proof that the new rule loaded. Keep the fixed fund and vehicle keys unchanged. After a valid rule edit, rescore and complete the final checks again. Before synchronizing a restored database, preserve and review the Sheet inputs, because newer Sheet verdicts can change restored choices."
+  },
+  {
+    "title": "Own the accounts and protect the keys",
+    "subtitle": "Access, recovery and billing must belong to you",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Access inventory",
+        "text": "Hostinger VPS account\nGoogle Sheet + Google Cloud project\nGitHub + authorized server access\nTelegram bot + AI-provider accounts\nCompanies House developer key"
+      },
+      {
+        "title": "Passwords and renewals",
+        "text": "Private password manager\nRecovery contacts + two-factor authentication\nVPS and provider renewal dates\nReview actual billing, not old estimates"
+      },
+      {
+        "title": "Rotate safely",
+        "text": "Prepare the new credential privately.\nUpdate its protected server location.\nTest the affected connection.\nRevoke the old credential after success."
+      }
+    ],
+    "note": "No account-ownership transfer or off-server backup is implied by this video.",
+    "text": "Make sure you control the VPS account, the Sheet and Google Cloud project, the GitHub repository, the Telegram bot, and the AI provider actually used by Hermes. Obtain the needed invitations and recovery information; this video does not mean ownership was already transferred. Keep passwords and private keys in your password manager, with suitable recovery contacts and two factor authentication. Review real billing and renewal dates. When rotating a key, prepare the replacement privately, update the correct protected configuration, test the affected connection, and only then revoke the old key. Never ask Hermes to paste credentials into chat, logs, screenshots, or a public guide. Hermes's final-check login and the extraction AI credential are separate connections, so test the one you actually changed."
+  },
+  {
+    "title": "Change passwords without losing access",
+    "subtitle": "Review login, Hermex app password and provider keys are different",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Today review password",
+        "text": "Administrator terminal:\ncaddy hash-password\nReplace RADAR_WEB_PASS_HASH privately in .env.\nRestart Caddy; test the new review login."
+      },
+      {
+        "title": "Hermex app password",
+        "text": "Identify the installed Web UI environment file without displaying it.\nUpdate HERMES_WEBUI_PASSWORD privately.\nRestart Web UI; update the phone login."
+      },
+      {
+        "title": "Bot or provider access",
+        "text": "Telegram token: renew through BotFather; update every consumer.\nAI login: inspect the working installed version first.\nTest before revoking old access."
+      }
+    ],
+    "note": "Use your administrator access or verified Hermes permissions. Never paste secrets into chat.",
+    "text": "For the review password, an administrator runs Caddy hash password interactively. Store the generated hash in the protected Radar configuration, restart Caddy, and test the new review login. Do not type a real password into a copied command that may remain in history. Hermex uses a different app password. Identify the installed Web UI configuration location without printing its contents, replace that password privately, restart the Web UI service, and update your phone. For Telegram, renew the token through BotFather and update every consumer using it. For an expired AI login, check the actual working Hermes installation before using its supported setup. Test the changed connection before removing the old access."
+  },
+  {
+    "title": "You can run the next day yourself",
+    "subtitle": "One useful prompt for health · one clear prompt for action",
+    "visual": "owner",
+    "cards": [
+      {
+        "title": "Health request",
+        "text": "Check Founder Radar on the VPS.\nDiagnose only first. Show latest scan, ready/waiting counts, failed services, disk, backup date and Sheet access. Do not print secrets."
+      },
+      {
+        "title": "Repair request",
+        "text": "Explain the cause and smallest repair.\nTake a backup where needed.\nAsk before restore, delete, reboot or key rotation.\nAfter repair, test the original problem."
+      },
+      {
+        "title": "If chats are down",
+        "text": "Use your VPS provider console, or:\nssh aryan@srv1821489.hstgr.cloud\nYour own public key must be authorized.\nUse the written owner handover checklist."
+      }
+    ],
+    "note": "Review → ask clearly → verify the saved result → keep a recovery copy you control.",
+    "text": "Here are two prompts you can reuse. For health: check Founder Radar on the VPS, diagnose first, and show the latest scan, ready and waiting counts, failed services, disk, newest backup, and Sheet access, without printing secrets. For a repair: explain the cause and the smallest fix, take a backup where needed, ask before restoring, deleting, rebooting, or rotating keys, then test the original problem. If chats are down, use your provider console or your own authorized SSH connection. The address is shown here; a private local shortcut on someone else's laptop is not your access setup. Keep the written owner handover alongside this video. You now have a daily routine and a recovery route."
+  }
+]

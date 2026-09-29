@@ -262,7 +262,7 @@ def check_conception_x(items):
 
 def check_entrepreneur_first(items):
     assert all(i.published_at == RUN_DATE for i in items)
-    assert all(i.structured["stage"] == "pre_seed" for i in items)
+    assert all(i.structured["stage"] is None for i in items)
     assert all(i.structured["age_source"] == "unknown" for i in items)
     assert any(i.structured["founded_year"] == 2026 for i in items)
 
@@ -322,13 +322,11 @@ def check_bethnal_green(items):
     assert all(i.structured["bootstrap"] is True for i in items)
     assert all(i.structured["date_confidence"] == "inferred" for i in items)
     assert all(i.structured["age_source"] == "unknown" for i in items)
-    active = [i for i in items if i.kind_hint == "accelerator_cohort"]
-    exited = [i for i in items if i.kind_hint == "vc_portfolio_listing"]
-    assert active, "active cohort cards stay discovery"
-    assert exited, "exited ventures must be denylist listings"
-    assert all(i.structured["stage"] == "pre_seed" for i in active)
-    assert all(i.structured["on_vc_portfolio"] is True for i in exited)
-    assert all(i.structured.get("exited") is True for i in exited)
+    assert all(i.kind_hint == "vc_portfolio_listing" for i in items)
+    assert all(i.structured["on_vc_portfolio"] is True for i in items)
+    assert any(i.structured.get("exited") for i in items)
+    assert any(not i.structured.get("exited") for i in items)
+    assert all(i.structured.get("stage") is None for i in items)
     # The provenance link is the portfolio page, not the venture's own site:
     # a third of those are still plain http (see `oxford_innovation`).
     assert all(i.source_url == "https://bethnalgreenventures.com/portfolio"

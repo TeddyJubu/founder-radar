@@ -119,7 +119,7 @@ export const architectureNodes: ArchNode[] = [
     easy:
       "Hermes is the front desk. It turns a chat sentence into the right engine command, and it may take a wrong card off Today after scoring. It does not invent scores, pass a hard rule, or add a company by itself.",
     technical:
-      "Layer 3 only: maps chat → CLI. Today QA is veto-only — PASS|REJECT with a stored reason; fail-open if Hermes is down. Never the retired v1 ~/radar sheet scout.",
+      "Maps chat → CLI. Today QA records pass, reject or incomplete against the exact current card. An incomplete check is withheld from Today, the Sheet and the ping; a changed card needs another check. Hermes cannot change deterministic scores. Never the retired v1 ~/radar sheet scout.",
     related: ["telegram", "engine", "today"],
     detail: null,
   },

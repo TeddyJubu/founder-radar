@@ -102,7 +102,11 @@ def build(path: str) -> int:
         for row in db.query("SELECT id FROM company"):
             score_company(db, row["id"], cfg, today=TODAY)
         from radar.qa.today import run_today_qa
-        run_today_qa(db, cfg, use_hermes=False)
+        from tests.fakes import source_link_proof
+        # This isolated recipe uses committed company fixtures and simulated
+        # HTTP proof. Its explicitly injected demo verifier never reaches live
+        # sources or changes the production QA verifier/defaults.
+        run_today_qa(db, cfg, use_hermes=False, source_verifier=source_link_proof)
         return db.scalar("SELECT COUNT(*) FROM company")
     finally:
         db.close()

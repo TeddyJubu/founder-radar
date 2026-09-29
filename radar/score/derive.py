@@ -215,9 +215,9 @@ def derive_sector(sic_codes: Sequence[str] | None, config: Any = None) -> str | 
         for length in (3, 2):
             if code[:length] in prefix:
                 return prefix[code[:length]]
-    # A code we do not recognise is still a *known* declaration of "something
-    # else", so `other` is a known value, not an unknown one.
-    return "other"
+    # A registration code outside our mapping does not identify a product
+    # sector. Calling it "other" would falsely increase evidence coverage.
+    return None
 
 
 # ---------------------------------------------------- 2.2 geography ← postcode

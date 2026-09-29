@@ -1,25 +1,8 @@
-"""Bethnal Green Ventures — HTML portfolio, snapshot-diff (04-sources Tier 2).
+"""Bethnal Green Ventures — invested portfolio, denial evidence.
 
-The UK's tech-for-good accelerator: pre-seed by construction, roughly twelve
-ventures a cohort, and the companies are exactly the kind a generalist fund
-does not see early. 04-sources records the verified cohort pattern —
-"Spring 2026 cohort", 21 Apr 2026, 12 ventures.
-
-The page is undated, so freshness comes from **what changed** since the last
-run, the same mechanism as `conception_x` and `entrepreneur_first`
-(04-sources §4.3). The bootstrap run returns everything and says so, and
-downstream declines to treat a 2018 cohort as this week's news.
-
-Two details worth keeping:
-
-* Cards are `.grid_item`, not the generic `.w-dyn-item`. This is a Webflow
-  site and the loose class also matches theme filters, carousel slides and
-  configuration rows — 35 nodes of which 12 are ventures. `conception_x` shipped
-  that exact bug: the guard counted cards, the names came back empty, and the
-  source reported `ok (0)` for a total failure.
-* An `Exited` tag means the company has already had its outcome. Those cards
-  are inverted into the denylist (`on_vc_portfolio`), not surfaced as fresh
-  cohort leads — the same rule as Zinc / Founders Factory investment posts.
+The official portfolio and offer pages state every portfolio member receives
+BGV equity investment. Active as well as exited companies therefore feed the
+existing VC denylist, rather than claiming fresh pre-investment discovery.
 """
 
 from __future__ import annotations
@@ -50,10 +33,10 @@ EXITED = "exited"
 
 class BethnalGreenAdapter:
     key = "bethnal_green"
-    kind = "accelerator"
+    kind = "portfolio"
     schedule = "weekly"
     requires_browser = False
-    track = "A"
+    track = "—"
     tier = 2
     endpoint = PORTFOLIO
     homepage = BASE
@@ -86,7 +69,7 @@ class BethnalGreenAdapter:
             ctx.db, self.key, [item.external_id for item in items])
         out: list[RawItem] = []
         for item in items:
-            if item.external_id not in new_ids:
+            if item.external_id not in new_ids and item.kind_hint != "vc_portfolio_listing":
                 continue
             structured = dict(item.structured or {})
             structured["bootstrap"] = bootstrap
@@ -126,58 +109,15 @@ class BethnalGreenAdapter:
         external_id = slug_of(website or "") or name.lower().replace(" ", "-")
         one_liner = first_text(card, (".card_text", "p"), exclude=name) or None
 
-        # An Exited tag means the outcome already happened — demote, do not
-        # invent a fresh lead. Active cohort cards stay discovery.
-        if exited:
-            from radar.sources.denylist import listing
-
-            return listing(
-                source_key=self.key,
-                source_url=PORTFOLIO,
-                external_id=external_id,
-                published_at=None,
-                title=name,
-                body_text=blob or None,
-                company_name=name,
-                vc_slug="bethnal_green",
-                vc_name="Bethnal Green Ventures",
-                date_confidence="inferred",
-                extra={
-                    "exited": True,
-                    "company_website": website,
-                    "one_line_description": one_liner,
-                    "age_source": "unknown",
-                    "themes": themes,
-                    "hq_country_iso2": "GB",
-                },
-            )
-
-        return RawItem(
-            source_key=self.key,
-            # The portfolio entry, not the company's own site — same rule as
-            # `oxford_innovation`. A third of these venture sites are still
-            # plain http, and a provenance link has to be one we control the
-            # shape of.
-            source_url=PORTFOLIO,
-            external_id=external_id,
-            published_at=None,          # stamped by `diff` on the run that finds it
-            title=name,
-            body_text=blob or None,
-            structured={
-                "company_name": name,
-                "company_website": website,
-                "one_line_description": one_liner,
-                "accelerator_name": "Bethnal Green Ventures",
-                "stage": "pre_seed",
-                "hq_country_iso2": "GB",
-                # Undated page: the date is when *we* first saw it, never a
-                # claim about when the company was founded.
-                "date_confidence": "inferred",
-                "age_source": "unknown",
-                "themes": themes,
-            },
-            kind_hint="accelerator_cohort",
+        from radar.sources.denylist import listing
+        return listing(
+            source_key=self.key, source_url=PORTFOLIO, external_id=external_id,
+            published_at=None, title=name, body_text=blob or None,
+            company_name=name, vc_slug="bethnal_green", vc_name="Bethnal Green Ventures",
+            date_confidence="inferred",
+            extra={"exited": exited, "company_website": website,
+                   "one_line_description": one_liner, "age_source": "unknown",
+                   "themes": themes},
         )
-
 
 ADAPTER = BethnalGreenAdapter()

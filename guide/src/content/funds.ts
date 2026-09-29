@@ -119,7 +119,7 @@ export const fundCards: FundCard[] = [
     key: "outward",
     name: "Outward VC",
     mandate:
-      "Send if finance is the product or an essential layer in the workflow. One ECF vehicle — not an EIS fund; no age cap.",
+      "Early-stage technology for complex, regulated industries: finance, insurance, property, legal services, healthcare and work. One ECF vehicle, with no age cap.",
     vehicles: [
       {
         key: "fund_ii",
@@ -133,7 +133,7 @@ export const fundCards: FundCard[] = [
           "prior_total_max £20m",
           "uk_exec_pct_min 66%",
         ],
-        oneLiner: "Send if finance is the product or an essential layer in the workflow.",
+        oneLiner: "Early-stage technology for complex, regulated industries.",
       },
     ],
   },
