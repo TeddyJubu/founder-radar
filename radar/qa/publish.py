@@ -107,9 +107,17 @@ def _parse_publish_verdict(text: str) -> tuple[str, str, str]:
 
 
 
+#: The root-owned copy `deploy/install.sh` puts outside the git checkout. It is
+#: the only path sudoers lets `radar` run as root: the checkout is radar-owned,
+#: so a sudoers rule pointing into it would let radar edit the script and become
+#: root. Absent on a dev machine — there is nothing to heal there, and running
+#: the repo copy would only try `sudo`.
+TRUSTED_ACL_SCRIPT = Path("/usr/local/libexec/founder-radar/hermes-acl.sh")
+
+
 def _ensure_hermes_acl() -> None:
     """Re-assert radar→Hermes ACLs; chmod under ~/.hermes can clear the mask."""
-    script = _REPO_ROOT / "deploy" / "hermes-acl.sh"
+    script = TRUSTED_ACL_SCRIPT
     if not script.is_file():
         return
     try:

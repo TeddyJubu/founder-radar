@@ -189,7 +189,7 @@ Companies live on the Today dashboard, not in this chat.
 /run northstar  scan scoped to one fund
 /fund northstar top 10 current matches for a fund
 /why <company>  the full score breakdown
-/status         last run, source health, this month's cost
+/status         last run and source health
 /week           this week's new shortlist entries
 /sheet          link to the spreadsheet
 /help           this list

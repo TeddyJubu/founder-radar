@@ -215,6 +215,18 @@ def test_user_agent_is_honest_and_carries_a_contact_url(monkeypatch):
     assert "radar.example.co.uk" in user_agent()
 
 
+def test_placeholder_user_agent_is_recognised():
+    """The template's example.com contact reaches nobody, so a blocked site has
+    no one to ask for an allowlisting. A real domain must not trip it."""
+    from radar.fetch.http import user_agent_is_placeholder
+
+    assert user_agent_is_placeholder(DEFAULT_UA)
+    assert user_agent_is_placeholder("founder-radar/2.0 (+https://example.org/p; a@example.net)")
+    assert not user_agent_is_placeholder(
+        "founder-radar/2.0 (+https://radar.example.co.uk/crawler; ops@example.co.uk)")
+    assert not user_agent_is_placeholder("founder-radar/2.0 (+https://foundersradar.io/c; ops@foundersradar.io)")
+
+
 # ------------------------------------------------------- sources --list/--test
 
 

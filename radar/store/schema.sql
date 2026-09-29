@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS run (
   gated_out       INTEGER DEFAULT 0,
   shortlisted     INTEGER DEFAULT 0,
   llm_calls       INTEGER DEFAULT 0,
-  llm_cost_usd    REAL DEFAULT 0,
+  llm_cost_usd    REAL DEFAULT 0,  -- DEPRECATED: cost tracking removed, never written; column kept (SQLite has no DROP IF EXISTS)
   status          TEXT NOT NULL,   -- running | ok | partial | failed
   error           TEXT
 );
@@ -285,7 +285,7 @@ CREATE TABLE IF NOT EXISTS llm_cache (
   response_json TEXT NOT NULL,
   tokens_in   INTEGER,
   tokens_out  INTEGER,
-  cost_usd    REAL,
+  cost_usd    REAL,               -- DEPRECATED: cost tracking removed, never written; column kept
   created_at  TEXT NOT NULL
 );
 

@@ -49,6 +49,12 @@ say() {
   fi
 }
 
+# Without flock the test below fails for the wrong reason and reads as "another
+# update is running" — the timer would then skip every cycle, silently, for ever.
+if ! command -v flock >/dev/null 2>&1; then
+  echo "flock (util-linux) is required" >&2
+  exit 1
+fi
 exec 9>"$LOCK"
 if ! flock -n 9; then
   say "another founder-radar update is already running — skipping"

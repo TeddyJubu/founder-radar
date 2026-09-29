@@ -34,12 +34,20 @@ fi
 HOME_DIR=$(getent passwd "$HERMES_USER" | cut -d: -f6)
 H="$HOME_DIR/.hermes"
 test -d "$H" || exit 0
+# This script runs as root and radar can write inside the operator's home, so
+# it must never act on a symlink radar could have planted: `setfacl` and
+# `chown` follow links, and "give radar rwx on <target>" would then apply to
+# whatever the link points at.
+if [[ -L "$H" || -L "$HOME_DIR" ]]; then
+  echo "hermes-acl: $H or its parent is a symlink — refusing to act" >&2
+  exit 1
+fi
 
 acl_user() {
   local path="$1"
   local user="$2"
   local mode="${3:-rwx}"
-  [[ -e "$path" ]] || return 0
+  [[ -e "$path" && ! -L "$path" ]] || return 0
   setfacl -m "u:${user}:${mode}" "$path" 2>/dev/null || true
   setfacl -m "m::rwx" "$path" 2>/dev/null || true
 }
@@ -48,9 +56,11 @@ acl_tree() {
   local path="$1"
   local user="$2"
   local mode="${3:-rwx}"
-  [[ -e "$path" ]] || return 0
-  setfacl -R -m "u:${user}:${mode}" "$path" 2>/dev/null || true
-  setfacl -R -m "m::rwx" "$path" 2>/dev/null || true
+  [[ -e "$path" && ! -L "$path" ]] || return 0
+  # -P: physical walk — do not follow symlinks, neither the argument nor any
+  # met inside the tree.
+  setfacl -R -P -m "u:${user}:${mode}" "$path" 2>/dev/null || true
+  setfacl -R -P -m "m::rwx" "$path" 2>/dev/null || true
   if [[ -d "$path" ]]; then
     setfacl -d -m "u:${user}:${mode}" "$path" 2>/dev/null || true
     setfacl -d -m "m::rwx" "$path" 2>/dev/null || true
@@ -80,7 +90,7 @@ mkdir -p \
 # back to HERMES_USER, then re-apply the radar ACL so Today QA still works.
 if [[ "$(id -u)" -eq 0 ]] && id -u "$HERMES_USER" >/dev/null 2>&1; then
   find "$H" \( -user "$APP_USER" -o ! -user "$HERMES_USER" \) \
-    -exec chown "$HERMES_USER:$HERMES_USER" {} + 2>/dev/null || true
+    -exec chown -h "$HERMES_USER:$HERMES_USER" {} + 2>/dev/null || true
   # Critical paths — always operator-owned even if find missed them.
   for critical in \
     "$H/auth.json" \
@@ -91,7 +101,7 @@ if [[ "$(id -u)" -eq 0 ]] && id -u "$HERMES_USER" >/dev/null 2>&1; then
     "$H/.skills_prompt_snapshot.json"
   do
     [[ -e "$critical" ]] || continue
-    chown "$HERMES_USER:$HERMES_USER" "$critical" 2>/dev/null || true
+    chown -h "$HERMES_USER:$HERMES_USER" "$critical" 2>/dev/null || true
   done
 fi
 

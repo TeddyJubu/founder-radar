@@ -318,6 +318,67 @@ def test_hermes_subagent_falls_back_to_query_argv():
     assert any("-q" in argv and "today_card" in " ".join(argv) for argv in seen)
 
 
+def test_hermes_subagent_heals_acls_before_and_after_the_run(monkeypatch):
+    """Today QA runs Hermes as radar under the operator's home and rewrites
+    files there. Healing only *before* the next run left the gateway reading a
+    broken ~/.hermes in between; heal after every run too, even a failing one.
+    """
+    events: list[str] = []
+    monkeypatch.setattr("radar.qa.publish._ensure_hermes_acl",
+                        lambda: events.append("heal"))
+
+    def runner(argv, **kw):
+        events.append("run")
+
+        class Completed:
+            returncode = 0
+            stdout = "VERDICT: PASS\nSUMMARY: fine.\n"
+            stderr = ""
+
+        return Completed()
+
+    HermesSubagent(binary="/usr/bin/hermes", runner=runner).review(_card())
+    assert events == ["heal", "run", "heal"]
+
+    events.clear()
+
+    def failing(argv, **kw):
+        events.append("run")
+
+        class Failed:
+            returncode = 1
+            stdout = ""
+            stderr = "boom"
+
+        return Failed()
+
+    with pytest.raises(HermesUnavailable):
+        HermesSubagent(binary="/usr/bin/hermes", runner=failing).review(_card())
+    assert events[0] == "heal" and events[-1] == "heal"
+
+
+def test_acl_refresh_only_runs_the_root_owned_copy(tmp_path, monkeypatch):
+    """The checkout is radar-writable, so the repo copy of hermes-acl.sh is not
+    something sudo may run as root — and on a dev machine there is nothing to
+    heal. Only the installed, root-owned copy is ever executed."""
+    import subprocess
+
+    from radar.qa import publish
+
+    ran: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: ran.append(list(argv)))
+
+    monkeypatch.setattr(publish, "TRUSTED_ACL_SCRIPT", tmp_path / "missing.sh")
+    publish._ensure_hermes_acl()
+    assert ran == []
+
+    installed = tmp_path / "hermes-acl.sh"
+    installed.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(publish, "TRUSTED_ACL_SCRIPT", installed)
+    publish._ensure_hermes_acl()
+    assert ran == [[str(installed)]]
+
+
 def test_hermes_subagent_missing_binary(monkeypatch):
     monkeypatch.setattr("radar.qa.today.shutil.which", lambda name: None)
     checker = HermesSubagent(binary=None, runner=lambda *a, **k: None)

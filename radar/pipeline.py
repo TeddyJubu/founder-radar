@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
 from radar.config.models import Config
@@ -52,7 +52,6 @@ class RunResult:
     gated_out: int = 0
     shortlisted: int = 0
     llm_calls: int = 0
-    llm_cost_usd: float = 0.0
     error: str | None = None
     run_id: int | None = None
     sources: list[dict] = field(default_factory=list)
@@ -70,14 +69,41 @@ class RunResult:
             "gated_out": self.gated_out,
             "shortlisted": self.shortlisted,
             "llm_calls": self.llm_calls,
-            "llm_cost_usd": round(self.llm_cost_usd, 4),
             "error": self.error,
             "run_id": self.run_id,
             "sources": self.sources,
         }
 
 
+# A run that has been `running` this long is not running any more: the daily
+# scan takes minutes, so anything older lost its process (OOM kill, a deploy
+# restarting the unit, power loss) before it could write its own outcome.
+ORPHANED_RUN_AFTER = timedelta(hours=3)
+
+
+def reap_orphaned_runs(db: Db, *, older_than: timedelta = ORPHANED_RUN_AFTER) -> int:
+    """Close `run` rows stuck at `running` and return how many were closed.
+
+    Nothing else ever updates such a row, so without this it stays `running`
+    forever — and `status` then shows a run that never ends. The heartbeat is
+    unaffected either way (`running` is never proof of life), but the run log
+    should say what actually happened: the run did not finish, so `failed`.
+    """
+    cutoff = (datetime.now(timezone.utc) - older_than).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cur = db.execute(
+        """UPDATE run SET status = 'failed', finished_at = ?,
+                          error = COALESCE(error,
+                              'interrupted: the process ended before this run finished')
+            WHERE status = 'running' AND finished_at IS NULL AND started_at < ?""",
+        (now_iso(), cutoff),
+    )
+    return cur.rowcount or 0
+
+
 def _begin_run(db: Db, *, mode: str, scope: str | None) -> int:
+    reaped = reap_orphaned_runs(db)
+    if reaped:
+        log.warning("closed %d orphaned run row(s) left in 'running'", reaped)
     db.execute(
         """INSERT INTO run(started_at, mode, scope, status)
            VALUES (?, ?, ?, 'running')""",
@@ -90,12 +116,12 @@ def _finish_run(db: Db, run_id: int, result: RunResult) -> None:
     db.execute(
         """UPDATE run SET finished_at = ?, items_fetched = ?, items_extracted = ?,
                  companies_new = ?, companies_merged = ?, gated_out = ?,
-                 shortlisted = ?, llm_calls = ?, llm_cost_usd = ?, status = ?,
+                 shortlisted = ?, llm_calls = ?, status = ?,
                  error = ?, warnings = ?
            WHERE id = ?""",
         (now_iso(), result.items_fetched, result.items_extracted,
          result.companies_new, result.companies_merged, result.gated_out,
-         result.shortlisted, result.llm_calls, result.llm_cost_usd,
+         result.shortlisted, result.llm_calls,
          result.status, result.error,
          "\n".join(result.warnings) if result.warnings else None, run_id),
     )

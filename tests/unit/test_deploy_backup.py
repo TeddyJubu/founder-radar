@@ -160,6 +160,22 @@ def test_legacy_hermes_dashboard_unit_stays_unpublished():
             "hermes-dashboard.sh is not executable"
 
 
+_BASH = shutil.which("bash") or "/bin/bash"
+
+
+def _hermetic_env(tmp_path, **extra):
+    """An environment in which `hermes` can only be the fake the test plants.
+
+    The wrapper falls back to `command -v hermes`. With the developer's real
+    PATH that resolves to the real Hermes, and "fails without a binary" then
+    launches a real dashboard — and its npm/web-UI rebuild — from inside the
+    test suite. So: no inherited PATH, no HERMES* variables, a throwaway HOME.
+    The wrapper only needs shell builtins, so a PATH holding just the test's
+    own directory is enough.
+    """
+    return {"PATH": str(tmp_path), "HOME": str(tmp_path), "ROOT": str(tmp_path), **extra}
+
+
 def test_hermes_dashboard_wrapper_execs_loopback(tmp_path):
     """If the legacy wrapper is invoked locally, it must bind loopback."""
     if not HERMES_DASHBOARD_SH.is_file():
@@ -174,11 +190,9 @@ def test_hermes_dashboard_wrapper_execs_loopback(tmp_path):
     env_file.write_text(
         "HERMES_BIN=%s\nHERMES_WEB_DOMAIN=hermes.example.test\n" % fake
     )
-    path = str(tmp_path) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
     out = subprocess.run(
-        ["bash", str(HERMES_DASHBOARD_SH)],
-        env={**os.environ, "HERMES_ENV_FILE": str(env_file),
-             "ROOT": str(tmp_path), "PATH": path},
+        [_BASH, str(HERMES_DASHBOARD_SH)],
+        env=_hermetic_env(tmp_path, HERMES_ENV_FILE=str(env_file)),
         capture_output=True, text=True,
     )
     assert out.returncode == 0, out.stderr
@@ -197,16 +211,86 @@ def test_hermes_dashboard_wrapper_fails_without_a_binary(tmp_path):
         pytest.skip("hermes-dashboard.sh not present")
     env_file = tmp_path / "hermes.env"
     env_file.write_text("HERMES_BIN=/no/such/hermes\nHERMES_HOME=%s\n" % tmp_path)
-    path = str(tmp_path) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
     out = subprocess.run(
-        ["bash", str(HERMES_DASHBOARD_SH)],
-        env={**os.environ, "HERMES_ENV_FILE": str(env_file),
-             "ROOT": str(tmp_path), "HOME": str(tmp_path),
-             "PATH": path},
+        [_BASH, str(HERMES_DASHBOARD_SH)],
+        env=_hermetic_env(tmp_path, HERMES_ENV_FILE=str(env_file)),
         capture_output=True, text=True,
     )
     assert out.returncode != 0
     assert "not found" in out.stderr
+
+
+LIBEXEC_ACL = "/usr/local/libexec/founder-radar/hermes-acl.sh"
+
+
+def test_root_only_runs_scripts_the_service_user_cannot_edit():
+    """`radar` owns /opt/founder-radar/app. A sudoers rule or a `+` (run as
+    root) ExecStartPre that names a file in it is a one-line path from radar to
+    root: edit the script, trigger the rule. Everything root is asked to run on
+    radar's behalf must be the root-owned copy that install.sh puts under
+    /usr/local/libexec — a parent radar cannot rename things in."""
+    installer = INSTALL_SH.read_text()
+    assert 'LIBEXEC="${LIBEXEC:-/usr/local/libexec/founder-radar}"' in installer
+    assert 'install -o root -g root -m 755 "$HERE/hermes-acl.sh" "$LIBEXEC/hermes-acl.sh"' in installer
+
+    sudoers_lines = [ln for ln in installer.splitlines() if "NOPASSWD" in ln]
+    assert sudoers_lines, "install.sh must own the sudoers rule"
+    for line in sudoers_lines:
+        assert "$LIBEXEC/hermes-acl.sh" in line
+        assert "$APP_DIR" not in line and "$HERE" not in line and "/app/" not in line
+    assert "visudo -cf" in installer, "a broken sudoers file locks out sudo"
+    # Root must run the installed copy, never the checkout's.
+    assert 'bash "$HERE/hermes-acl.sh"' not in installer
+
+    scan = (DEPLOY_DIR / "founder-radar.service").read_text()
+    pre = [ln for ln in scan.splitlines() if ln.startswith("ExecStartPre=+")]
+    assert pre == [f"ExecStartPre=+{LIBEXEC_ACL}"]
+
+    for unit in DEPLOY_DIR.glob("*.service"):
+        for line in unit.read_text().splitlines():
+            if line.startswith(("ExecStartPre=+", "ExecStart=+", "ExecStartPost=+")):
+                assert "/opt/founder-radar/app" not in line, (unit.name, line)
+
+
+def test_the_runtime_looks_for_the_same_root_owned_copy():
+    from radar.qa.publish import TRUSTED_ACL_SCRIPT
+
+    assert str(TRUSTED_ACL_SCRIPT) == LIBEXEC_ACL
+
+
+def test_gateway_is_healed_before_every_restart():
+    """A gateway that dies on an unreadable auth.json and restarts into the same
+    error is how this box crash-looped. Heal before each (re)start; `-+` means
+    a failed heal never blocks the start, and runs as root although the unit
+    is User=<operator>."""
+    installer = INSTALL_SH.read_text()
+    assert "hermes-gateway.service.d/founder-radar-acl.conf" in installer
+    assert 'ExecStartPre=-+$LIBEXEC/hermes-acl.sh' in installer
+
+
+def test_hermes_acl_script_never_follows_a_planted_symlink():
+    """The script runs as root while radar can write in the operator's home."""
+    text = (DEPLOY_DIR / "hermes-acl.sh").read_text()
+    assert 'if [[ -L "$H" || -L "$HOME_DIR" ]]' in text
+    assert "setfacl -R -P" in text and "setfacl -R -m" not in text
+    assert "chown -h" in text and "chown \"$HERMES_USER" not in text
+
+
+def test_failing_jobs_alert_through_the_template_unit():
+    """The auto-deploy, the backup and the daily scan can each stay broken for
+    days with nobody told. They must all name the alert template, the template
+    must be installed, and the heartbeat must not (it is already an alert)."""
+    template = DEPLOY_DIR / "founder-radar-alert@.service"
+    assert template.is_file()
+    text = template.read_text()
+    assert "radar.notify.alert %i" in text
+    assert "User=radar" in text          # never root: it only talks to Telegram
+    for name in ("founder-radar.service", "founder-radar-update.service",
+                 "founder-radar-backup.service"):
+        unit = (DEPLOY_DIR / name).read_text()
+        assert "OnFailure=founder-radar-alert@%n.service" in unit, name
+    assert "OnFailure" not in (DEPLOY_DIR / "founder-radar-heartbeat.service").read_text()
+    assert "founder-radar-alert@.service" in INSTALL_SH.read_text()
 
 
 def test_deploy_ships_main_without_a_manual_click():

@@ -120,9 +120,38 @@ def test_every_run_writes_a_run_log_row(db, config):
     run_pipeline(db, config=config, http=FakeHttp(), use_llm=False, gateway=None)
     row = db.one("SELECT * FROM run ORDER BY id DESC LIMIT 1")
     for field in ("items_fetched", "companies_new", "gated_out", "shortlisted",
-                  "llm_calls", "llm_cost_usd", "status", "finished_at"):
+                  "llm_calls", "status", "finished_at"):
         assert row[field] is not None, field
     assert row["status"] in ("ok", "partial", "failed")
+
+
+def test_a_run_orphaned_in_running_is_closed_by_the_next_run(db, config):
+    """A process killed mid-run (OOM, a deploy restarting the unit) never gets to
+    write its outcome, so its row stays `running` for ever and `status` shows a
+    run that never ends. The next run closes it as `failed` — but leaves a
+    genuinely in-flight run alone."""
+    from datetime import datetime, timedelta, timezone
+
+    from radar.pipeline import run_pipeline
+
+    def stamp(hours_ago):
+        return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+
+    for hours in (30, 5, 0.1):
+        db.execute("INSERT INTO run(started_at, mode, status) VALUES (?, 'daily', 'running')",
+                   (stamp(hours),))
+
+    run_pipeline(db, config=config, http=FakeHttp(), use_llm=False, gateway=None)
+
+    rows = db.query("SELECT started_at, status, finished_at, error FROM run "
+                    "WHERE status != 'ok' AND status != 'partial' ORDER BY started_at")
+    by_status = {r["status"] for r in rows}
+    assert by_status == {"failed", "running"}
+    failed = [r for r in rows if r["status"] == "failed"]
+    running = [r for r in rows if r["status"] == "running"]
+    assert len(failed) == 2 and all(r["finished_at"] and "interrupted" in r["error"] for r in failed)
+    assert len(running) == 1, "a run started six minutes ago may still be going"
 
 
 def test_extraction_method_reaches_the_company_row(db, config):

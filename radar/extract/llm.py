@@ -9,8 +9,9 @@ Rules from 05-pipeline §3.3 and 02-architecture §2, all of them tested:
   changes on every load (ad slots, CSRF tokens, cache-busting params), so a raw
   hash never matches. The key is
   `sha256(prompt_version | model_id | normalised_text)`.
-* **`llm_cache` doubles as the cost ledger.** Every call records `tokens_in`,
-  `tokens_out` and `cost_usd` (03-data-model §6, query 10).
+* **`llm_cache` records token counts** (`tokens_in`, `tokens_out`) for every
+  call. There is deliberately no price ledger: what a call costs is a billing
+  question for the provider, not something this pipeline tracks.
 * **`ReplayLLM` hard-fails on a miss.** A silent network call in CI is worse
   than a broken test.
 """
@@ -47,15 +48,6 @@ MAX_OUTPUT_TOKENS = 2048
 # Anthropic's strict server-side schema; the OpenAI provider gets this instead.
 OPENAI_MAX_OUTPUT_TOKENS = 8192
 NEAR_DUP_SLICE = (200, 1200)
-
-# USD per million tokens, keyed by model id. Used for the cost ledger only —
-# nothing in the pipeline branches on price.
-PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
-    "claude-haiku-4-5-20251001": (1.00, 5.00),
-    "claude-haiku-4-5": (1.00, 5.00),
-    "claude-sonnet-4-5-20250929": (3.00, 15.00),
-}
-
 
 # --------------------------------------------------------------------- errors
 
@@ -198,23 +190,17 @@ def near_dup_key(text: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
-def estimate_cost(model_id: str, tokens_in: int, tokens_out: int) -> float:
-    price_in, price_out = PRICES_USD_PER_MTOK.get(model_id, (0.0, 0.0))
-    return round((tokens_in * price_in + tokens_out * price_out) / 1_000_000, 8)
-
-
 # ------------------------------------------------------------------ protocol
 
 
 @dataclass(frozen=True)
 class LLMResponse:
-    """One provider call, plus what it cost."""
+    """One provider call."""
 
     payload: dict
     model_id: str
     tokens_in: int = 0
     tokens_out: int = 0
-    cost_usd: float = 0.0
     raw_text: str | None = None
 
 
@@ -299,7 +285,6 @@ class AnthropicLLM:
             model_id=self.model_id,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
-            cost_usd=estimate_cost(self.model_id, tokens_in, tokens_out),
             raw_text=text,
         )
 
@@ -311,8 +296,7 @@ class OpenAILLM:
     on the box is an OpenAI-shaped key (08-deployment §3 reserves `LLM_PROVIDER`
     and `LLM_API_KEY` for exactly this). Same contract as `AnthropicLLM`: every
     provider exception becomes `ProviderDown`, the caller still has exactly one
-    failure mode to handle, and `estimate_cost` prices the ledger (an unknown
-    model id — e.g. a gateway's free tier — records £0.00 honestly).
+    failure mode to handle.
 
     Two robustness details the Anthropic client does not need:
 
@@ -416,7 +400,6 @@ class OpenAILLM:
             model_id=self.model_id,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
-            cost_usd=estimate_cost(self.model_id, tokens_in, tokens_out),
             raw_text=content,
         )
 
@@ -491,7 +474,6 @@ class ReplayLLM:
                 model_id=record.get("model_id", self.model_id),
                 tokens_in=int(record.get("tokens_in", 0)),
                 tokens_out=int(record.get("tokens_out", 0)),
-                cost_usd=float(record.get("cost_usd", 0.0)),
             )
 
         if not self.refresh:
@@ -510,7 +492,6 @@ class ReplayLLM:
                     "model_id": response.model_id,
                     "tokens_in": response.tokens_in,
                     "tokens_out": response.tokens_out,
-                    "cost_usd": response.cost_usd,
                     "payload": response.payload,
                 },
                 indent=2,
@@ -536,11 +517,10 @@ class StubLLM:
             raise item
         return LLMResponse(
             payload=item, model_id=self.model_id, tokens_in=900, tokens_out=180,
-            cost_usd=estimate_cost(self.model_id, 900, 180),
         )
 
 
-# ------------------------------------------------------ cache + cost ledger
+# ------------------------------------------------------------------- cache
 
 
 @dataclass
@@ -548,11 +528,10 @@ class CacheEntry:
     payload: dict
     tokens_in: int = 0
     tokens_out: int = 0
-    cost_usd: float = 0.0
 
 
 class LlmCache:
-    """The `llm_cache` table. Also the cost ledger — same rows, two readers."""
+    """The `llm_cache` table: response payloads keyed by content hash."""
 
     def __init__(self, db: Any | None) -> None:
         self.db = db
@@ -561,7 +540,7 @@ class LlmCache:
         if self.db is None:
             return None
         row = self.db.one(
-            "SELECT response_json, tokens_in, tokens_out, cost_usd FROM llm_cache WHERE key = ?",
+            "SELECT response_json, tokens_in, tokens_out FROM llm_cache WHERE key = ?",
             (key,),
         )
         if row is None:
@@ -574,7 +553,6 @@ class LlmCache:
             payload=payload,
             tokens_in=row["tokens_in"] or 0,
             tokens_out=row["tokens_out"] or 0,
-            cost_usd=row["cost_usd"] or 0.0,
         )
 
     def put(self, key: str, response: LLMResponse) -> None:
@@ -584,28 +562,16 @@ class LlmCache:
 
         self.db.execute(
             """INSERT OR REPLACE INTO llm_cache
-               (key, response_json, tokens_in, tokens_out, cost_usd, created_at)
-               VALUES (?,?,?,?,?,?)""",
+               (key, response_json, tokens_in, tokens_out, created_at)
+               VALUES (?,?,?,?,?)""",
             (
                 key,
                 json.dumps(response.payload, sort_keys=True),
                 response.tokens_in,
                 response.tokens_out,
-                response.cost_usd,
                 now_iso(),
             ),
         )
-
-    def monthly_spend(self) -> list[dict]:
-        """03-data-model §6 query 10, so the ledger has exactly one owner."""
-        if self.db is None:
-            return []
-        rows = self.db.query(
-            "SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS calls, "
-            "ROUND(SUM(cost_usd), 4) AS cost_usd FROM llm_cache "
-            "GROUP BY month ORDER BY month DESC"
-        )
-        return [dict(r) for r in rows]
 
 
 def quarantine(

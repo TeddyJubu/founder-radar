@@ -74,7 +74,6 @@ def test_openai_completion_parses_payload_and_usage():
     assert response.payload == {"ok": True}
     assert response.tokens_in == 27
     assert response.tokens_out == 63
-    assert response.cost_usd == 0.0  # unknown model id — the free tier records £0 honestly
     call = client.calls[0]
     assert call["url"] == "https://gw/v1/chat/completions"
     assert call["headers"]["Authorization"] == "Bearer k"

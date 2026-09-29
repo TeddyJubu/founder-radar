@@ -136,7 +136,7 @@ def _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm):
 @click.option("--since", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
               help="Only items published on or after YYYY-MM-DD")
 @click.option("--dry-run", is_flag=True, help="Do everything, write nothing")
-@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. Zero AI cost.")
+@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. No AI calls.")
 @click.pass_context
 def run(ctx, fund_key, source_key, since, dry_run, no_llm):
     """The daily run: fetch → extract → resolve → enrich → score → render."""
@@ -151,7 +151,7 @@ def run(ctx, fund_key, source_key, since, dry_run, no_llm):
 @click.option("--since", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
               help="Only items published on or after YYYY-MM-DD")
 @click.option("--dry-run", is_flag=True, help="Do everything, write nothing")
-@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. Zero AI cost.")
+@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. No AI calls.")
 @click.option("--send", "send_ping", is_flag=True,
               help="Also push the dashboard ping to Telegram when the scan finishes")
 @click.option("--background", is_flag=True,
@@ -258,7 +258,7 @@ def rescore(ctx, all_):
                    "DURATION (e.g. 26h). FR-9.3.")
 @click.pass_context
 def status(ctx, stale_after):
-    """Last run, source health, this month's AI cost.
+    """Last run and source health.
 
     With `--alert-if-stale` this is also the heartbeat the systemd timer runs
     (FR-9.3, 08-deployment §4). The check itself lives in
@@ -286,10 +286,10 @@ def status(ctx, stale_after):
     result = check(conn, stale_after=threshold)
     if ctx.obj["json"]:
         _emit({"status": report, "stale": result.stale, "alerts": result.alerts,
-               "alert_sent": result.sent}, True)
+               "still_open": result.suppressed or [], "alert_sent": result.sent}, True)
     else:
         _emit(report, False)
-        for line in result.alerts or ["✅ Founder Radar heartbeat: healthy."]:
+        for line in result.lines():
             click.echo(line)
     sys.exit(EXIT_PARTIAL if result.alerts else EXIT_OK)
 
@@ -855,6 +855,16 @@ def doctor(ctx):
     checks.append((
         "hermes binary", bool(hermes),
         hermes or "required for Today QA / publish — set HERMES_BIN in hermes.env",
+    ))
+
+    from radar.fetch.http import user_agent, user_agent_is_placeholder
+
+    placeholder_ua = user_agent_is_placeholder()
+    checks.append((
+        "crawler User-Agent", not placeholder_ua,
+        "placeholder contact (example.com) — set RADAR_USER_AGENT to a real URL and "
+        "address so a blocking site can reach someone"
+        if placeholder_ua else user_agent(),
     ))
 
     try:

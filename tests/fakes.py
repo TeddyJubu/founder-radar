@@ -365,8 +365,8 @@ def seed_failed_source(db: Any, source_key: str = "uktn",
     db.execute(
         "INSERT INTO run(started_at, finished_at, mode, scope, items_fetched, "
         "items_extracted, companies_new, companies_merged, gated_out, shortlisted, "
-        "llm_calls, llm_cost_usd, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (stamp, stamp, "daily", None, 412, 38, 6, 1, 374, 6, 0, 0.0, "partial"),
+        "llm_calls, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (stamp, stamp, "daily", None, 412, 38, 6, 1, 374, 6, 0, "partial"),
     )
     run_id = db.scalar("SELECT MAX(id) FROM run")
     db.execute(

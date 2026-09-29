@@ -9,7 +9,7 @@ heavier than `datetime` must be imported inside the function that needs it.
 Four renderers, all pure reads:
 
 * `render_digest` — the daily message. Three shapes: full day, quiet day, zero day.
-* `render_status` — last run, source health, this month's AI spend.
+* `render_status` — last run and source health.
 * `render_show`   — one company, its signals and its score breakdown.
 * `render_fund`   — top current matches for one fund.
 
@@ -779,7 +779,7 @@ _STATUS_ICON = {"ok": "✅", "partial": "⚠️", "running": "⏳", "failed": "�
 
 
 def render_status(db) -> str:
-    """Last run, source health, this month's AI cost (07-interfaces §2)."""
+    """Last run and source health (07-interfaces §2)."""
     lines = ["📡 Founder Radar — status", ""]
 
     last = db.one(
@@ -797,10 +797,6 @@ def render_status(db) -> str:
             f"          {int(last['items_fetched'] or 0)} scanned · "
             f"{int(last['gated_out'] or 0)} gated out · "
             f"{int(last['shortlisted'] or 0)} shortlisted"
-        )
-        lines.append(
-            f"          AI {int(last['llm_calls'] or 0)} calls · "
-            f"${float(last['llm_cost_usd'] or 0):.2f}"
         )
         if last["error"]:
             lines.append(f"          ⚠️ {_truncate(last['error'], 90)}")
@@ -823,15 +819,7 @@ def render_status(db) -> str:
             line += f" — {_truncate(row['error'], 60)}"
         lines.append(line)
 
-    month = _now().strftime("%Y-%m")
-    spend = db.scalar(
-        "SELECT ROUND(SUM(cost_usd), 2) FROM llm_cache "
-        "WHERE strftime('%Y-%m', created_at) = ?",
-        (month,),
-    )
     lines.append("")
-    lines.append(f"AI cost {month}  ${float(spend or 0):.2f}")
-
     companies = db.scalar("SELECT COUNT(*) FROM company WHERE merged_into IS NULL") or 0
     shortlisted = db.scalar(
         "SELECT COUNT(DISTINCT company_id) FROM score WHERE tier = ?", (SHORTLIST_TIER,)

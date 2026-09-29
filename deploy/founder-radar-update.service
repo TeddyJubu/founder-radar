@@ -9,6 +9,8 @@ Description=Pull origin/main and reinstall UK Founder Radar
 Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
 After=network-online.target
 Wants=network-online.target
+# The timer retries every five minutes; the alert unit rate-limits itself.
+OnFailure=founder-radar-alert@%n.service
 
 [Service]
 Type=oneshot

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -28,6 +29,21 @@ RETRY_STATUS = {429, 500, 502, 503, 504}
 def user_agent() -> str:
     """Honest UA with a working contact URL. Never disguise the crawler."""
     return os.environ.get("RADAR_USER_AGENT", DEFAULT_UA)
+
+
+_PLACEHOLDER_HOST = re.compile(r"(?<![\w.-])example\.(?:com|org|net)\b", re.I)
+
+
+def user_agent_is_placeholder(agent: str | None = None) -> bool:
+    """True while the contact details are the template's `example.com` ones.
+
+    The point of an honest User-Agent is that a webmaster who is being
+    crawled can write to someone. A placeholder address reaches nobody, and
+    the sites that block the crawler (403 on every request) have no way to
+    ask for an allowlisting — so `doctor` says so instead of it staying a
+    silent default.
+    """
+    return bool(_PLACEHOLDER_HOST.search(agent if agent is not None else user_agent()))
 
 
 def sha256_text(text: str) -> str:

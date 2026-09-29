@@ -26,7 +26,7 @@ The design principle: **never overwrite a fact, always add an observation.** Whe
    merge_event        (every merge, reversible, with the rule and evidence)
    run / run_source   (operational history)
    fetch_log          (ETag / Last-Modified / content hash, per URL)
-   llm_cache          (content-hash → response; also the cost ledger)
+   llm_cache          (content-hash → response and token counts)
    quarantine         (records that failed validation, kept for inspection)
    config_snapshot    (validated config + hash, for reproducibility)
    postcode_region    (local cache of postcode prefix → UK region)
@@ -390,7 +390,7 @@ CREATE TABLE run (
   gated_out       INTEGER DEFAULT 0,
   shortlisted     INTEGER DEFAULT 0,
   llm_calls       INTEGER DEFAULT 0,
-  llm_cost_usd    REAL DEFAULT 0,
+  llm_cost_usd    REAL DEFAULT 0,  -- DEPRECATED: cost tracking removed, never written
   status          TEXT NOT NULL,   -- running | ok | partial | failed
   error           TEXT
 );
@@ -420,7 +420,7 @@ CREATE TABLE llm_cache (
   response_json TEXT NOT NULL,
   tokens_in   INTEGER,
   tokens_out  INTEGER,
-  cost_usd    REAL,
+  cost_usd    REAL,               -- DEPRECATED: cost tracking removed, never written
   created_at  TEXT NOT NULL
 );
 
@@ -597,10 +597,6 @@ WHERE merged_into IS NULL
   AND norm_key NOT IN (SELECT norm_key FROM placeholder_name)
 GROUP BY norm_key, country_iso2
 HAVING c > 1;
-
--- 10. Monthly AI spend
-SELECT strftime('%Y-%m', created_at) m, COUNT(*), ROUND(SUM(cost_usd),2)
-FROM llm_cache GROUP BY m ORDER BY m DESC;
 ```
 
 Query 2 is the one to run weekly. If the median age of shortlisted companies creeps above 24 months, the system is drifting back toward the version 1 failure and the gates need tightening.

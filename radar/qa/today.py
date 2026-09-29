@@ -398,12 +398,17 @@ class HermesSubagent:
         binary = self._binary or resolve_hermes_binary()
         if not binary:
             raise HermesUnavailable("hermes binary not on PATH")
+        _refresh_hermes_acl()
         try:
-            from radar.qa.publish import _ensure_hermes_acl
+            return self._query(binary, prompt)
+        finally:
+            # Hermes, running as radar under the operator's home, rewrites
+            # files there (auth.json, caches) and chmods the tree. Healing only
+            # *before* the next run left the gateway — which reads the same
+            # files as the operator — crash-looping in between.
+            _refresh_hermes_acl()
 
-            _ensure_hermes_acl()
-        except Exception:  # noqa: BLE001 — ACL refresh is best-effort
-            pass
+    def _query(self, binary: str, prompt: str) -> str:
         # stdin=True means the prompt is the query body; otherwise it is argv.
         attempts: list[tuple[list[str], bool]] = [
             ([binary, "chat", "-Q", "--query-file", "-"], True),
@@ -436,6 +441,15 @@ class HermesSubagent:
             last = f"exit {completed.returncode}: {text[:240]}"
             log.warning("hermes today-qa %s: %s", _argv_for_log(argv), last)
         raise HermesUnavailable(last or "hermes returned nothing")
+
+
+def _refresh_hermes_acl() -> None:
+    try:
+        from radar.qa.publish import _ensure_hermes_acl
+
+        _ensure_hermes_acl()
+    except Exception:  # noqa: BLE001 — ACL refresh is best-effort
+        pass
 
 
 def build_today_checker(*, checker: TodayChecker | None = None) -> TodayChecker | None:

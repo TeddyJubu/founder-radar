@@ -459,7 +459,7 @@ def test_source_failures_appear_only_on_the_sources_tab(db, sheet):
         assert "failed" not in sheet.text_of(tab).lower()
 
     # Run Log still names the source that failed — that tab is the audit trail.
-    assert "uktn" in sheet.column(RUN_LOG, "O")
+    assert "uktn" in sheet.column(RUN_LOG, "M")
 
 
 def test_oxford_health_joins_under_its_registry_key(db, sheet):

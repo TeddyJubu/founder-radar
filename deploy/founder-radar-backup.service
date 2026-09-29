@@ -6,6 +6,7 @@
 [Unit]
 Description=Founder Radar database backup
 Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+OnFailure=founder-radar-alert@%n.service
 
 [Service]
 Type=oneshot

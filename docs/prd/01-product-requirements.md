@@ -178,7 +178,7 @@ Each requirement has an ID, a plain statement, and an acceptance test. **A requi
 | | |
 |---|---|
 | **FR-9.1** | The daily run is scheduled by a systemd timer, not by any application-level scheduler, so it survives upgrades and daemon crashes. |
-| **FR-9.2** | Every run writes a row to `Run Log` with counts, timings, per-source status, AI token spend and cost. |
+| **FR-9.2** | Every run writes a row to `Run Log` with counts, timings, per-source status. |
 | **FR-9.3** | A heartbeat alerts by Telegram if no successful run completed in the last 26 hours. |
 | **FR-9.4** | The database is backed up daily, with 14 days retained. |
 | **FR-9.5** | Secrets live in a `0600` env file outside the repository and are never logged. |

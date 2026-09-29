@@ -189,7 +189,7 @@ changes.
 | **Total** | **under £10** |
 
 Three levers to go lower, all of them sheet edits rather than code changes: switch
-`llm_model` to a smaller model, set `llm_enabled = FALSE` for £0 and slightly rougher
+`llm_model` to a smaller model, set `llm_enabled = FALSE` for no AI calls and slightly rougher
 reading, or disable the highest-volume news sources on the `Sources` tab.
 
 ## A note on the service-account key

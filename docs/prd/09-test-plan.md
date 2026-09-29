@@ -665,7 +665,7 @@ def test_every_run_writes_a_run_log_row(pipeline, db):
     pipeline.run()
     row = db.one("SELECT * FROM run ORDER BY id DESC LIMIT 1")
     for f in ("items_fetched","companies_new","gated_out","shortlisted",
-              "llm_calls","llm_cost_usd","status","finished_at"):
+              "llm_calls","status","finished_at"):
         assert row[f] is not None                                     # FR-9.2
 
 def test_heartbeat_alerts_when_stale(db, mock_telegram):

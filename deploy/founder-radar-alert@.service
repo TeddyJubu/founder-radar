@@ -1,0 +1,32 @@
+# /etc/systemd/system/founder-radar-alert@.service
+#
+# Template unit: `founder-radar-alert@<failed-unit>.service` tells Telegram that
+# <failed-unit> failed. The auto-deploy, the nightly backup and the daily scan
+# name it in `OnFailure=founder-radar-alert@%n.service`. The heartbeat does not:
+# a non-zero heartbeat already is an alert.
+#
+# It only needs to talk to Telegram and stamp one row in the database, so it
+# gets the heartbeat's small, locked-down profile.
+
+[Unit]
+Description=Founder Radar failure alert for %i
+Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=radar
+Group=radar
+WorkingDirectory=/opt/founder-radar/app
+EnvironmentFile=/opt/founder-radar/.env
+Environment=TZ=Europe/London
+ExecStart=/opt/founder-radar/venv/bin/python -m radar.notify.alert %i
+TimeoutStartSec=60
+MemoryMax=128M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs
+StandardOutput=append:/opt/founder-radar/logs/alert.log
+StandardError=append:/opt/founder-radar/logs/error.log

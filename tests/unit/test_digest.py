@@ -88,13 +88,13 @@ def seed_components(db, score_id, components=None):
 
 
 def seed_run(db, *, on=DAY, scanned=412, gated_out=374, shortlisted=6, status="ok",
-             llm_calls=120, cost=0.42, mode="daily"):
+             mode="daily"):
     db.execute(
         """INSERT INTO run (started_at, finished_at, mode, items_fetched, gated_out,
-                            shortlisted, llm_calls, llm_cost_usd, status)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+                            shortlisted, status)
+           VALUES (?,?,?,?,?,?,?)""",
         (f"{on}T06:30:00Z", f"{on}T06:44:00Z", mode, scanned, gated_out, shortlisted,
-         llm_calls, cost, status),
+         status),
     )
     return db.scalar("SELECT last_insert_rowid()")
 
@@ -422,8 +422,8 @@ def test_unknown_incorporation_date_does_not_break_the_median(db):
 # ------------------------------------------------------------------- status
 
 
-def test_status_reports_last_run_sources_and_spend(db):
-    run_id = seed_run(db, scanned=412, gated_out=374, shortlisted=6, cost=0.42)
+def test_status_reports_last_run_and_sources(db):
+    run_id = seed_run(db, scanned=412, gated_out=374, shortlisted=6)
     for key, status, items, error in (
         ("companies_house", "ok", 412, None),
         ("conception_x", "skipped", 0, None),
@@ -433,21 +433,13 @@ def test_status_reports_last_run_sources_and_spend(db):
             "INSERT INTO run_source (run_id, source_key, status, items, error) "
             "VALUES (?,?,?,?,?)", (run_id, key, status, items, error))
 
-    from radar.render.digest import _now
-
-    db.execute(
-        "INSERT INTO llm_cache (key, response_json, cost_usd, created_at) VALUES (?,?,?,?)",
-        ("k1", "{}", 2.91, _now().strftime("%Y-%m-%dT%H:%M:%SZ")),
-    )
-
     text = render_status(db)
 
     assert "Last run" in text and "ok" in text
     assert "412 scanned · 374 gated out · 6 shortlisted" in text
-    assert "AI 120 calls · $0.42" in text
+    assert "AI" not in text and "$" not in text   # no cost tracking
     assert "✅ companies_house  412" in text
     assert "❌ uktn" in text and "HTTP 503" in text
-    assert "$2.91" in text
 
 
 def test_status_on_an_empty_database_says_so_rather_than_crashing(db):

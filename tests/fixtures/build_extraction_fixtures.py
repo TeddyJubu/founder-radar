@@ -102,7 +102,6 @@ class Fixture:
             "model_id": DEFAULT_MODEL,
             "tokens_in": int(len(pre.text) / 4) + 300,
             "tokens_out": 350,
-            "cost_usd": 0.001,
         }
         (LLM_CACHE / f"{key}.json").write_text(
             json.dumps(entry, indent=2, sort_keys=True) + "\n", encoding="utf-8")

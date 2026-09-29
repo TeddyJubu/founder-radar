@@ -111,7 +111,7 @@ SETTING_SPECS: tuple[tuple[str, str, str], ...] = (
     ("max_enrichment_requests_per_run", "int", "Companies House request budget (not companies)"),
     ("daily_digest_max", "int", "Cap on digest length"),
     ("llm_model", "string", "Swap provider without a redeploy"),
-    ("llm_enabled", "bool", "Off = heuristic extraction only, zero AI cost"),
+    ("llm_enabled", "bool", "Off = heuristic extraction only, no AI calls"),
 )
 
 FUND_DISPLAY: dict[str, str] = {
@@ -928,10 +928,8 @@ def build_run_log(db: Any) -> list[Row]:
             "I": _txt(run["companies_merged"]),
             "J": _txt(run["gated_out"]),
             "K": _txt(run["shortlisted"]),
-            "L": _txt(run["llm_calls"]),
-            "M": _num(run["llm_cost_usd"], 4),
-            "N": run["status"],
-            "O": ", ".join(failed.get(run["id"], [])),
+            "L": run["status"],
+            "M": ", ".join(failed.get(run["id"], [])),
         }))
     return rows
 
