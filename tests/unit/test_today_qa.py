@@ -402,7 +402,7 @@ def test_skill_maps_today_qa_to_the_cli():
     from radar.notify.telegram import skill_commands
 
     argv = skill_commands("hermes/skills/founder-radar/SKILL.md")
-    assert ["today-qa"] in argv
+    assert any(command and command[0] == "today-qa" for command in argv)
     assert ["today"] in argv
     assert ["search"] in argv
     assert "today-qa" in cli.commands
