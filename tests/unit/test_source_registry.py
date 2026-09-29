@@ -852,6 +852,15 @@ def test_aryan_named_early_sources_are_enabled_by_default():
         "oxford_innovation",
         "ucl_ventures",
         "northern_accelerator",
+        # Tier 2 diversification — on by default so UKRI volume is not alone.
+        "sheffield",
+        "edinburgh_innovations",
+        "carbon13",
+        "bethnal_green",
+        "techstars_london",
+        "bdaily_regional",
+        "startups_magazine",
+        "converge",
     }
     missing = required - enabled
     assert not missing, f"named early sources not on by default: {missing}"

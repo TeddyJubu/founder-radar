@@ -55,8 +55,8 @@ ENDPOINT = f"{BASE}/api/search/project"
 
 #: GtR's own facet id, spelled out rather than pasted as a base64 blob.
 INNOVATE_UK_FACET = base64.b64encode(b"funder|Innovate UK|string").decode()
-PER_PAGE = 100
-PAGES = 2                       # ~200 newest awards a week; the source is weekly
+PER_PAGE = 25
+PAGES = 1                       # ~25 newest awards a week; PRD target ~5–15
 ABSTRACT_CHARS = 2000
 
 #: Lead organisations that are not companies. Small on purpose — every token

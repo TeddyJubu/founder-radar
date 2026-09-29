@@ -513,6 +513,16 @@ DEFAULT_SOURCES = [
     SourceConfig(key="ukri_gtr", track="A", note="Innovate UK awards via UKRI GtR"),
     SourceConfig(key="innovate_uk", track="A", note="Innovate UK funded-projects workbook"),
     SourceConfig(key="vc_portfolios", track="A", note="The denylist — feeds on_vc_portfolio"),
+    # Tier 2 regional / cohort / news adapters — diversify away from UKRI volume
+    # so Today is not grant-dominated. Adapters are registered and fixture-tested.
+    SourceConfig(key="sheffield", track="A", note="Sheffield commercialisation news"),
+    SourceConfig(key="edinburgh_innovations", track="A", note="Edinburgh Innovations news"),
+    SourceConfig(key="carbon13", track="A", note="Carbon13 climate venture builder"),
+    SourceConfig(key="bethnal_green", track="A", note="Bethnal Green Ventures portfolio"),
+    SourceConfig(key="techstars_london", track="A", note="Techstars London newsroom"),
+    SourceConfig(key="bdaily_regional", track="A", note="Bdaily North East regional RSS"),
+    SourceConfig(key="startups_magazine", track="A", note="Startups Magazine WordPress feed"),
+    SourceConfig(key="converge", track="A", note="Converge challenge / spinout news"),
 ]
 
 

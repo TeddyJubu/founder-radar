@@ -1349,8 +1349,13 @@ function render() {
 }
 
 function renderProgress() {
-  const n = data?.companies?.length || 0;
-  const left = Math.max(n - i, 0);
+  // Uncapped backlog from the API, not the 20-card page. In-session
+  // decisions shrink the count before the next /api/today refetch.
+  const totalsRemaining = Number(data?.totals?.remaining);
+  const base = Number.isFinite(totalsRemaining)
+    ? totalsRemaining
+    : (data?.companies?.length || 0);
+  const left = Math.max(base - sessionReviewed.size, 0);
   $("#progress").textContent = left > 0 ? `${left} left` : "";
 }
 

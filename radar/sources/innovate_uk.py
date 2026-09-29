@@ -72,7 +72,7 @@ HREF_XLSX_RE = re.compile(
     re.I,
 )
 #: A monthly source with no `since` must not hand the pipeline ten years of awards.
-LOOKBACK_DAYS = 365
+LOOKBACK_DAYS = 60
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 SHARED_STRINGS = "xl/sharedStrings.xml"

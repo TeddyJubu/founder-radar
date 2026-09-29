@@ -118,14 +118,19 @@ def test_ukri_gtr_asks_for_innovate_uk_awards_newest_first():
     import base64
 
     assert base64.b64decode(ukri_gtr.INNOVATE_UK_FACET) == b"funder|Innovate UK|string"
+    assert ukri_gtr.PAGES == 1
+    assert ukri_gtr.PER_PAGE == 25
 
     http = _StubHttp(load_bytes("ukri_gtr.json").decode())
     items = list(ukri_gtr.ADAPTER.fetch(_ctx(http)))
-    assert len(items) == 6                       # deduplicated across both pages
+    assert len(items) == 6
+    assert len(http.calls) == 1
     params = http.calls[0][1]["params"]
     assert params["selectedFacets"] == ukri_gtr.INNOVATE_UK_FACET
     assert params["selectedSortableField"] == "pro.sd"
     assert params["selectedSortOrder"] == "DESC"
+    assert params["fetchSize"] == 25
+    assert params["page"] == 1
 
 
 # ---------------------------------------------------- Innovate UK XLSX file

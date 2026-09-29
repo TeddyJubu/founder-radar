@@ -7,11 +7,13 @@
 - Rejected companies must not resurface on Today after a reject/“not for me” decision.
 - Geography focus is UK-based startups; non-UK companies should not appear on the morning list.
 - Treat Companies House as verification / incorporation age evidence, not the primary way to surface high-quality startups; lean on signal sources for quality discovery.
-- Telegram keep/reject/actions must update the same store as the dashboard and sheet (CLI/UI decisions), not stay chat-only.
+- Telegram keep/reject/actions must update the same store as the dashboard and sheet (CLI/UI decisions), not stay chat-only; Telegram search must land on the Today dashboard rather than dump company lists in chat.
 - Fund criteria shown in product must match the real fund rules; do not invent descriptors (e.g. “government-backed” for Outward) that are not in criteria.
-- Prefer Hermes to own hard ops and run a pre-publish QA check so bad Today lists are not shipped; treat founder-radar as a tool Hermes drives.
+- Prefer Hermes to own hard ops and run a pre-publish QA check so bad Today lists are not shipped; treat founder-radar as a tool Hermes drives, never the retired v1 `~/radar` sheet/Companies House scout.
 - When ops are needed on the production VPS, run the commands there rather than only handing back copy-paste instructions.
 - Client wants an interactive teaching guide for architecture, usage, and how the system was built, with Easy/Technical audience modes; Easy copy must stay kid-clear plain language.
+- Deferred product call (do not change scoring gates yet): London ↔ DSW — hard-block London from all DSW vehicles vs keep EIS open but demote London so it cannot win “best fund”.
+- Deferred product call (do not add fund quotas yet): Fund mix on Today — soft rebalance (sources + light caps) vs hard per-fund quotas.
 
 ## Learned Workspace Facts
 
@@ -21,7 +23,7 @@
 - Hermes must run `founder-radar decide` for Telegram keep/reject/unsure; chat-only replies do not update Today, Kept, or the sheet.
 - Stage ⑥ gate+score is deterministic (no AI, no network); AI may extract prose, map chat to commands, and run Today QA veto — not invent scores or add companies to the sheet.
 - Morning pipeline includes Hermes Today QA before render/publish; `founder-radar today-qa` re-runs that check.
-- Production install lives on the VPS under `/opt/founder-radar` (service user `radar`); local web API is typically `http://127.0.0.1:8787`; SSH host alias `aryan` reaches that box.
+- Production install lives on the VPS under `/opt/founder-radar` (service user `radar`); Today is at `https://srv1821489.hstgr.cloud/`; local web API is typically `http://127.0.0.1:8787`; SSH host alias `aryan` reaches that box.
 - Ops diagnostics center on `founder-radar doctor`, `why-today`, and rescoring when fund criteria / `config_hash` drift; deploy pull script is `deploy/update-from-main.sh`.
 - Teaching guide is the Vite + React + shadcn app in `guide/` (pdfcn PDF); production serves it publicly at `/guide/` from `/opt/founder-radar/guide` with no basic auth (Today/Kept stay password-protected).
 - Primary docs: `docs/prd/` for product spec, `docs/ops-guide.md` (also `/help` in the Today prototype) for sheet ↔ UI ↔ Telegram runbook, and the public teaching guide at `/guide/`.

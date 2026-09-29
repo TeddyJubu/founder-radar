@@ -308,14 +308,21 @@ def test_b17_companies_house_badge_follows_verification_signal(page, server, dem
 
 
 def test_b8_b9_progress_count(today, api):
+    # Progress is uncapped backlog (totals.remaining), not the 20-card page.
+    remaining = int(api["totals"]["remaining"])
     n = len(api["companies"])
     progress = today.locator(tid("progress"))
-    assert progress.inner_text() == f"{n} left"
+    assert progress.inner_text() == f"{remaining} left"
+    # Peeking at the next card must not shrink the true backlog.
     today.keyboard.press("ArrowRight")
-    assert progress.inner_text() == f"{n - 1} left"
+    assert progress.inner_text() == f"{remaining} left"
+    today.keyboard.press("ArrowLeft")
+    assert progress.inner_text() == f"{remaining} left"
     _review_each_card(today, n, "3")
     assert today.locator(tid("done-state")).count() == 1
+    # Demo shortlist fits in one page, so finishing the queue clears the count.
     assert progress.inner_text() == ""
+    assert remaining == n
 
 
 def test_b10_b11_verdict_bar(today):
