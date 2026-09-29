@@ -670,25 +670,40 @@ def test_d8_verdict_round_trip_upserts(today, server, demo_db):
     name = today.locator(tid("company-name")).inner_text()
     cid = today.locator(tid("card")).get_attribute("data-company-id")
 
-    today.keyboard.press("1")
-    today.wait_for_timeout(400)
+    ready = """cid => {
+      const card = document.querySelector('[data-testid="card"]');
+      const buttons = [...document.querySelectorAll('button[data-testid^="verdict-"]')];
+      return card?.dataset.companyId === cid && buttons.length === 3
+        && buttons.every(button => !button.disabled);
+    }"""
+    with today.expect_response(lambda response: response.url.endswith("/api/verdict")) as saved:
+        today.keyboard.press("1")
+    assert saved.value.ok
+    saved.value.finished()
+    advanced = ready.replace("=== cid", "!== cid")
+    today.wait_for_function(advanced, arg=cid)
 
-    conn = sqlite3.connect(str(demo_db))
-    rows = conn.execute(
-        "SELECT value FROM user_field WHERE field='verdict' AND company_id=?",
-        (cid,)).fetchall()
-    assert rows == [("worth contacting",)], f"{name}: {rows}"
+    with sqlite3.connect(str(demo_db)) as conn:
+        rows = conn.execute(
+            "SELECT value FROM user_field WHERE field='verdict' AND company_id=?",
+            (cid,)).fetchall()
+        assert rows == [("worth contacting",)], f"{name}: {rows}"
 
-    today.keyboard.press("Control+z")
-    today.wait_for_timeout(300)
-    today.keyboard.press("3")
-    today.wait_for_timeout(400)
+        with today.expect_response(lambda response: response.url.endswith("/api/undo")) as undone:
+            today.keyboard.press("Control+z")
+        assert undone.value.ok
+        undone.value.finished()
+        today.wait_for_function(ready, arg=cid)
 
-    rows = conn.execute(
-        "SELECT value FROM user_field WHERE field='verdict' AND company_id=?",
-        (cid,)).fetchall()
-    conn.close()
-    assert rows == [("not for me",)], f"expected one upserted row, got {rows}"
+        with today.expect_response(lambda response: response.url.endswith("/api/verdict")) as rejected:
+            today.keyboard.press("3")
+        assert rejected.value.ok
+        rejected.value.finished()
+        today.wait_for_function(advanced, arg=cid)
+        rows = conn.execute(
+            "SELECT value FROM user_field WHERE field='verdict' AND company_id=?",
+            (cid,)).fetchall()
+        assert rows == [("not for me",)], f"expected one upserted row, got {rows}"
 
 
 def test_d9_the_sweep_consumes_the_verdicts(today, demo_db, api):
