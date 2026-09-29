@@ -110,6 +110,8 @@ def _supports(quote_field: str, data: dict, quote: str, source_text: str) -> boo
         aliases = {"pre_seed": ("pre seed", "pre-seed"), "series_a": ("series a",),
                    "series_b_plus": ("series b", "series c", "series d"),
                    "seed": ("seed",), "idea": ("idea",), "growth": ("growth",)}
+        if data.get("stage") == "seed" and _mentions("pre seed", quote):
+            return False
         return any(_mentions(alias, quote) for alias in aliases.get(data.get("stage"), ()))
     if quote_field == "evidence_quote_spinout":
         return (bool(re.search(r"spin[ -]?(?:out|off)", quote, re.I))
@@ -170,7 +172,12 @@ def ground(extraction: Extraction, source_text: str, *, source_url: str | None =
         quote = founder.get("evidence_quote")
         if quote:
             checked += 1
-            if appears_verbatim(quote, source_text) and _mentions(founder.get("name"), quote):
+            sentences = re.split(r"(?<=[.!?])\s+", normalise_ws(source_text))
+            associated = any(normalise_ws(quote) in sentence
+                             and _mentions(data.get("company_name"), sentence)
+                             for sentence in sentences)
+            if (appears_verbatim(quote, source_text)
+                    and _mentions(founder.get("name"), quote) and associated):
                 kept_founders.append(founder)
                 continue
             failed += 1

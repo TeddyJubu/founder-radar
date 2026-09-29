@@ -88,3 +88,17 @@ def test_noindex_source_html_blocks_parsing():
     from radar.sources.base import SourceBlocked
     with pytest.raises(SourceBlocked, match="noindex"):
         html_doc('<meta name="robots" content="noindex"><p>Acme</p>', 'test')
+
+
+def test_founder_of_another_company_is_not_attached():
+    record = blank(is_about_single_company=True, company_name="Acme",
+        evidence_quote_company="Acme develops packaging.",
+        founders=[{"name":"Jane Smith", "evidence_quote":"Jane Smith founded Beta yesterday."}])
+    assert ground(record, "Acme develops packaging. Jane Smith founded Beta yesterday.").extraction.founders == []
+
+
+def test_pre_seed_passage_does_not_support_seed_stage():
+    text = "Acme raised a pre-seed round yesterday."
+    record = blank(is_about_single_company=True, company_name="Acme", stage="seed",
+        evidence_quote_company=text, evidence_quote_stage=text)
+    assert ground(record, text).extraction.stage is None
