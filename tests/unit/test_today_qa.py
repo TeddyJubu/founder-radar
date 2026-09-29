@@ -29,7 +29,7 @@ from radar.qa.today import (
     run_today_qa,
     subagent_prompt,
 )
-from tests.fakes import seed_companies
+from tests.fakes import seed_companies, source_link_proof
 
 
 def _card(**kw) -> TodayCard:
@@ -152,8 +152,10 @@ def test_today_qa_hides_a_rejected_company(db):
 
 def test_today_qa_pass_still_shown(db):
     ids = seed_companies(db, count=1, shortlist=1)
+    card = load_today_cards(db, default_config(), company_id=ids[0])[0]
+    source_link_proof(db, card.source_url)
     record_check(
-        db, load_today_cards(db, default_config(), company_id=ids[0])[0],
+        db, card,
         TodayCheckResult(verdict="pass", checker="hermes", summary="Looks early."),
     )
     shown = {row["company_id"] for row in build_today(db.conn)["companies"]}
