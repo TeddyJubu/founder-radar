@@ -188,6 +188,7 @@ rules-only override is enabled or per-card QA was skipped.
 Publish-time QA changes refresh the Sheet before the Telegram ping. A Sheet
 outage is reported as a warning; the approved dashboard can still be announced,
 but the Sheet may be behind until the next successful sync.
+
 ### Trusted auto-updates
 
 The installation root, application checkout and Python environment are root-owned.
@@ -199,3 +200,13 @@ Runtime packages are installed from `deploy/requirements.lock`, generated from `
 with versions and artifact hashes checked. Python build tooling remains supplied by pip's isolated build.
 Integration tests require `TEST_SHEET_ID` and a tab named `FOUNDER_RADAR_TEST_SCRATCH`;
 the marker survives resets. Never put that marker on a real customer spreadsheet.
+### Undoing a Today decision
+
+Ctrl+Z asks the server to restore the previous saved verdict and today's review
+marker. It says “Undone” only after the stored change succeeds. If the decision
+was mirrored to the Sheet, that cell must also be restored. A Sheet outage
+leaves the decision saved and shows an error so you can retry. Undo records
+are limited to 200 recent web decisions and expire when the server restarts;
+a later decision from another surface prevents an old undo from overwriting it.
+While a decision is saving, the page pauses navigation and other decisions.
+Write requests require JSON and reject cross-origin browser requests.

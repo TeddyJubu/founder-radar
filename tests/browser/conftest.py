@@ -19,6 +19,7 @@ all Playwright and this server need.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import socket
 import subprocess
@@ -84,6 +85,7 @@ def server(demo_db: Path):
     proc = subprocess.Popen(
         [sys.executable, str(SERVER), "--db", str(demo_db), "--port", str(port)],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(REPO),
+        env={**os.environ, "PYTHONPATH": str(REPO)},
     )
     base = f"http://127.0.0.1:{port}"
 

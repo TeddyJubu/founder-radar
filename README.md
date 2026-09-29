@@ -174,10 +174,9 @@ tomorrow's crawl of the same article cannot reinstate them.
 See [`docs/privacy-notice.md`](docs/privacy-notice.md) and
 [`docs/legitimate-interests.md`](docs/legitimate-interests.md).
 
-Before a public release, run the dependency-free [public-release safety
-policy](docs/public-release-policy.md). CI checks every tracked tree; the
-manual history gate checks all reachable branches and tags before visibility
-changes.
+Before a public release, review the [privacy notice](docs/privacy-notice.md)
+and [deployment guide](docs/prd/08-deployment.md). Keep credentials and client
+data out of the public repository.
 
 ## Cost
 

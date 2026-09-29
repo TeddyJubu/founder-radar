@@ -228,7 +228,8 @@ def mirror_verdict(company_id: str, verdict: str, *,
     """
     if not company_id:
         raise ValueError("company_id is required")
-    if verdict not in {"worth contacting", "not for me", "unsure"}:
+    # "" clears the cell: Undo of a first-ever decision has no verdict to put back.
+    if verdict not in {"worth contacting", "not for me", "unsure", ""}:
         raise ValueError("unsupported verdict")
 
     gw = gateway or open_gateway()

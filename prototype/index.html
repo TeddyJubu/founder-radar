@@ -741,6 +741,15 @@ button.no  { color: var(--red); }
 <script>
 const $ = (s) => document.querySelector(s);
 let data = null, i = 0, history = [], sessionReviewed = new Set();
+// One server round-trip at a time (decide, undo, review again). While one is
+// pending, navigation, a second decision and the background refresh are all
+// ignored: each of them moves `i` or replaces `data`, which is exactly what a
+// late response would then advance from or roll back against.
+let busy = false;
+function setBusy(on) {
+  busy = on;
+  $("#footer").setAttribute("aria-busy", on ? "true" : "false");
+}
 
 const fmtMoney = (n) =>
   n == null ? null : "£" + (n >= 1e6 ? (n/1e6).toFixed(n % 1e6 ? 1 : 0) + "m"
@@ -1365,52 +1374,114 @@ function toast(msg) {
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600);
 }
 
+async function postJson(url, payload) {
+  // null on a network failure: the caller cannot tell whether the server saw it.
+  try {
+    return await fetch(url, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+  } catch { return null; }
+}
+
 async function decide(verdict) {
-  const c = data.companies[i];
+  if (busy) return;
+  // Everything below is bound to this card and this queue, not to whatever
+  // `i` and `data` hold when the response comes back.
+  const queue = data, index = i;
+  const c = queue?.companies[index];
   if (!c) return;
   if (sessionReviewed.has(c.company_id)) return;
+  setBusy(true);
   sessionReviewed.add(c.company_id);
-  history.push({ index: i, company_id: c.company_id });
-  const res = await fetch("/api/verdict", {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ company_id: c.company_id, verdict }),
-  });
-  if (!res.ok) {
-    history.pop();
-    sessionReviewed.delete(c.company_id);
-    toast("Couldn't save that decision");
-    return;
-  }
-  let kept = data.totals?.kept;
-  let sheetSync = "unknown";
   try {
-    const body = await res.json();
-    if (typeof body.kept_count === "number") kept = body.kept_count;
-    if (typeof body.sheet_sync === "string") sheetSync = body.sheet_sync;
-  } catch { /* older servers still return {ok:true} only */ }
-  c.verdict = verdict;
-  if (data.totals) data.totals.kept = kept;
-  renderKeptBadge(kept);
-  if (verdict === "worth contacting" || verdict === "unsure") {
-    const sheetNote = ["synced", "already_synced"].includes(sheetSync)
-      ? " · Sheet synced" : " · Sheet sync pending";
-    toast(`${c.name} — saved to Kept${sheetNote}`);
-  } else {
-    toast(`${c.name} — ${verdict}`);
-  }
-  i += 1;
-  if (i >= data.companies.length) {
-    await loadToday();
-  } else {
-    render();
+    const res = await postJson("/api/verdict", { company_id: c.company_id, verdict });
+    if (!res || !res.ok) {
+      sessionReviewed.delete(c.company_id);
+      toast("Couldn't save that decision");
+      return;
+    }
+    let kept = queue.totals?.kept;
+    let sheetSync = "unknown";
+    let undoId = null;
+    try {
+      const body = await res.json();
+      if (typeof body.kept_count === "number") kept = body.kept_count;
+      if (typeof body.sheet_sync === "string") sheetSync = body.sheet_sync;
+      if (typeof body.undo_id === "string") undoId = body.undo_id;
+    } catch { /* older servers still return {ok:true} only */ }
+    history.push({ index, company_id: c.company_id, name: c.name,
+                   undo_id: undoId, prev_verdict: c.verdict });
+    c.verdict = verdict;
+    if (queue.totals) queue.totals.kept = kept;
+    renderKeptBadge(kept);
+    if (verdict === "worth contacting" || verdict === "unsure") {
+      const sheetNote = ["synced", "already_synced"].includes(sheetSync)
+        ? " · Sheet synced" : " · Sheet sync pending";
+      toast(`${c.name} — saved to Kept${sheetNote}`);
+    } else {
+      toast(`${c.name} — ${verdict}`);
+    }
+    if (data !== queue) return;   // the queue was replaced meanwhile: leave `i` alone
+    i = index + 1;
+    if (i >= data.companies.length) {
+      await loadToday();
+    } else {
+      render();
+    }
+  } finally {
+    setBusy(false);
   }
 }
 
-function undo() {
-  const last = history.pop();
-  if (!last) return;
-  sessionReviewed.delete(last.company_id);
-  i = last.index; render(); toast("Undone");
+const UNDO_REFUSED = {
+  404: "Can't undo that one any more — the decision stays saved",
+  409: "Can't undo — that verdict was changed somewhere else, nothing was changed",
+  502: "Couldn't undo — the Google Sheet didn't update, so nothing was changed",
+};
+
+// Undo is a server round-trip: the decision is already in SQLite and mirrored
+// to the Sheet, so the card only comes back, and "Undone" is only said, once
+// the server confirms the stored verdict and today's review marker are restored.
+async function undo() {
+  if (busy) return;
+  const last = history[history.length - 1];
+  if (!last) { toast("Nothing to undo"); return; }
+  if (!last.undo_id) {
+    history.pop();
+    toast("Can't undo that one — the server can't take it back");
+    return;
+  }
+  setBusy(true);
+  try {
+    const res = await postJson("/api/undo",
+                               { undo_id: last.undo_id, company_id: last.company_id });
+    if (!res) {
+      toast("Couldn't confirm the undo — reload to see what is saved");
+      return;
+    }
+    if (!res.ok) {
+      // 404 / 409 can never succeed, so drop the entry rather than block the
+      // ones beneath it; anything else (Sheet down) leaves it there to retry.
+      if (res.status === 404 || res.status === 409) history.splice(history.indexOf(last), 1);
+      toast(UNDO_REFUSED[res.status] || "Couldn't undo — nothing was changed");
+      return;
+    }
+    let body = null;
+    try { body = await res.json(); } catch { /* handled below */ }
+    if (!body || body.undone !== true) {
+      toast("Couldn't confirm the undo — reload to see what is saved");
+      return;
+    }
+    history.splice(history.indexOf(last), 1);
+    sessionReviewed.delete(last.company_id);
+    const c = data.companies[last.index];
+    if (c && c.company_id === last.company_id) c.verdict = last.prev_verdict;
+    if (typeof body.kept_count === "number" && data.totals) data.totals.kept = body.kept_count;
+    i = last.index; render(); toast("Undone");
+  } finally {
+    setBusy(false);
+  }
 }
 
 document.addEventListener("keydown", (e) => {
@@ -1420,9 +1491,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "2") return decide("unsure");
   if (e.key === "3") return decide("not for me");
   if (e.key === "ArrowRight") {
+    if (busy) return;
     if (i + 1 < (data?.companies?.length || 0)) { i += 1; render(); }
   }
   if (e.key === "ArrowLeft")  {
+    if (busy) return;
     const target = i - 1;
     if (target >= 0 && !sessionReviewed.has(data.companies[target].company_id)) {
       i = target; render();
@@ -1446,13 +1519,19 @@ async function loadToday() {
 }
 
 async function reviewAgain() {
-  const res = await fetch("/api/review-again", {method: "POST"});
-  if (!res.ok) {
-    toast("Couldn't start the review again");
-    return;
+  if (busy) return;
+  setBusy(true);
+  try {
+    const res = await postJson("/api/review-again", {});
+    if (!res || !res.ok) {
+      toast("Couldn't start the review again");
+      return;
+    }
+    await loadToday();
+    toast("Reviewing today's companies again");
+  } finally {
+    setBusy(false);
   }
-  await loadToday();
-  toast("Reviewing today's companies again");
 }
 
 loadToday();
@@ -1468,8 +1547,12 @@ function shortlistSig(p) {
 }
 
 async function refresh() {
+  if (busy) return;
   try {
     const next = await (await fetch("/api/today", {cache: "no-store"})).json();
+    // A decision may have started while this fetch was in flight; replacing
+    // `data` now would leave its response advancing the wrong queue.
+    if (busy) return;
     if (shortlistSig(next) === shortlistSig(data)) return;   // nothing new
     data = next;
     i = 0; history = []; sessionReviewed = new Set();
