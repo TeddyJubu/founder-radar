@@ -163,3 +163,36 @@ def test_onboarding_page_carries_no_hand_written_fund_rules():
     assert "<!--FUND_RULES-->" in page
     assert "fund-row" not in page.split("<style>")[-1].split("</style>")[-1], \
         "fund rules are hand-written in the page again"
+
+
+def test_source_health_notes_do_not_change_configuration_identity():
+    cfg = default_config()
+    assert cfg.sources
+    edited = cfg.model_copy(deep=True)
+    for source in edited.sources:
+        source.note = "HTTP 403; no recent eligible publications; article budget reached"
+    assert cfg.hash() == edited.hash()
+    # The serialized snapshot retains notes, and older snapshots with notes
+    # still validate into the same canonical scoring identity.
+    from radar.config.models import Config
+    restored = Config.model_validate_json(edited.model_dump_json())
+    assert restored.sources[0].note == edited.sources[0].note
+    assert restored.hash() == cfg.hash()
+    assert restored.model_dump() != cfg.model_dump()
+
+
+@pytest.mark.parametrize('change', ['key', 'enabled', 'track', 'weight', 'fund'])
+def test_actual_configuration_inputs_still_change_identity(change):
+    cfg = default_config()
+    edited = cfg.model_copy(deep=True)
+    if change == 'key':
+        edited.sources[0].key += '_different'
+    elif change == 'enabled':
+        edited.sources[0].enabled = not edited.sources[0].enabled
+    elif change == 'track':
+        edited.sources[0].track = 'B' if edited.sources[0].track == 'A' else 'A'
+    elif change == 'weight':
+        edited.weights.importance.setdefault('sector', {})['outward'] = 7
+    else:
+        edited.funds[0].vehicles[0].geo_values.append('fictional_changed_region')
+    assert edited.hash() != cfg.hash()
