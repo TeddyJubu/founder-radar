@@ -133,7 +133,7 @@ Prove the plumbing before writing any logic.
 - [ ] `test_heuristic_fallback_when_llm_unavailable` passes
 - [ ] `pytest` makes **zero** network calls — verified by blocking the socket in `conftest.py`
 - [ ] `REFRESH_LLM=1 pytest` re-records cleanly
-- [ ] The cost ledger in `llm_cache` populates with real token counts
+- [ ] `llm_cache` populates with real token counts
 - [ ] `--no-llm` produces a complete run with heuristic records
 
 **Note:** writing 25 good fixtures with correct expected output is the slow part, and it is worth doing properly. These fixtures are the regression suite for every future prompt change.

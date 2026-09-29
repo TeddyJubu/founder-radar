@@ -136,13 +136,14 @@ def _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm):
 @click.option("--since", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
               help="Only items published on or after YYYY-MM-DD")
 @click.option("--dry-run", is_flag=True, help="Do everything, write nothing")
-@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. Zero AI cost.")
+@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. No AI calls.")
 @click.pass_context
 def run(ctx, fund_key, source_key, since, dry_run, no_llm):
     """The daily run: fetch → extract → resolve → enrich → score → render."""
     result = _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm)
     _emit(result.summary(), ctx.obj["json"])
-    sys.exit(EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
+    sys.exit(EXIT_FATAL if result.status == "failed" else
+             EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
 
 
 @cli.command("search")
@@ -151,7 +152,7 @@ def run(ctx, fund_key, source_key, since, dry_run, no_llm):
 @click.option("--since", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
               help="Only items published on or after YYYY-MM-DD")
 @click.option("--dry-run", is_flag=True, help="Do everything, write nothing")
-@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. Zero AI cost.")
+@click.option("--no-llm", is_flag=True, help="Heuristic extraction only. No AI calls.")
 @click.option("--send", "send_ping", is_flag=True,
               help="Also push the dashboard ping to Telegram when the scan finishes")
 @click.option("--background", is_flag=True,
@@ -178,6 +179,9 @@ def search(ctx, fund_key, source_key, since, dry_run, no_llm, send_ping, backgro
     db = _db(ctx)
     try:
         result = _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm)
+        if result.status == "failed":
+            click.echo(f"search failed: {result.error}", err=True)
+            sys.exit(EXIT_FATAL)
         ping = render_today_ping(db)
         if send_ping:
             from radar.notify.telegram import send_message
@@ -187,7 +191,8 @@ def search(ctx, fund_key, source_key, since, dry_run, no_llm, send_ping, backgro
             _emit({"run": result.summary(), "ping": ping}, True)
         else:
             click.echo(ping)
-        sys.exit(EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
+        sys.exit(EXIT_FATAL if result.status == "failed" else
+             EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
     finally:
         mark_search_done()
 
@@ -258,7 +263,7 @@ def rescore(ctx, all_):
                    "DURATION (e.g. 26h). FR-9.3.")
 @click.pass_context
 def status(ctx, stale_after):
-    """Last run, source health, this month's AI cost.
+    """Last run and source health.
 
     With `--alert-if-stale` this is also the heartbeat the systemd timer runs
     (FR-9.3, 08-deployment §4). The check itself lives in
@@ -286,10 +291,10 @@ def status(ctx, stale_after):
     result = check(conn, stale_after=threshold)
     if ctx.obj["json"]:
         _emit({"status": report, "stale": result.stale, "alerts": result.alerts,
-               "alert_sent": result.sent}, True)
+               "still_open": result.suppressed or [], "alert_sent": result.sent}, True)
     else:
         _emit(report, False)
-        for line in result.alerts or ["✅ Founder Radar heartbeat: healthy."]:
+        for line in result.lines():
             click.echo(line)
     sys.exit(EXIT_PARTIAL if result.alerts else EXIT_OK)
 
@@ -460,7 +465,8 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
     if not skip_today_qa:
         from radar.qa.today import run_today_qa
 
-        cfg, _, warnings = load_runtime_config(db)
+        cfg, gateway, warnings = load_runtime_config(db)
+        before_qa = db.conn.total_changes
         qa = run_today_qa(db, cfg, use_hermes=not no_hermes)
         click.echo(
             f"today QA: {qa.cards} cards · {qa.checked} checked, {qa.passed} pass, "
@@ -469,6 +475,15 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
         )
         for line in [*warnings, *qa.warnings]:
             click.echo(line)
+        if gateway is not None and db.conn.total_changes != before_qa:
+            from radar.render.sheet import sync_sheet
+            try:
+                sync_sheet(db, gateway=gateway)
+            except Exception as exc:
+                click.echo(f"sheet sync warning: {type(exc).__name__}: {exc}", err=True)
+        if qa.incomplete or qa.aborted:
+            click.echo("publish refused: Today QA incomplete", err=True)
+            sys.exit(EXIT_FATAL)
         allow_rules = (os.environ.get("RADAR_ALLOW_RULES_ONLY_PUBLISH") or "").strip().lower() in {
             "1", "true", "yes",
         }
@@ -486,6 +501,9 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
             sys.exit(EXIT_FATAL)
 
     report2 = pre_publish_check(db, use_hermes=False, heal=not no_heal)
+    if int(report2.diagnosis.get("qa_incomplete") or 0):
+        click.echo("publish refused: incomplete Today QA remains", err=True)
+        sys.exit(EXIT_FATAL)
     if not report2.ok:
         click.echo(format_publish_report(report2))
         click.echo("publish refused after Today QA: gate BLOCK", err=True)
@@ -770,8 +788,18 @@ def db_backup(ctx, dest, retain_days):
 @click.argument("src")
 @click.pass_context
 def db_restore(ctx, src):
-    """Replace the live database with a backup."""
-    shutil.copy2(src, ctx.obj["db_path"])
+    """Replace the live database with a backup.
+
+    The backup is verified (PRAGMA integrity_check) before anything is replaced,
+    and the restore is refused while another process is writing to the live
+    database — stop the daily run and the web service first.
+    """
+    from radar.store.db import RestoreError, restore_database
+
+    try:
+        restore_database(src, ctx.obj["db_path"])
+    except RestoreError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(f"restored {ctx.obj['db_path']} from {src}")
 
 
@@ -855,6 +883,16 @@ def doctor(ctx):
     checks.append((
         "hermes binary", bool(hermes),
         hermes or "required for Today QA / publish — set HERMES_BIN in hermes.env",
+    ))
+
+    from radar.fetch.http import user_agent, user_agent_is_placeholder
+
+    placeholder_ua = user_agent_is_placeholder()
+    checks.append((
+        "crawler User-Agent", not placeholder_ua,
+        "placeholder contact (example.com) — set RADAR_USER_AGENT to a real URL and "
+        "address so a blocking site can reach someone"
+        if placeholder_ua else user_agent(),
     ))
 
     try:

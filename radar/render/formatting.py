@@ -100,8 +100,12 @@ SOURCES_HEADERS: tuple[str, ...] = (
 
 RUN_LOG_HEADERS: tuple[str, ...] = (
     "Run", "Started", "Finished", "Mode", "Scope", "Fetched", "Extracted",
-    "New", "Merged", "Gated out", "Shortlisted", "LLM calls", "Cost USD",
+    "New", "Merged", "Gated out", "Shortlisted",
     "Status", "Sources failed",
+    # The old "LLM calls" / "Cost USD" columns were removed. These two blank
+    # headers make the next render clear the trailing columns that used to hold
+    # Status / Sources failed, so no stale values linger in the sheet.
+    "", "",
 )
 
 TUNING_HEADERS: tuple[str, ...] = (

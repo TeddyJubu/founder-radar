@@ -375,12 +375,17 @@ def store_founders(
     Only the columns that exist on the table are ever named, and the table has
     no forbidden column — so this INSERT is incapable of storing a DOB.
     """
+    from radar.privacy import is_suppressed
     from radar.store.db import now_iso
 
     stamp = now or now_iso()
     written = 0
     for f in founders:
         if not f.norm_name:
+            continue
+        if is_suppressed(db, f.name):
+            # Erased on request (`founder-radar forget`): registry ingest must
+            # not put them straight back on tomorrow's run.
             continue
         db.execute(
             """INSERT INTO founder

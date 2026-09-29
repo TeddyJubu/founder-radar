@@ -380,7 +380,7 @@ def test_heuristic_extracts_explicit_location_and_business_summary():
 
 def test_no_llm_flag_uses_heuristic_without_a_provider():
     """`use_llm=False` — the `--no-llm` half of the same switch — produces a
-    complete heuristic record with zero AI cost."""
+    complete heuristic record without any AI call."""
     ctx = ExtractContext(llm=None, db=None, use_llm=False, model_id=DEFAULT_MODEL)
     html = _html("clean_funding_announcement_2")
     got = extract_html(
@@ -425,10 +425,9 @@ def test_refresh_llm_is_not_required_and_a_miss_never_reaches_the_network(
         _extract("clean_funding_announcement_1", llm)
 
 
-def test_cost_ledger_records_token_counts(db, offline_llm):
-    """FR-9.2 / 03-data-model §6 query 10: every call lands in `llm_cache`
-    with real `tokens_in`, `tokens_out` and `cost_usd`, so monthly spend is a
-    query rather than a guess."""
+def test_llm_cache_records_token_counts(db, offline_llm):
+    """Every call lands in `llm_cache` with its `tokens_in` and `tokens_out`.
+    There is deliberately no price column: cost is the provider's to report."""
     html = _html("clean_funding_announcement_3")
     ctx = ExtractContext(llm=offline_llm, db=db, model_id=DEFAULT_MODEL)
     got = extract_html(
@@ -440,16 +439,9 @@ def test_cost_ledger_records_token_counts(db, offline_llm):
     assert got.extraction_method == "llm"
 
     row = db.one("SELECT * FROM llm_cache ORDER BY rowid DESC LIMIT 1")
-    assert row is not None, "the call was not written to the ledger"
+    assert row is not None, "the call was not written to the cache"
     assert row["tokens_in"] > 0
     assert row["tokens_out"] > 0
-    assert row["cost_usd"] > 0
-
-    from radar.extract.llm import LlmCache
-
-    spend = LlmCache(db).monthly_spend()
-    assert spend and spend[0]["calls"] == 1
-    assert spend[0]["cost_usd"] > 0
 
 
 def test_usd_amount_is_flagged_not_silently_converted(offline_llm):

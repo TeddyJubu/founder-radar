@@ -169,6 +169,8 @@ def test_today_exposes_companies_house_verification_only_for_verified_signal(db)
          stamp),
     )
 
+    from tests.factories import approve_cards
+    approve_cards(db)
     companies = {row["company_id"]: row for row in build_today(db.conn)["companies"]}
 
     assert companies[ids[0]]["ch_verified"] == {
@@ -196,6 +198,8 @@ def test_today_exposes_match_scores_for_all_four_funds(db):
              "x", None, "testhash", "1", stamp),
         )
 
+    from tests.factories import approve_cards
+    approve_cards(db)
     scores = build_today(db.conn)["companies"][0]["fund_scores"]
 
     assert [score["fund_key"] for score in scores] == [
@@ -228,6 +232,8 @@ def test_today_match_breakdown_ignores_a_fifth_fund(db):
         (ids[0], "acme", None, 99.0, 0.9, 80.0, 99.0, "shortlist", None,
          "x", None, "testhash", "1", now_iso()),
     )
+    from tests.factories import approve_cards
+    approve_cards(db)
     scores = build_today(db.conn)["companies"][0]["fund_scores"]
     assert [row["fund_key"] for row in scores] == [
         "dsw", "northstar", "outward", "anticus",
@@ -437,6 +443,8 @@ def _watchlist_row(db, company, *, source_key, source_url, priority, fund="dsw")
         (cid, fund, None, 80.0, 0.8, 70.0, priority, "watchlist", None,
          "Queued for review.", None, "testhash", "1", stamp),
     )
+    from tests.factories import approve_cards
+    approve_cards(db, [cid])
     return cid
 
 

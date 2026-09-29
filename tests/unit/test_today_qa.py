@@ -153,7 +153,7 @@ def test_today_qa_hides_a_rejected_company(db):
 def test_today_qa_pass_still_shown(db):
     ids = seed_companies(db, count=1, shortlist=1)
     record_check(
-        db, _card(company_id=ids[0]),
+        db, load_today_cards(db, default_config(), company_id=ids[0])[0],
         TodayCheckResult(verdict="pass", checker="hermes", summary="Looks early."),
     )
     shown = {row["company_id"] for row in build_today(db.conn)["companies"]}
@@ -229,13 +229,13 @@ def test_cached_snapshot_does_not_recall_hermes(db):
     ]
 
 
-def test_hermes_down_does_not_empty_today(db):
+def test_hermes_down_withholds_unchecked_today(db):
     ids = seed_companies(db, count=1, shortlist=1)
     report = run_today_qa(db, default_config(), checker=BoomChecker())
     assert report.rejected == 0
     assert not is_rejected(db, ids[0])
     shown = {row["company_id"] for row in build_today(db.conn)["companies"]}
-    assert ids[0] in shown
+    assert ids[0] not in shown
 
 
 def test_pipeline_invokes_today_qa(db, config, monkeypatch):
@@ -318,6 +318,67 @@ def test_hermes_subagent_falls_back_to_query_argv():
     assert any("-q" in argv and "today_card" in " ".join(argv) for argv in seen)
 
 
+def test_hermes_subagent_heals_acls_before_and_after_the_run(monkeypatch):
+    """Today QA runs Hermes as radar under the operator's home and rewrites
+    files there. Healing only *before* the next run left the gateway reading a
+    broken ~/.hermes in between; heal after every run too, even a failing one.
+    """
+    events: list[str] = []
+    monkeypatch.setattr("radar.qa.publish._ensure_hermes_acl",
+                        lambda: events.append("heal"))
+
+    def runner(argv, **kw):
+        events.append("run")
+
+        class Completed:
+            returncode = 0
+            stdout = "VERDICT: PASS\nSUMMARY: fine.\n"
+            stderr = ""
+
+        return Completed()
+
+    HermesSubagent(binary="/usr/bin/hermes", runner=runner).review(_card())
+    assert events == ["heal", "run", "heal"]
+
+    events.clear()
+
+    def failing(argv, **kw):
+        events.append("run")
+
+        class Failed:
+            returncode = 1
+            stdout = ""
+            stderr = "boom"
+
+        return Failed()
+
+    with pytest.raises(HermesUnavailable):
+        HermesSubagent(binary="/usr/bin/hermes", runner=failing).review(_card())
+    assert events[0] == "heal" and events[-1] == "heal"
+
+
+def test_acl_refresh_only_runs_the_root_owned_copy(tmp_path, monkeypatch):
+    """The checkout is radar-writable, so the repo copy of hermes-acl.sh is not
+    something sudo may run as root — and on a dev machine there is nothing to
+    heal. Only the installed, root-owned copy is ever executed."""
+    import subprocess
+
+    from radar.qa import publish
+
+    ran: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: ran.append(list(argv)))
+
+    monkeypatch.setattr(publish, "TRUSTED_ACL_SCRIPT", tmp_path / "missing.sh")
+    publish._ensure_hermes_acl()
+    assert ran == []
+
+    installed = tmp_path / "hermes-acl.sh"
+    installed.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(publish, "TRUSTED_ACL_SCRIPT", installed)
+    publish._ensure_hermes_acl()
+    assert ran == [[str(installed)]]
+
+
 def test_hermes_subagent_missing_binary(monkeypatch):
     monkeypatch.setattr("radar.qa.today.shutil.which", lambda name: None)
     checker = HermesSubagent(binary=None, runner=lambda *a, **k: None)
@@ -374,6 +435,8 @@ def _watchlist_row(db, company, *, source_key, source_url, priority, fund="dsw")
         (cid, fund, None, 80.0, 0.8, 70.0, priority, "watchlist", None,
          "Queued for review.", None, "testhash", "1", stamp),
     )
+    from tests.factories import approve_cards
+    approve_cards(db, [cid])
     return cid
 
 

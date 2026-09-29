@@ -71,8 +71,8 @@ def _db_with_last_run(path: Path, *, hours_ago: float, status: str = "ok",
     db.execute(
         """INSERT INTO run(started_at, finished_at, mode, status, items_fetched,
                            items_extracted, companies_new, companies_merged,
-                           gated_out, shortlisted, llm_calls, llm_cost_usd)
-           VALUES (?,?,'daily',?,?,0,0,0,0,0,0,0)""",
+                           gated_out, shortlisted, llm_calls)
+           VALUES (?,?,'daily',?,?,0,0,0,0,0,0)""",
         (stamp, stamp, status, items_fetched),
     )
     db.close()
@@ -167,8 +167,8 @@ def _db_with_blocked_source(path: Path, *, blocked_checks: int,
     db.execute(
         """INSERT INTO run(started_at, finished_at, mode, status, items_fetched,
                            items_extracted, companies_new, companies_merged,
-                           gated_out, shortlisted, llm_calls, llm_cost_usd)
-           VALUES (?,?,'daily','ok',0,0,0,0,0,0,0,0)""",
+                           gated_out, shortlisted, llm_calls)
+           VALUES (?,?,'daily','ok',0,0,0,0,0,0,0)""",
         (stamp, stamp),
     )
     today = date.today()
@@ -203,8 +203,8 @@ def test_heartbeat_alerts_when_a_tier1_source_is_blocked_twice(tmp_path, telegra
 
 def test_heartbeat_reports_the_full_block_streak(tmp_path, telegram_outbox):
     """The alert says how long the block has been going on, so a month-long
-    WAF block escalates visibly instead of repeating the same "2 checks" line
-    every day."""
+    WAF block escalates visibly (the weekly repeat carries the new count)
+    instead of repeating the same "2 checks" line."""
     path = tmp_path / "radar.db"
     _db_with_blocked_source(path, blocked_checks=5)
 
@@ -257,6 +257,199 @@ def test_heartbeat_ignores_blocked_tier2_sources(tmp_path, telegram_outbox):
 
     assert telegram_outbox == []
     assert result.exit_code == 0
+
+
+def _seed_health(db: Db, source_key: str, *, days_ago_last: int, n: int,
+                 items: int, status: str = "ok") -> None:
+    """`n` consecutive daily observations ending `days_ago_last` days ago."""
+    today = date.today()
+    for offset in range(n):
+        day = (today - timedelta(days=days_ago_last + offset)).isoformat()
+        db.execute(
+            "INSERT INTO source_health(source_key, observed_on, items, status) "
+            "VALUES (?,?,?,?)", (source_key, day, items, status))
+
+
+def test_a_retired_source_is_not_reported_as_gone_quiet(tmp_path):
+    """A source that was switched off stops writing `source_health`. Its history
+    (a healthy average, then silence) used to read as "went quiet" and the
+    heartbeat named it every morning for ever. Only sources still being
+    observed can go quiet."""
+    from radar.notify.heartbeat import stale_sources
+
+    db = Db(tmp_path / "radar.db")
+    db.migrate()
+    _seed_health(db, "retired_source", days_ago_last=40, n=12, items=20)
+    _seed_health(db, "quiet_source", days_ago_last=0, n=12, items=0)
+    # Healthy, then silent for the whole recent window (the gap keeps the test
+    # clear of the local-date vs UTC-date edge of SQLite's `date('now')`):
+    _seed_health(db, "gone_quiet", days_ago_last=10, n=12, items=30)
+    _seed_health(db, "gone_quiet", days_ago_last=0, n=6, items=0)
+    db.close()
+
+    db = Db(tmp_path / "radar.db")
+    assert stale_sources(db) == ["gone_quiet"]
+
+
+def test_a_source_alert_is_said_once_then_weekly(tmp_path):
+    """One blocked source must be one alert, not a message every morning for a
+    month. First crossing alerts; the days after are silent; a week later it
+    is said again (with the longer streak); when the condition clears and
+    returns it is treated as new."""
+    from radar.notify.heartbeat import check
+
+    path = tmp_path / "radar.db"
+    _db_with_blocked_source(path, blocked_checks=3)
+    db = Db(path)
+    sent: list[str] = []
+
+    def sender(body: str) -> bool:
+        sent.append(body)
+        return True
+
+    t0 = datetime.now(timezone.utc)      # `stale_after` is 30d below: only sources matter here
+    first = check(db, now=t0, sender=sender, check_disk=False, stale_after="30d")
+    assert first.alerts and first.sent and len(sent) == 1
+
+    day2 = check(db, now=t0 + timedelta(days=1), sender=sender, check_disk=False, stale_after="30d")
+    assert day2.alerts == [] and day2.ok, "a known, recently announced block must stay quiet"
+    assert day2.suppressed == ["blocked:northern_accelerator"]
+    assert "Still open" in day2.lines()[-1]
+    assert len(sent) == 1
+
+    week = check(db, now=t0 + timedelta(days=7, minutes=1), sender=sender, check_disk=False, stale_after="30d")
+    assert week.alerts and len(sent) == 2
+
+    # The block clears (a healthy check today), then comes back: announced afresh.
+    db.execute("UPDATE source_health SET status = 'ok', items = 5")
+    cleared = check(db, now=t0 + timedelta(days=8), sender=sender, check_disk=False, stale_after="30d")
+    assert cleared.alerts == [] and cleared.suppressed == []
+    db.execute("UPDATE source_health SET status = 'degraded', items = 0")
+    back = check(db, now=t0 + timedelta(days=9), sender=sender, check_disk=False, stale_after="30d")
+    assert back.alerts and len(sent) == 3
+
+
+def test_an_undelivered_alert_is_not_treated_as_announced(tmp_path):
+    """If Telegram is down the alert must be tried again tomorrow, not silenced
+    for a week by a message that never arrived."""
+    from radar.notify.heartbeat import check
+
+    path = tmp_path / "radar.db"
+    _db_with_blocked_source(path, blocked_checks=2)
+    db = Db(path)
+    t0 = datetime.now(timezone.utc)
+
+    down = check(db, now=t0, sender=lambda body: False, check_disk=False, stale_after="30d")
+    assert down.alerts and not down.sent
+
+    later = check(db, now=t0 + timedelta(days=1), sender=lambda body: True, check_disk=False, stale_after="30d")
+    assert later.alerts and later.sent
+
+
+def test_a_stale_run_is_never_suppressed(tmp_path):
+    """Only source-level alerts are rate limited. The whole pipeline being dead
+    is said every time the heartbeat runs."""
+    from radar.notify.heartbeat import check
+
+    path = tmp_path / "radar.db"
+    _db_with_last_run(path, hours_ago=40)
+    db = Db(path)
+    t0 = datetime.now(timezone.utc)
+    sent: list[str] = []
+    for day in range(3):
+        result = check(db, now=t0 + timedelta(days=day), sender=lambda b: sent.append(b) or True,
+                       check_disk=False)
+        assert result.alerts
+    assert len(sent) == 3
+
+
+def test_doctor_reports_a_placeholder_user_agent_but_does_not_fail_on_it(tmp_path, monkeypatch):
+    """A default crawler contact is a warning row, never a deploy blocker: the
+    update script runs `doctor` on every deploy."""
+    import json as _json
+
+    path = tmp_path / "radar.db"
+    Db(path).migrate()
+    monkeypatch.delenv("RADAR_USER_AGENT", raising=False)
+    rows = {r["check"]: r for r in _json.loads(
+        _cli(["--db", str(path), "--json", "doctor"]).output)}
+    assert rows["crawler User-Agent"]["ok"] is False
+    assert "example.com" in rows["crawler User-Agent"]["detail"]
+
+    monkeypatch.setenv("RADAR_USER_AGENT",
+                       "founder-radar/2.0 (+https://radar.example.co.uk/c; ops@example.co.uk)")
+    rows = {r["check"]: r for r in _json.loads(
+        _cli(["--db", str(path), "--json", "doctor"]).output)}
+    assert rows["crawler User-Agent"]["ok"] is True
+
+
+# ---------------------------------------------------- failure alerts (OnFailure)
+
+
+def test_failure_alert_says_which_unit_failed_and_what_to_do(tmp_path):
+    from radar.notify.alert import notify
+
+    sent: list[str] = []
+    db = Db(tmp_path / "radar.db")
+    db.migrate()
+
+    assert notify("founder-radar-update.service", db=db,
+                  sender=lambda body: sent.append(body) or True)
+    assert "founder-radar-update.service" in sent[0]
+    assert "auto-deploy" in sent[0]
+    assert "journalctl -u founder-radar-update.service" in sent[0]
+
+
+def test_failure_alert_is_rate_limited_per_unit(tmp_path):
+    """The update timer retries every five minutes. A broken deploy must be one
+    message, not twelve an hour — but a *different* unit failing is news, and
+    so is the same one six hours later."""
+    from radar.notify.alert import notify
+
+    sent: list[str] = []
+    db = Db(tmp_path / "radar.db")
+    db.migrate()
+    t0 = datetime.now(timezone.utc)
+
+    def send(body: str) -> bool:
+        sent.append(body)
+        return True
+
+    assert notify("founder-radar-update.service", db=db, sender=send, now=t0)
+    assert not notify("founder-radar-update.service", db=db, sender=send,
+                      now=t0 + timedelta(minutes=5))
+    assert notify("founder-radar-backup.service", db=db, sender=send,
+                  now=t0 + timedelta(minutes=5))
+    assert notify("founder-radar-update.service", db=db, sender=send,
+                  now=t0 + timedelta(hours=6, minutes=1))
+    assert len(sent) == 3
+
+
+def test_failure_alert_retries_when_delivery_fails(tmp_path):
+    from radar.notify.alert import notify
+
+    db = Db(tmp_path / "radar.db")
+    db.migrate()
+    assert not notify("founder-radar.service", db=db, sender=lambda body: False)
+    assert notify("founder-radar.service", db=db, sender=lambda body: True)
+
+
+def test_failure_alert_still_sends_without_a_database():
+    from radar.notify.alert import notify
+
+    sent: list[str] = []
+    assert notify("founder-radar.service", db=None,
+                  sender=lambda body: sent.append(body) or True)
+    assert sent
+
+
+def test_failure_alert_rejects_a_malformed_unit_name():
+    """The name arrives from systemd's `%i`, but it lands in a message and a
+    `_meta` key — refuse anything that is not a unit name."""
+    from radar.notify.alert import notify
+
+    with pytest.raises(ValueError):
+        notify("x; rm -rf /", db=None, sender=lambda body: True)
 
 
 # ------------------------------------------------------------ FR-9.4 backups
@@ -858,6 +1051,8 @@ def test_today_requires_verified_age_and_uk_presence(db):
           hq_region=None, hq_postcode=None, companies_house_no=None,
           hq_city="Dubai"), priority=94)
 
+    from tests.factories import approve_cards
+    approve_cards(db)
     payload = build_today(db.conn)
     shown = [c["company_id"] for c in payload["companies"]]
     assert news_unknown in shown

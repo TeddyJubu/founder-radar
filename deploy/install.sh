@@ -18,6 +18,11 @@ ENV_FILE="$ROOT/.env"
 SECRETS_DIR="$ROOT/secrets"
 SA_FILE="$SECRETS_DIR/google-sa.json"
 UNIT_DIR="${UNIT_DIR:-/etc/systemd/system}"
+# Root-owned, and — the point — under a root-owned parent. $ROOT is owned by
+# $APP_USER, so a directory inside it could be renamed away and replaced by the
+# service user, whatever its own mode says.
+LIBEXEC="${LIBEXEC:-/usr/local/libexec/founder-radar}"
+SUDOERS_DIR="${SUDOERS_DIR:-/etc/sudoers.d}"
 LOGROTATE_DIR="${LOGROTATE_DIR:-/etc/logrotate.d}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -28,6 +33,56 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# BEGIN maintenance service control
+# A clean rebuild can install files and migrate the DB without reopening any
+# service or timer. The operator starts them explicitly after rescore and QA.
+systemctl() {
+  if [ "${INSTALL_MAINTENANCE:-0}" = 1 ]; then
+    case " $* " in
+      *" enable "*|*" start "*|*" restart "*|*" try-restart "*|*" reload "*|*" reload-or-restart "*)
+        printf 'maintenance: deferred systemctl %s\n' "$*"
+        return 0 ;;
+    esac
+  fi
+  command systemctl "$@"
+}
+# END maintenance service control
+
+# BEGIN trusted install checks
+# Changing ownership does not remove malicious Git hooks, pip launchers or .pth
+# files. Refuse old untrusted inputs before executing any of them as root.
+assert_trusted_install_path() {
+  local parent="$1"
+  while :; do
+    if [ -L "$parent" ] || [ "$(stat -c %u "$parent")" != 0 ] ||
+        [ -n "$(find "$parent" -maxdepth 0 -perm /022 -print)" ]; then
+      echo "untrusted existing installation: $parent; rebuild from a trusted root-owned checkout and fresh venv" >&2
+      exit 1
+    fi
+    [ "$parent" = / ] && break
+    parent="$(dirname "$parent")"
+  done
+}
+assert_trusted_install_input() {
+  local tree="$1" link target
+  assert_trusted_install_path "$tree"
+  if [ -n "$(find -L "$tree" \( ! -user root -o -perm /022 \) -print -quit)" ]; then
+    echo "untrusted existing installation: $tree; refusing to execute existing code" >&2
+    exit 1
+  fi
+  # Venv Python links are normal, but their resolved targets and parents must
+  # also be protected. A root-owned link into a writable directory is unsafe.
+  while IFS= read -r -d '' link; do
+    target="$(readlink -f "$link")"
+    assert_trusted_install_path "$target"
+  done < <(find "$tree" -type l -print0)
+}
+assert_trusted_install_input "$APP_DIR"
+if [ -e "$VENV" ] || [ -L "$VENV" ]; then
+  assert_trusted_install_input "$VENV"
+fi
+# END trusted install checks
+
 # ---------------------------------------------------------------- 1. account
 
 say "service account and directories"
@@ -35,7 +90,8 @@ if ! id -u "$APP_USER" >/dev/null 2>&1; then
   adduser --system --group --home "$ROOT" "$APP_USER"
 fi
 
-install -d -o "$APP_USER" -g "$APP_USER" -m 755 "$ROOT" "$ROOT/data" "$ROOT/logs" "$ROOT/backups"
+install -d -o root -g root -m 755 "$ROOT"
+install -d -o "$APP_USER" -g "$APP_USER" -m 755 "$ROOT/data" "$ROOT/logs" "$ROOT/backups"
 # 0700 on secrets: the directory listing is itself information.
 install -d -o "$APP_USER" -g "$APP_USER" -m 700 "$SECRETS_DIR"
 
@@ -53,18 +109,26 @@ if [ ! -d "$APP_DIR/.git" ] && [ ! -f "$APP_DIR/pyproject.toml" ]; then
   echo "no checkout at $APP_DIR — clone the repository there first" >&2
   exit 1
 fi
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+chown -R root:root "$APP_DIR"
+chmod -R go-w "$APP_DIR"
 
 say "python environment"
 # pip as $APP_USER inherits the caller's cwd. Running install.sh from /root
 # then dies with PermissionError on an editable path hook under root's home.
 # Always install from the checkout, with the service user's HOME.
 cd "$APP_DIR"
-if [ ! -x "$VENV/bin/python" ]; then
-  sudo -H -u "$APP_USER" python3 -m venv "$VENV"
+if [ -d "$VENV" ]; then
+  chown -R root:root "$VENV"
+  chmod -R go-w "$VENV"
 fi
-sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet --upgrade pip
-sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet -e .
+if [ ! -x "$VENV/bin/python" ]; then
+  python3 -m venv "$VENV"
+fi
+"$VENV/bin/pip" install --quiet --only-binary=:all: --require-hashes -r deploy/requirements.lock
+"$VENV/bin/pip" install --quiet --require-hashes --only-binary=:all: -r deploy/build-requirements.lock
+"$VENV/bin/pip" install --quiet --no-build-isolation --no-deps -e .
+chown -R root:root "$VENV"
+chmod -R go-w "$VENV"
 # Hermes (operator user) cannot read radar-owned .env — install a wrapper that
 # re-execs as $APP_USER so Telegram ops work without hand-rolled sudo.
 install -m 755 "$HERE/founder-radar-wrap.sh" /usr/local/bin/founder-radar
@@ -110,6 +174,51 @@ fi
 # Presence and mode only. Values are never read, echoed, or logged here.
 say "environment file mode: $(stat -c '%a %U:%G' "$ENV_FILE")"
 
+# ------------------------------------------------- 3b. root-owned helpers
+#
+# Anything that root runs on the service user's behalf must not live where the
+# service user can edit it. The checkout under $APP_DIR is owned by $APP_USER,
+# so a sudoers rule or a unit `ExecStartPre=+` that names a script inside it is
+# a one-line path from `radar` to root: edit the script, trigger the rule.
+# hermes-acl.sh is the one helper `radar` legitimately needs run as root (Hermes
+# rewrites ~/.hermes and clears the ACL mask that Today QA depends on), so it
+# is installed from the checkout into $LIBEXEC and sudoers/units point there.
+
+say "root-owned helpers"
+install -d -o root -g root -m 755 "$(dirname "$LIBEXEC")" "$LIBEXEC"
+install -o root -g root -m 755 "$HERE/hermes-acl.sh" "$LIBEXEC/hermes-acl.sh"
+install -o root -g root -m 755 "$HERE/update-from-main.sh" "$LIBEXEC/update-from-main.sh"
+
+if command -v visudo >/dev/null 2>&1 && [ -d "$SUDOERS_DIR" ]; then
+  sudoers_tmp="$(mktemp)"
+  {
+    echo "# Generated by deploy/install.sh — $APP_USER may restore Hermes ACLs only."
+    echo "# The script is root-owned on purpose; never point this into the checkout."
+    echo "$APP_USER ALL=(root) NOPASSWD: $LIBEXEC/hermes-acl.sh"
+  } > "$sudoers_tmp"
+  # Validate before installing: a syntax error in sudoers locks out sudo itself.
+  if visudo -cf "$sudoers_tmp" >/dev/null 2>&1; then
+    install -o root -g root -m 440 "$sudoers_tmp" "$SUDOERS_DIR/founder-radar-hermes-acl"
+  else
+    say "WARNING: generated sudoers rule failed validation — existing rule left in place"
+  fi
+  rm -f "$sudoers_tmp"
+fi
+
+# Earlier hand-made drop-ins pointed root at radar-writable paths (the checkout,
+# or /opt/founder-radar/bin, which sits inside a radar-owned directory). The
+# units below now carry the right path themselves, and a drop-in that resets
+# ExecStartPre= would silently put the old one back — so retire only those.
+for legacy in \
+    "$UNIT_DIR/founder-radar.service.d/hermes-acl.conf" \
+    "$UNIT_DIR/founder-radar.service.d/hermes-ops.conf" \
+    "$UNIT_DIR/founder-radar-update.service.d/hermes-ops.conf"; do
+  if [ -f "$legacy" ] && grep -qE '/opt/founder-radar/(bin|app/deploy)/hermes-acl\.sh' "$legacy"; then
+    say "retiring legacy drop-in $legacy"
+    rm -f "$legacy"
+  fi
+done
+
 # ------------------------------------------------------------------ 4. units
 
 say "systemd units"
@@ -118,7 +227,8 @@ for unit in founder-radar.service founder-radar.timer \
             founder-radar-backup.service founder-radar-backup.timer \
             founder-radar-web.service \
             founder-radar-chatgpt-actions.service \
-            founder-radar-update.service founder-radar-update.timer; do
+            founder-radar-update.service founder-radar-update.timer \
+            'founder-radar-alert@.service'; do
   install -m 644 "$HERE/$unit" "$UNIT_DIR/$unit"
 done
 chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh"
@@ -134,6 +244,37 @@ if [ -f "$HERE/hermes-dashboard.sh" ]; then
 fi
 
 install -m 644 "$HERE/logrotate.founder-radar" "$LOGROTATE_DIR/founder-radar"
+
+# The Hermes gateway crash-loops when Today QA (which runs as radar under the
+# operator's home) leaves ~/.hermes/auth.json unreadable to the operator, and
+# `Restart=always` alone never repairs that. Heal the ownership and ACLs before
+# every (re)start. `-` ignores a failed heal, `+` runs it as root although the
+# unit itself is User=<operator>. Hermes' own unit is left untouched.
+if [ -f "$UNIT_DIR/hermes-gateway.service" ]; then
+  install -d -m 755 "$UNIT_DIR/hermes-gateway.service.d"
+  {
+    echo "# Generated by deploy/install.sh — do not edit by hand."
+    echo "[Service]"
+    echo "ExecStartPre=-+$LIBEXEC/hermes-acl.sh"
+  } > "$UNIT_DIR/hermes-gateway.service.d/founder-radar-acl.conf"
+  chmod 644 "$UNIT_DIR/hermes-gateway.service.d/founder-radar-acl.conf"
+fi
+# Same helper, same reason, for the WebUI drop-in an operator may have added.
+if [ -f "$UNIT_DIR/hermes-webui.service.d/acl.conf" ] \
+   && grep -q '/opt/founder-radar/bin/hermes-acl\.sh' "$UNIT_DIR/hermes-webui.service.d/acl.conf"; then
+  sed -i "s#/opt/founder-radar/bin/hermes-acl\.sh#$LIBEXEC/hermes-acl.sh#" \
+    "$UNIT_DIR/hermes-webui.service.d/acl.conf"
+fi
+
+# --------------------------------------------------- schema before services
+
+say "database"
+# Run from $ROOT, not the caller's cwd: the CLI loads .env from the working
+# directory, and RADAR_DB=$ROOT/data/radar.db lives there. Run from anywhere
+# else and migrate creates a shadow db under app/data/ that silently absorbs
+# manual CLI runs while the timers write the real one.
+cd "$ROOT"
+sudo -u "$APP_USER" "$VENV/bin/founder-radar" db migrate
 
 systemctl daemon-reload
 systemctl enable --now founder-radar.timer
@@ -297,7 +438,7 @@ install_telegram_plugin() {
   if [ -n "$owner" ] && [ "$owner" != "root" ]; then
     chown -R "$owner" "$home/.hermes/plugins/founder-radar-telegram"
   fi
-  if [ -n "${HERMES_BIN:-}" ] && [ -x "$HERMES_BIN" ] && [ -n "$owner" ] && [ "$owner" != "root" ]; then
+  if [ "${INSTALL_MAINTENANCE:-0}" != 1 ] && [ -n "${HERMES_BIN:-}" ] && [ -x "$HERMES_BIN" ] && [ -n "$owner" ] && [ "$owner" != "root" ]; then
     # --no-allow-tool-override keeps enable non-interactive. Never print config.
     sudo -H -u "$owner" "$HERMES_BIN" plugins enable founder-radar-telegram \
       --no-allow-tool-override </dev/null >/dev/null 2>&1 || true
@@ -308,6 +449,7 @@ install_telegram_plugin() {
 }
 
 restart_hermes_gateway() {
+  if [ "${INSTALL_MAINTENANCE:-0}" = 1 ]; then return 0; fi
   local owner="$1"
   if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^hermes-gateway.service'; then
     systemctl restart hermes-gateway.service 2>/dev/null || true
@@ -333,9 +475,9 @@ if [ -n "$HERMES_HOME" ] && [ -d "$HERMES_HOME/.hermes" ]; then
   fi
   # Restore operator ownership of ~/.hermes (Today QA as radar can steal
   # auth.json) and grant Hermes write ACL on /opt/founder-radar/{app,data,…}.
-  if [ -x "$HERE/hermes-acl.sh" ]; then
+  if [ -x "$LIBEXEC/hermes-acl.sh" ]; then
     APP_USER="$APP_USER" HERMES_USER="${HERMES_USER:-aryan}" ROOT="$ROOT" \
-      bash "$HERE/hermes-acl.sh" || true
+      "$LIBEXEC/hermes-acl.sh" || true
   fi
 else
   say "no ~/.hermes yet — install Hermes, then copy"
@@ -428,16 +570,6 @@ else
   say "    caddy hash-password --plaintext 'choose-a-password'"
   say "  then add RADAR_WEB_DOMAIN, RADAR_WEB_USER and RADAR_WEB_PASS_HASH."
 fi
-
-# ------------------------------------------------------------------ 6. schema
-
-say "database"
-# Run from $ROOT, not the caller's cwd: the CLI loads .env from the working
-# directory, and RADAR_DB=$ROOT/data/radar.db lives there. Run from anywhere
-# else and migrate creates a shadow db under app/data/ that silently absorbs
-# manual CLI runs while the timers write the real one.
-cd "$ROOT"
-sudo -u "$APP_USER" "$VENV/bin/founder-radar" db migrate
 
 say "done. next:"
 say "  sudo -u $APP_USER founder-radar doctor"

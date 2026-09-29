@@ -28,7 +28,9 @@ import json
 import logging
 import os
 import re
+import secrets
 import sqlite3
+import threading
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -67,6 +69,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "display_limit": "Beyond today's display limit",
     "registry_without_venture_signal": "Companies House only, no venture signal",
     "hermes_rejected": "Failed the final Hermes company check",
+    "qa_incomplete": "Final Hermes company check did not complete",
 }
 TODAY_DIAGNOSTIC_ORDER = tuple(TODAY_DIAGNOSTIC_LABELS)
 
@@ -238,10 +241,15 @@ def _today_block_reason(
         if "geography" in (verdict.unverified_rules or ()):
             return "geography_unverified"
 
-    from radar.qa.today import is_rejected
+    from radar.qa.today import qa_state
 
-    if is_rejected(conn, _row_company_id(row)):
+    # Same rule as the Sheet, the digest and the ping (radar.qa.today.is_withheld):
+    # a reject, or a check that never completed, keeps the card off Today.
+    state = qa_state(conn, _row_company_id(row))
+    if state == "reject":
         return "hermes_rejected"
+    if state != "pass":
+        return "qa_incomplete"
     return None
 
 
@@ -716,7 +724,10 @@ def _today_eligibility_diagnostics(
             conn, row, config, today=today, config_hash=config_hash,
         )
         if blocked:
-            exclude(blocked)
+            # QA cannot load a card without provenance. Report that concrete
+            # prerequisite rather than asking the operator to retry QA.
+            exclude("missing_provenance" if blocked == "qa_incomplete"
+                    and company_id not in source_ids else blocked)
             continue
         if company_id not in source_ids:
             exclude("missing_provenance")
@@ -1459,15 +1470,18 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             conn, r["company_id"], config, vehicles, config_hash=config_hash,
         )
 
+        from radar.score.derive import derived_facts
+        stored = conn.execute("SELECT * FROM company WHERE id = ?", (r["company_id"],)).fetchone()
+        display = derived_facts(stored, config)
         out.append({
             "company_id": r["company_id"],
             "name": r["canonical_name"],
             "domain": r["domain"],
             "website": r["website_url"],
             "city": r["hq_city"],
-            "region": r["hq_region"],
-            "sector": r["sector"],
-            "stage": r["stage"],
+            "region": display.get("hq_region", r["hq_region"]),
+            "sector": display.get("sector", r["sector"]),
+            "stage": display.get("stage", r["stage"]),
             "one_liner": r["one_liner"],
             "route": r["discovery_route"],
             "ch_number": r["companies_house_no"],
@@ -1577,8 +1591,126 @@ def mirror_verdict_to_sheet(company_id: str, verdict: str) -> str:
         return "failed"
 
 
+def set_verdict_receipt(conn: sqlite3.Connection, company_id: str, verdict: str):
+    """`set_verdict`, returning the receipt that `POST /api/undo` needs."""
+    from radar.verdict import record_verdict_receipt
+
+    return record_verdict_receipt(
+        conn, company_id, verdict, review_date=_today_review_date())
+
+
+def mirror_verdict_restore_to_sheet(company_id: str, verdict: str) -> str:
+    """Put the Sheet's Verdict cell back to `verdict` (`""` clears it).
+
+    Undo's counterpart to `mirror_verdict_to_sheet`, with one deliberate
+    difference: a failure is raised, not swallowed. The Sheet wins the next
+    sync (`save_user_fields`), so a Sheet that still holds the undone verdict
+    would silently bring it back. The caller therefore restores the Sheet
+    first and touches SQLite only if that worked.
+    """
+    if not (os.environ.get("SHEET_ID") or os.environ.get("RADAR_SHEET_ID")):
+        return "not_configured"
+    if not os.environ.get("GOOGLE_SA_JSON"):
+        return "not_configured"
+    from radar.render.sheet import mirror_verdict
+
+    return str(mirror_verdict(company_id, verdict)["status"])
+
+
+class UndoLog:
+    """Recent web decisions that can still be taken back.
+
+    SQLite keeps only the latest verdict per company, so the state a decision
+    replaced is held here, keyed by an unguessable id the page keeps in its
+    history. It is bounded and in memory: no schema change, and a restart just
+    means "nothing to undo" (the endpoint says so), never a wrong undo.
+    """
+
+    LIMIT = 200
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._items: dict[str, tuple[Any, str]] = {}
+
+    def add(self, receipt: Any, sheet_sync: str) -> str:
+        token = secrets.token_urlsafe(12)
+        with self._lock:
+            self._items[token] = (receipt, sheet_sync)
+            while len(self._items) > self.LIMIT:
+                self._items.pop(next(iter(self._items)))
+        return token
+
+    def get(self, token: str) -> tuple[Any, str] | None:
+        with self._lock:
+            return self._items.get(token)
+
+    def discard(self, token: str) -> None:
+        with self._lock:
+            self._items.pop(token, None)
+
+
+MAX_WRITE_BODY = 64 * 1024
+
+
+def write_request_refusal(headers: Any) -> tuple[int, str] | None:
+    """Why a state-changing request must not run, or None to let it through.
+
+    The review UI sits behind HTTP Basic Auth, and a browser re-sends its
+    cached Basic credentials on a request another site triggers (a form on a
+    hostile page), so authentication alone does not tell us the person meant
+    it. Browsers label those requests, and this refuses the ones that are not
+    ours:
+
+    * `Sec-Fetch-Site` (sent by current browsers): only `same-origin` passes;
+      `same-site` (a sibling subdomain) and `cross-site` do not.
+    * Otherwise `Origin` (older browsers), which must be this server's own
+      host as the request addressed it. `null` (sandboxed frames) fails.
+    * Neither header: not a browser (curl, the test suite, scripts), which
+      cannot be tricked into sending a request; let it through.
+
+    Writes must also be `application/json`: an HTML form cannot send that, and
+    a script that does needs a CORS preflight this server never grants.
+    """
+    site = (headers.get("Sec-Fetch-Site") or "").strip().lower()
+    origin = headers.get("Origin")
+    if site:
+        if site != "same-origin":
+            return 403, "cross-site request refused"
+    elif origin is not None:
+        parts = urlsplit(origin.strip())
+        host = (headers.get("Host") or "").strip().lower()
+        if (parts.scheme not in ("http", "https") or not host
+                or parts.netloc.lower() != host):
+            return 403, "cross-origin request refused"
+    ctype = (headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    if ctype != "application/json":
+        return 415, "Content-Type must be application/json"
+    return None
+
+
 def make_handler(conn: sqlite3.Connection):
+    # The connection is shared by every request thread. A write is a
+    # BEGIN..COMMIT on it, so two writes must not interleave.
+    write_lock = threading.RLock()
+    undo_log = UndoLog()
+
     class Handler(BaseHTTPRequestHandler):
+        def _json(self, code: int, payload: dict) -> None:
+            self._send(code, json.dumps(payload).encode(), "application/json")
+
+        def _read_json(self) -> dict:
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                raise ValueError("bad Content-Length") from None
+            if not 0 <= length <= MAX_WRITE_BODY:
+                raise ValueError("body too large")
+            raw = self.rfile.read(length) if length else b""
+            body = json.loads(raw) if raw.strip() else {}
+            if not isinstance(body, dict):
+                raise ValueError("a JSON object is expected")
+            return body
+
         def _send(self, code: int, body: bytes, ctype: str) -> None:
             self.send_response(code)
             self.send_header("Content-Type", ctype)
@@ -1634,28 +1766,97 @@ def make_handler(conn: sqlite3.Connection):
 
         def do_POST(self) -> None:         # noqa: N802
             if self.path == "/api/review-again":
-                n = reset_daily_review(conn)
-                payload = json.dumps({"ok": True, "reset_count": n}).encode()
-                self._send(200, payload, "application/json")
-                return
-            if not self.path.startswith("/api/verdict"):
+                route = "review-again"
+            elif self.path.startswith("/api/verdict"):
+                route = "verdict"
+            elif self.path == "/api/undo":
+                route = "undo"
+            else:
                 self._send(404, b"not found", "text/plain")
                 return
-            length = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(length) or b"{}")
-            company_id, verdict = body.get("company_id"), body.get("verdict")
-            if not company_id or verdict not in (
-                    "worth contacting", "not for me", "unsure"):
-                self._send(400, b'{"error":"bad verdict"}', "application/json")
+            refusal = write_request_refusal(self.headers)
+            if refusal is not None:
+                self._json(refusal[0], {"error": refusal[1]})
                 return
-            n = set_verdict(conn, company_id, verdict)
+            try:
+                body = self._read_json()
+            except ValueError as exc:
+                self._json(400, {"error": f"bad request: {exc}"})
+                return
+            if route == "review-again":
+                with write_lock:
+                    n = reset_daily_review(conn)
+                self._json(200, {"ok": True, "reset_count": n})
+            elif route == "undo":
+                with write_lock:
+                    self._undo(body)
+            else:
+                with write_lock:
+                    self._verdict(body)
+
+        def _verdict(self, body: dict) -> None:
+            company_id, verdict = body.get("company_id"), body.get("verdict")
+            if (not company_id or not isinstance(company_id, str)
+                    or verdict not in ("worth contacting", "not for me", "unsure")):
+                self._json(400, {"error": "bad verdict"})
+                return
+            with write_lock:
+                receipt = set_verdict_receipt(conn, company_id, verdict)
             sheet_sync = mirror_verdict_to_sheet(company_id, verdict)
-            payload = json.dumps({
+            self._json(200, {
                 "ok": True,
-                "kept_count": n,
+                "kept_count": receipt.kept_count,
                 "sheet_sync": sheet_sync,
-            }).encode()
-            self._send(200, payload, "application/json")
+                "undo_id": undo_log.add(receipt, sheet_sync),
+            })
+
+        def _undo(self, body: dict) -> None:
+            """Take a decision back: SQLite, today's marker and the Sheet.
+
+            The answer is only `undone: true` once the stored state really is
+            back; every other outcome leaves it exactly as it was.
+            """
+            from radar.verdict import UndoConflict, undo_verdict, verdict_undo_applies
+
+            undo_id, company_id = body.get("undo_id"), body.get("company_id")
+            if not isinstance(undo_id, str) or not isinstance(company_id, str):
+                self._json(400, {"error": "undo_id and company_id are required"})
+                return
+            entry = undo_log.get(undo_id)
+            if entry is None or entry[0].company_id != company_id:
+                self._json(404, {"error": "nothing to undo",
+                                 "reason": "unknown_or_expired"})
+                return
+            receipt, decision_sheet = entry
+            if not verdict_undo_applies(conn, receipt):
+                self._json(409, {"error": "verdict changed since this decision",
+                                 "reason": "changed"})
+                return
+            # Restore the Sheet first, and only if the decision reached it.
+            # SQLite second: if the Sheet cannot be reached nothing has changed
+            # and the user can retry, instead of the Sheet later re-imposing
+            # the undone verdict over the restored one.
+            sheet_sync = "skipped"
+            if decision_sheet in ("synced", "already_synced"):
+                try:
+                    sheet_sync = mirror_verdict_restore_to_sheet(
+                        company_id, receipt.prev_verdict or "")
+                except Exception:  # noqa: BLE001 - reported, nothing was changed
+                    log.exception("Google Sheet restore failed for %s", company_id)
+                    self._json(502, {"error": "Google Sheet could not be updated; "
+                                              "nothing was changed",
+                                     "reason": "sheet_unavailable"})
+                    return
+            try:
+                with write_lock:
+                    kept = undo_verdict(conn, receipt)
+            except UndoConflict:
+                self._json(409, {"error": "verdict changed since this decision",
+                                 "reason": "changed"})
+                return
+            undo_log.discard(undo_id)
+            self._json(200, {"ok": True, "undone": True, "kept_count": kept,
+                             "sheet_sync": sheet_sync})
 
         def log_message(self, *args) -> None:      # quiet
             pass

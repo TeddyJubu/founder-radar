@@ -277,7 +277,7 @@ def guard_ok(a: str, b: str) -> bool:
 
 1. `winner.first_seen = min(a, b)` — **preserved, never lost**
 2. `winner.last_seen = max(a, b)`
-3. Re-point all `observation`, `identifier`, `signal`, `founder`, `company_source` rows to the winner
+3. Re-point all `observation`, `identifier`, `signal`, `founder`, `company_source`, `user_field`, `daily_review` and `today_check` rows to the winner. When decisions collide, retain the newest timestamp; an exact tie keeps the winner. Unmerge restores both original histories.
 4. `loser.merged_into = winner.id` — a tombstone, never a delete
 5. Insert a `merge_event` with the rule, the score and the exact evidence
 6. The loser's name automatically survives as an `identifier(kind='alias')`
@@ -304,6 +304,10 @@ For each company lacking enrichment, in priority order (highest Discovery Edge c
 | PSC | `/company/{n}/persons-with-significant-control` | which founders actually control it | 1 request |
 | Prior appointments | `/officers/{id}/appointments` | `prior_appointments` → **`founder_signal = repeat_founder`** | 1 per founder |
 | Postcode → region | postcodes.io (cached) | `hq_region` → **`geography`** | ~0 after cache warms |
+
+Young companies with no share-issue signal have filing history checked again every seven days, within the same request budget, even after other enrichment completes. Failed requests are marked separately and retried after twelve hours; a rate limit or five consecutive failures stops filing checks for that run. Scheduled checks stop outside the 24-month incorporation window or once a qualifying share issue is found.
+
+Erasure captures affected company IDs before removing founder rows, deletes founder observations and matching caches, and redacts stored card headlines, descriptions, notes and QA text. Merge evidence cannot restore erased founders. Suppression covers accented and plain registry spellings. Registered company identities and source URLs are retained.
 
 Each of these feeds a derivation rule in `06-scoring.md` §2. That is the point: without them a registry-sourced company has nothing to score on.
 
@@ -482,3 +486,20 @@ def render(cfg, sh, ws):                       # sh = Spreadsheet, ws = Workshee
 | ⑦ Render | Rows stay `synced = 0`; next run upserts idempotently | ✅ |
 
 **There is no failure mode in this pipeline that stops the daily run.** That is a design requirement, not an aspiration, and the chaos tests in `09-test-plan.md` prove it.
+
+### Audit safety checks (September 2026)
+
+A dry run previews an in-memory copy of the database; fetch history, config,
+companies and scores cannot change the saved database. It still reads sources,
+but it does not publish or save review decisions.
+
+Article evidence must contain the named company or refer to it in the same
+sentence. Funding amounts and stages must appear in their supporting quote;
+founder quotes must name the person. Unrelated verbatim quotes are insufficient.
+These are conservative text checks, not a proof of every claim's meaning.
+Unsupported fields remain unknown and are marked for review.
+
+Source fetching compares HTML structure fingerprints with their saved baseline.
+Each VC portfolio site has its own baseline; failures are reported as degraded
+while successful sites remain usable. Pages and responses requesting noindex
+are excluded before extraction.

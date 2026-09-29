@@ -239,10 +239,10 @@ Expect the backfill to produce a few hundred candidates and a handful of shortli
 **Three levers if it needs to be cheaper:**
 
 1. `llm_model` → a cheaper small model in Settings. Around 10× cheaper is available; run both against the golden fixtures first to see the accuracy gap on real data.
-2. `llm_enabled = FALSE` → heuristic extraction only. **£0 AI cost**, lower extraction quality, everything else unchanged.
+2. `llm_enabled = FALSE` → heuristic extraction only. **no AI calls**, lower extraction quality, everything else unchanged.
 3. Disable the highest-volume news sources in the `Sources` tab. AI cost is roughly proportional to articles processed.
 
-The cost ledger is in the database — `SELECT strftime('%Y-%m', created_at), ROUND(SUM(cost_usd),2) FROM llm_cache GROUP BY 1` — and the current month's figure appears in `/status`.
+The pipeline does not track AI spend; check the provider's billing page. `llm_cache` keeps token counts per call if you want a rough volume figure.
 
 ---
 
@@ -263,7 +263,7 @@ Then run **the health query** — median age of shortlisted companies over the l
 founder-radar review                # clear the fuzzy-match review queue
 founder-radar sources --list        # any source at zero for a fortnight?
 ```
-Check the AI spend. Re-verify one or two adapters against live pages.
+Re-verify one or two adapters against live pages.
 
 ### When something breaks
 

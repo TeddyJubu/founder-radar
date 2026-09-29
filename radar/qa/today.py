@@ -12,10 +12,27 @@ cannot merge. A stored `reason` is what makes "why did this drop off Today?"
 a sentence a human can check, the same way `config_hash` makes a score
 change answerable.
 
-If Hermes is down, a small deterministic pre-check still catches the obvious
-holes (IPO copy, Oxford offered as Yorkshire). Anything it cannot prove stays
-on the list — a quiet Hermes day must not empty Today. `--no-llm` skips the
-subagent but still runs the pre-check.
+A small deterministic pre-check still catches the obvious holes (IPO copy,
+Oxford offered as Yorkshire) whether or not Hermes is up.
+
+Every card ends in exactly one of three recorded outcomes:
+
+* `pass`       a checker looked at the card and found nothing wrong;
+* `reject`     a checker (or the pre-check) found it is the wrong company;
+* `incomplete` nothing could vouch for it — Hermes missing, timed out, or
+               returned something unparseable.
+
+An incomplete card is NOT a pass. It is never cached as one (the next run asks
+again) and it is withheld from every surface — the live Today page, the Sheet
+and the Telegram ping — until a check completes (`qa_state` / `is_withheld`,
+the one rule all three read). A card QA never reached at all (no row) is also
+withheld until its first completed pass.
+
+The one deliberate exception is an explicit rules-only mode (`--no-llm`,
+`--no-hermes`, `TODAY_QA=0`, or the operator override
+`RADAR_ALLOW_RULES_ONLY_PUBLISH=1`): there the pre-check is the whole check, its
+passes are recorded as checker `rules`, stay visible, and never satisfy a later
+run that does have Hermes.
 """
 
 from __future__ import annotations
@@ -29,6 +46,7 @@ import shutil
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -39,6 +57,10 @@ log = logging.getLogger(__name__)
 PROMPT_VERSION = "today-qa-2026-08-22.1"
 QA_LIMIT = 24
 HERMES_TIMEOUT_S = 60
+# A Hermes call can burn 3 attempts x HERMES_TIMEOUT_S. When this many cards in a
+# row fail, Hermes is down, not the cards: stop asking and leave the rest
+# incomplete instead of hanging a 3600 s unit on a dead subagent.
+MAX_CONSECUTIVE_FAILURES = 3
 REVIEWABLE = ("shortlist", "watchlist")
 TRACK_A = ("news", "grant", "spinout", "accelerator")
 VENTURE_SIGNAL_KINDS = (
@@ -113,7 +135,7 @@ FALLBACK_PROMPT = (
 
 
 class TodayQaError(RuntimeError):
-    """Base for Today QA failures. The pipeline swallows these."""
+    """Base for Today QA failures. `check_one` records the card as `incomplete`."""
 
 
 class HermesUnavailable(TodayQaError):
@@ -184,7 +206,7 @@ class TodayCard:
 
 @dataclass(frozen=True)
 class TodayCheckResult:
-    verdict: str                          # pass | reject
+    verdict: str                          # pass | reject | incomplete
     reason: str | None = None
     summary: str = ""
     checker: str = "hermes"
@@ -193,13 +215,23 @@ class TodayCheckResult:
 
 @dataclass
 class TodayQaReport:
-    checked: int = 0
+    checked: int = 0                      # cards with a final verdict (pass + reject)
     passed: int = 0
     rejected: int = 0
-    skipped: int = 0
+    skipped: int = 0                      # cards `check_one` itself blew up on
     cached: int = 0
     cards: int = 0
+    # Cards with NO final verdict. They are withheld from Today, the Sheet and
+    # the ping until a later run completes the check.
+    incomplete: int = 0
+    # Candidates ranked below QA_LIMIT: withheld until a later completed check.
+    uncovered: int = 0
+    hermes_failures: int = 0
+    # True only when Hermes was the checker AND no card was left incomplete —
+    # "a checker was selected" is not the same as "the check happened".
     hermes_used: bool = False
+    rules_only: bool = False              # a deliberate rules-only mode
+    aborted: str | None = None            # why QA could not run at all
     warnings: list[str] = field(default_factory=list)
 
 
@@ -353,7 +385,10 @@ def resolve_hermes_binary() -> str | None:
 
 def _hermes_subprocess_env() -> dict[str, str]:
     """Env for Hermes subagents: remap HERMES_HOME to the data dir Hermes expects."""
-    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1"}
+    # QA runs as radar against the operator-owned Hermes installation.
+    # Keep startup read-only: lazy dependency updates require the owner.
+    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1",
+           "HERMES_DISABLE_LAZY_INSTALLS": "1"}
     owner_home = (os.environ.get("HERMES_HOME") or "").strip()
     if owner_home:
         hermes_dir = Path(owner_home) / ".hermes"
@@ -398,12 +433,17 @@ class HermesSubagent:
         binary = self._binary or resolve_hermes_binary()
         if not binary:
             raise HermesUnavailable("hermes binary not on PATH")
+        _refresh_hermes_acl()
         try:
-            from radar.qa.publish import _ensure_hermes_acl
+            return self._query(binary, prompt)
+        finally:
+            # Hermes, running as radar under the operator's home, rewrites
+            # files there (auth.json, caches) and chmods the tree. Healing only
+            # *before* the next run left the gateway — which reads the same
+            # files as the operator — crash-looping in between.
+            _refresh_hermes_acl()
 
-            _ensure_hermes_acl()
-        except Exception:  # noqa: BLE001 — ACL refresh is best-effort
-            pass
+    def _query(self, binary: str, prompt: str) -> str:
         # stdin=True means the prompt is the query body; otherwise it is argv.
         attempts: list[tuple[list[str], bool]] = [
             ([binary, "chat", "-Q", "--query-file", "-"], True),
@@ -436,6 +476,15 @@ class HermesSubagent:
             last = f"exit {completed.returncode}: {text[:240]}"
             log.warning("hermes today-qa %s: %s", _argv_for_log(argv), last)
         raise HermesUnavailable(last or "hermes returned nothing")
+
+
+def _refresh_hermes_acl() -> None:
+    try:
+        from radar.qa.publish import _ensure_hermes_acl
+
+        _ensure_hermes_acl()
+    except Exception:  # noqa: BLE001 — ACL refresh is best-effort
+        pass
 
 
 def build_today_checker(*, checker: TodayChecker | None = None) -> TodayChecker | None:
@@ -492,12 +541,19 @@ def record_check(
         ),
     )
 
+    if _state_of(result.verdict, result.checker) == "pass":
+        current = load_today_cards(db, _config_for(db, None),
+                                   company_id=card.company_id, limit=1)
+        if current and current[0].snapshot_hash() == card.snapshot_hash():
+            from radar.score.snapshot import approve_current
+            approve_current(db, card, checked_at or now_iso())
+
 
 def cached_check(db: Any, card: TodayCard) -> TodayCheckResult | None:
     try:
         row = _one(
             db,
-            "SELECT verdict, reason, summary, checker, raw_text "
+            "SELECT verdict, reason, summary, checker, raw_text, checked_at "
             "FROM today_check WHERE company_id = ? AND snapshot_hash = ?",
             (card.company_id, card.snapshot_hash()),
         )
@@ -505,6 +561,13 @@ def cached_check(db: Any, card: TodayCard) -> TodayCheckResult | None:
         return None
     if row is None:
         return None
+    if _state_of(row["verdict"], row["checker"]) == "pass":
+        latest = _one(db, "SELECT MAX(scored_at) AS stamp FROM score WHERE company_id = ?",
+                      (card.company_id,))
+        # A rescore creates a new generation even when the card text is unchanged.
+        # Reusing its old pass would skip Hermes and pretend new QA completed.
+        if latest and latest["stamp"] and latest["stamp"] > row["checked_at"]:
+            return None
     return TodayCheckResult(
         verdict=row["verdict"], reason=row["reason"], summary=row["summary"] or "",
         checker=row["checker"] or "hermes", raw_text=row["raw_text"],
@@ -529,9 +592,75 @@ def is_rejected(db: Any, company_id: str) -> bool:
     """True when the latest Today QA verdict is reject.
 
     A missing table or a missing row is not a reject — Today stays populated
-    when QA has not run yet.
+    when QA has not run yet. Surfaces should ask `is_withheld`, which also
+    covers a check that did not complete.
     """
     return latest_today_verdict(db, company_id) == "reject"
+
+
+def _state_of(verdict: str | None, checker: str | None) -> str:
+    """The one place a stored row becomes a decision: pass | reject | incomplete.
+
+    Anything that is not a clean `pass` or `reject` is incomplete — including
+    the `pass` / `skip` rows older builds wrote when Hermes was down or timed
+    out, which were never checks and must not be trusted now.
+    """
+    if verdict == "reject":
+        return "reject"
+    if verdict == "pass" and (checker or "") != "skip":
+        return "pass"
+    return "incomplete"
+
+
+def qa_state(db: Any, company_id: str) -> str | None:
+    """`pass` | `reject` | `incomplete` from the newest check, None if never checked."""
+    try:
+        row = _one(
+            db,
+            "SELECT verdict, checker, checked_at, snapshot_hash FROM today_check WHERE company_id = ? "
+            "ORDER BY checked_at DESC, rowid DESC LIMIT 1",
+            (company_id,),
+        )
+    except sqlite3.OperationalError:
+        return None
+    if row is None:
+        return None
+    state = _state_of(row["verdict"], row["checker"])
+    if state == "pass":
+        cards = load_today_cards(db, _config_for(db, None), company_id=company_id, limit=1)
+        if not cards or cards[0].snapshot_hash() != row["snapshot_hash"]:
+            return "incomplete"
+        changed = _one(db, "SELECT MAX(scored_at) AS stamp FROM score WHERE company_id = ?",
+                       (company_id,))
+        if changed and changed["stamp"] and changed["stamp"] > row["checked_at"]:
+            return "incomplete"
+    return state
+
+
+def historical_pass(db: Any, company_id: str, approved_hash: str | None) -> bool:
+    """Proof for this frozen score, while retaining the latest rejection veto."""
+    if not approved_hash or is_rejected(db, company_id):
+        return False
+    row = _one(db, "SELECT verdict, checker FROM today_check "
+               "WHERE company_id = ? AND snapshot_hash = ?",
+               (company_id, approved_hash))
+    return bool(row and _state_of(row["verdict"], row["checker"]) == "pass")
+
+
+def is_withheld(db: Any, company_id: str) -> bool:
+    """True when Today QA keeps this company off every surface.
+
+    Rejected, or checked without a completed verdict. The live Today page, the
+    Sheet's Today tab, the digest and the ping's counts all ask this.
+    """
+    return qa_state(db, company_id) != "pass"
+
+
+def withheld_company_ids(db: Any) -> dict[str, str]:
+    """`{company_id: 'reject' | 'incomplete'}` for every company QA withholds."""
+    rows = _query(db, "SELECT id FROM company WHERE merged_into IS NULL")
+    return {row["id"]: qa_state(db, row["id"]) or "incomplete"
+            for row in rows if is_withheld(db, row["id"])}
 
 
 # ---------------------------------------------------------- card loading
@@ -655,17 +784,36 @@ def load_today_cards(
     cfg: Any = None,
     *,
     limit: int = QA_LIMIT,
+    company_id: str | None = None,
 ) -> list[TodayCard]:
     """The companies Today *would* consider, in Today order, capped.
 
     Shortlist, Track A watchlist, and registry watchlist rows that already
     have a venture signal (SH01 / grant / press / a non-CH source). Registry
     shells without a venture signal are skipped so we do not spend a Hermes
-    call on a card `_today_block_reason` would already hide.
+    call on a card `_today_block_reason` would already hide. Reviewed companies
+    and exact-snapshot cached rejects do not consume the QA limit. Explicit
+    company lookups keep those records available for approval and history.
     """
     config_hash = _active_config_hash(db)
     hash_sql = "AND s.config_hash = ?" if config_hash else ""
     hash_params: tuple[Any, ...] = (config_hash,) if config_hash else ()
+    company_sql = "AND s.company_id = ?" if company_id is not None else ""
+    company_params = (company_id,) if company_id is not None else ()
+    # Queue QA shares Today review decisions. Explicit identity lookups bypass
+    # these filters so Kept and historical/current approval checks still work.
+    decision_sql = ""
+    decision_params: tuple[Any, ...] = ()
+    if company_id is None:
+        day = date.today().isoformat()
+        decision_sql = """AND NOT EXISTS (
+            SELECT 1 FROM user_field u WHERE u.company_id = s.company_id
+              AND u.field = 'verdict' AND TRIM(COALESCE(u.value, '')) != ''
+              AND substr(u.updated_at, 1, 10) < ?)
+            AND NOT EXISTS (
+            SELECT 1 FROM daily_review dr WHERE dr.company_id = s.company_id
+              AND dr.review_date = ?)"""
+        decision_params = (day, day)
     track_sql = ",".join("?" * len(TRACK_A))
     rows = _query(
         db,
@@ -679,6 +827,8 @@ def load_today_cards(
             FROM score s
            WHERE s.tier IN (?, ?)
              {hash_sql}
+             {company_sql}
+             {decision_sql}
         )
         SELECT c.id AS company_id, c.canonical_name, c.hq_city, c.hq_region,
                c.stage, c.one_liner, c.incorporated_on, c.discovery_route,
@@ -690,7 +840,7 @@ def load_today_cards(
          ORDER BY CASE WHEN c.discovery_route IN ({track_sql}) THEN 0 ELSE 1 END,
                   s.priority DESC, c.canonical_name
         """,
-        (*REVIEWABLE, *hash_params, *TRACK_A),
+        (*REVIEWABLE, *hash_params, *company_params, *decision_params, *TRACK_A),
     )
     cards: list[TodayCard] = []
     for row in rows:
@@ -703,7 +853,7 @@ def load_today_cards(
         ):
             continue
         geo_rule, geo_values = _vehicle_geo(cfg, _row_get(row, "vehicle_key"))
-        cards.append(TodayCard(
+        card = TodayCard(
             company_id=row["company_id"],
             name=row["canonical_name"],
             city=_row_get(row, "hq_city"),
@@ -723,7 +873,12 @@ def load_today_cards(
             on_vc_portfolio=bool(_row_get(row, "on_vc_portfolio") or 0),
             sector=_row_get(row, "sector"),
             explanation=_row_get(row, "explanation"),
-        ))
+        )
+        if company_id is None:
+            cached = cached_check(db, card)
+            if cached is not None and cached.verdict == "reject":
+                continue
+        cards.append(card)
         if len(cards) >= max(1, int(limit)):
             break
     return cards
@@ -754,21 +909,69 @@ def _config_for(db: Any, cfg: Any) -> Any:
     return default_config()
 
 
+def _truthy(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes"}
+
+
+def rules_only_mode(*, use_hermes: bool = True) -> bool:
+    """Is rules-only QA a choice someone made, rather than an outage?
+
+    `--no-llm` / `--no-hermes` (`use_hermes=False`), `TODAY_QA=0`, and the
+    operator override `RADAR_ALLOW_RULES_ONLY_PUBLISH=1` all say "the
+    pre-check is enough". A missing or failing Hermes with none of those set
+    is an outage, and its cards are `incomplete`, not passed.
+    """
+    if not use_hermes:
+        return True
+    if os.environ.get("TODAY_QA", "1") in {"0", "false", "no"}:
+        return True
+    return _truthy("RADAR_ALLOW_RULES_ONLY_PUBLISH")
+
+
+def _reusable(cached: TodayCheckResult | None, *, rules_only: bool) -> bool:
+    """May a stored row stand in for a fresh check?
+
+    A reject is deterministic evidence and always stands. A pass stands only if
+    a real checker gave it. An `incomplete` row is a failure record, never a
+    result; a `pass` by checker `skip` is the legacy false pass; and a
+    rules-only pass does not stand in for a model check, so it is honoured only
+    while rules-only mode is still what was asked for.
+    """
+    if cached is None:
+        return False
+    if cached.verdict == "reject":
+        return True
+    if cached.verdict != "pass":
+        return False
+    if cached.checker == "skip":
+        return False
+    if cached.checker == "rules":
+        return rules_only
+    return True
+
+
 def check_one(
     db: Any,
     card: TodayCard,
     *,
     checker: TodayChecker | None,
+    rules_only: bool = False,
+    unavailable: str = "Hermes unavailable",
 ) -> TodayCheckResult:
-    """Rules first; Hermes on whatever rules cannot prove is wrong.
+    """Rules first; a checker on whatever rules cannot prove is wrong.
 
     Either reject wins. Hermes cannot override a rules reject — those are
     the leftover holes (IPO copy, Oxford-as-Yorkshire) that must not depend
     on a model being up.
+
+    A check that does not finish is recorded `incomplete`, never `pass`: not
+    when there is no checker, not when it times out, not when it answers
+    something unparseable. Incomplete rows are not reused as cache hits.
     """
     cached = cached_check(db, card)
-    if cached is not None:
-        return cached
+    if _reusable(cached, rules_only=rules_only):
+        record_check(db, card, cached)
+        return cached  # type: ignore[return-value]
 
     rules = rules_precheck(card)
     if rules is not None and rules.verdict == "reject":
@@ -776,31 +979,48 @@ def check_one(
         return rules
 
     if checker is None:
-        passed = TodayCheckResult(
-            verdict="pass", checker="skip",
-            summary="Hermes unavailable; rules found no obvious veto.",
-        )
-        record_check(db, card, passed)
-        return passed
+        if rules_only:
+            result = TodayCheckResult(
+                verdict="pass", checker="rules",
+                summary="Rules-only mode: no obvious veto; no model check was run.",
+            )
+        else:
+            result = TodayCheckResult(
+                verdict="incomplete", checker="skip",
+                summary=f"{unavailable}; card not checked.",
+            )
+        record_check(db, card, result)
+        return result
 
+    name = getattr(checker, "name", "hermes")
     try:
         result = checker.review(card)
     except TodayQaError as exc:
         log.warning("today QA subagent failed for %s: %s", card.name, exc)
-        if rules is not None:
-            record_check(db, card, rules)
-            return rules
-        skipped = TodayCheckResult(
-            verdict="pass", checker="skip",
-            summary=f"subagent failed: {exc}",
+        result = TodayCheckResult(
+            verdict="incomplete", checker=name, summary=f"check failed: {exc}"[:240],
         )
-        record_check(db, card, skipped)
-        return skipped
+        record_check(db, card, result)
+        return result
 
     if result.verdict not in {"pass", "reject"}:
-        raise InvalidVerdict(result.verdict)
+        result = TodayCheckResult(
+            verdict="incomplete", checker=name,
+            summary=f"unusable verdict {result.verdict!r}",
+        )
     record_check(db, card, result)
     return result
+
+
+def _record_incomplete_quietly(db: Any, card: TodayCard, exc: Exception) -> None:
+    """Best effort: leave a withheld marker even when the check itself blew up."""
+    try:
+        record_check(db, card, TodayCheckResult(
+            verdict="incomplete", checker="skip",
+            summary=f"{type(exc).__name__}: {exc}"[:240],
+        ))
+    except Exception:  # noqa: BLE001 - the run must not die on its own bookkeeping
+        log.warning("could not record incomplete marker for %s", card.name)
 
 
 def run_today_qa(
@@ -811,15 +1031,24 @@ def run_today_qa(
     use_hermes: bool = True,
     limit: int = QA_LIMIT,
 ) -> TodayQaReport:
-    """Check the companies selected for Today. Never raises into the run."""
+    """Check the companies selected for Today. Never raises into the run.
+
+    Every card it considers leaves a row: pass, reject, or `incomplete`. What
+    it could not do is on the report (`incomplete`, `aborted`, `warnings`) so
+    the caller can be loud about it; `hermes_used` is true only when Hermes was
+    the checker and finished every card.
+    """
     report = TodayQaReport()
     try:
         cfg = _config_for(db, cfg)
-        cards = load_today_cards(db, cfg, limit=limit)
+        candidates = load_today_cards(db, cfg, limit=10_000)
     except Exception as exc:  # noqa: BLE001 - one stage, not the run
-        report.warnings.append(f"today QA skipped: {type(exc).__name__}: {exc}")
+        report.aborted = f"{type(exc).__name__}: {exc}"
+        report.warnings.append(f"today QA skipped: {report.aborted}")
         log.warning("today QA could not load cards: %s", exc)
         return report
+    cards = candidates[: max(1, int(limit))]
+    report.uncovered = len(candidates) - len(cards)
 
     active: TodayChecker | None = None
     if use_hermes:
@@ -831,25 +1060,54 @@ def run_today_qa(
     elif checker is not None:
         active = checker
 
+    rules_only = active is None and rules_only_mode(use_hermes=use_hermes)
+    is_hermes = bool(active is not None and getattr(active, "name", "") == "hermes")
     report.cards = len(cards)
-    report.hermes_used = bool(
-        active is not None and getattr(active, "name", "") == "hermes"
-    )
-    if cards and use_hermes and active is None:
-        report.warnings.append("today QA: Hermes not on PATH — rules only")
+    report.rules_only = rules_only
+    if cards and active is None:
+        report.warnings.append(
+            "today QA: rules only by request — no model check"
+            if rules_only else
+            "today QA: Hermes not available — cards left unchecked (incomplete)"
+        )
 
+    consecutive = 0
+    abandoned = False
     for card in cards:
-        before = cached_check(db, card)
+        live = None if abandoned else active
+        hit = _reusable(cached_check(db, card), rules_only=rules_only)
         try:
-            result = check_one(db, card, checker=active)
+            result = check_one(
+                db, card, checker=live, rules_only=rules_only,
+                unavailable=("Hermes abandoned after repeated failures"
+                             if abandoned else "Hermes unavailable"),
+            )
         except Exception as exc:  # noqa: BLE001 - one company, not the run
             report.skipped += 1
+            report.incomplete += 1
             report.warnings.append(f"{card.name}: {type(exc).__name__}: {exc}")
             log.warning("today QA skipped %s: %s", card.name, exc)
+            _record_incomplete_quietly(db, card, exc)
             continue
+
+        if result.verdict == "incomplete":
+            report.incomplete += 1
+            if live is not None:
+                report.hermes_failures += 1
+                consecutive += 1
+                if consecutive >= MAX_CONSECUTIVE_FAILURES:
+                    abandoned = True
+                    report.warnings.append(
+                        f"today QA: {consecutive} checks in a row failed — "
+                        "abandoning Hermes; remaining cards left incomplete"
+                    )
+            continue
+
         report.checked += 1
-        if before is not None:
+        if hit:
             report.cached += 1
+        elif live is not None and result.checker != "rules":
+            consecutive = 0
         if result.verdict == "reject":
             report.rejected += 1
             log.info(
@@ -858,6 +1116,20 @@ def run_today_qa(
             )
         else:
             report.passed += 1
+
+    report.incomplete += report.uncovered
+    report.hermes_used = bool(is_hermes and report.incomplete == 0)
+    if report.incomplete:
+        report.warnings.append(
+            f"today QA: {report.incomplete} of {report.cards} cards have no "
+            "completed check — withheld from Today, the Sheet and the ping "
+            "until one completes"
+        )
+    if report.uncovered:
+        report.warnings.append(
+            f"today QA: {report.uncovered} further candidate cards rank below "
+            f"the QA limit ({limit}) and were not checked"
+        )
     if report.rejected:
         report.warnings.append(
             f"today QA dropped {report.rejected} of {report.checked} selected companies"
@@ -869,6 +1141,7 @@ __all__ = [
     "HermesSubagent",
     "HermesUnavailable",
     "InvalidVerdict",
+    "MAX_CONSECUTIVE_FAILURES",
     "PROMPT_VERSION",
     "QA_LIMIT",
     "REJECT_REASONS",
@@ -883,12 +1156,16 @@ __all__ = [
     "check_one",
     "has_registry_venture_signal",
     "is_rejected",
+    "is_withheld",
     "latest_today_verdict",
     "load_today_cards",
     "parse_verdict",
+    "qa_state",
     "record_check",
     "resolve_hermes_binary",
+    "rules_only_mode",
     "rules_precheck",
     "run_today_qa",
     "subagent_prompt",
+    "withheld_company_ids",
 ]

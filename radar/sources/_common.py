@@ -328,7 +328,10 @@ def html_doc(payload: str | bytes, source_key: str):
         raise LayoutChanged(source_key, f"selectolax unavailable: {exc}") from exc
     if not body or not body.strip():
         raise LayoutChanged(source_key, "empty response body")
-    return HTMLParser(body)
+    doc = HTMLParser(body)
+    if meta_noindex(doc):
+        raise SourceBlocked(source_key, "page requests noindex")
+    return doc
 
 
 def text_of(node, selector: str | None = None, *, default: str = "") -> str:

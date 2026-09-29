@@ -151,6 +151,13 @@ Unknown keys produce a warning in the status column and are ignored, never an er
 
 `Geo values` may use `sunderland`, `north_england` and `outside_golden_triangle` in addition to the standard vocabulary. These three are **gate-only region rules**, defined in `06-scoring.md` §2.2; they are not values the `geography` attribute can take.
 
+**A bad `Geo values` cell never stops the run, and never loosens a HARD rule.** An unrecognised value is warned about in the status column (with a "did you mean" hint) and ignored — for a `SOFT` rule that is the whole story, because a soft rule never rejects. For a `HARD` rule, dropping the value could leave an empty list, which the gate reads as "no rule", so a typo like `north_eest` would silently switch the rule off. The loader therefore fails that one vehicle closed, if **any** value in its HARD `Geo values` is invalid:
+
+- **Held** — the vehicle is replaced by its last valid configuration (the whole row, not just the geography cell), and the status cell reads `❌ … vehicle held at its last valid configuration`.
+- **Blocked** — with no usable last valid configuration (a brand-new row, or one whose last-good HARD rule had no values), the vehicle is set inactive so nothing is scored against it, and the status cell reads `❌ … vehicle BLOCKED (not scored)`.
+
+Either way the same note goes to the loader's warnings (so it reaches the run result and the Run Log), the config is recorded as errored and is **not** promoted to last-good, and every other vehicle carries on as normal. The Sheet cell itself is left as typed so it can be corrected. A deliberately blank `Geo values` cell (or `*(agnostic)*`) is not an invalid value: it stays an unrestricted rule.
+
 ---
 
 ### Tab 5 — Scoring Weights *(editable)*
@@ -379,3 +386,7 @@ Exit codes: `0` success · `1` partial (some sources failed) · `2` fatal.
 | CLI | — | **everything** | — |
 
 The one rule that keeps this stable: **the pipeline never writes to a cell Aryan owns, and Aryan never has to write to a cell the pipeline owns.** Where the two meet — the verdict columns — the sheet always wins and is read back before every render.
+
+Database restore validates a temporary SQLite copy, then uses SQLite's backup API to update the live database as one transaction. Existing idle connections see the restored contents on their next transaction; an active writer causes a bounded refusal. It does not replace a valid live database file or remove its transaction log. A missing or corrupt destination is installed from the verified copy. Stop the daily run and web service before an operator restore to prevent new decisions during this intentional rollback.
+
+Database migrations commit their SQL and completion marker together. Legacy migrations whose added columns already exist can recover their missing marker; unrelated migration failures roll back and stop installation.

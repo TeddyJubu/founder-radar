@@ -55,7 +55,6 @@ from radar.extract.llm import (
     build_llm,
     build_user_prompt,
     cache_key,
-    estimate_cost,
     llm_json_schema,
     near_dup_key,
     normalise_ws,
@@ -153,6 +152,11 @@ def extract_html(
 ) -> Extraction:
     ctx = ctx or ExtractContext()
 
+    from selectolax.parser import HTMLParser
+    from radar.sources._common import meta_noindex
+    if meta_noindex(HTMLParser(html)):
+        return blank(prefilter_reason="noindex", extraction_method="prefilter")
+
     # ---- ① the free cascade ------------------------------------------------
     pre = prefilter(url, title, html)
     if not pre.ok:
@@ -169,7 +173,7 @@ def extract_html(
     key = cache_key(pre.text, ctx.model_id)
     user = build_user_prompt(title, pre.text, url=url, jsonld=pre.jsonld)
 
-    # ---- ③ the cache, which is also the cost ledger ------------------------
+    # ---- ③ the cache ---------------------------------------------------------
     cached = ctx.cache.get(key)
     if cached is not None:
         record = _validate(cached.payload)

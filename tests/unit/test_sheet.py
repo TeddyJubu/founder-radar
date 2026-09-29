@@ -142,6 +142,15 @@ def test_today_says_what_each_company_does_before_it_cites_an_article(db, sheet)
          "Newcastle's Loamweave raises £900k pre-seed, UKTN reports",
          "uktn", "https://uktn.test/loamweave", stamp))
 
+    db.execute("INSERT INTO company_source(company_id, source_key, external_id, source_url, "
+               "first_seen, last_seen) VALUES (?, 'uktn', 'loam', ?, ?, ?)",
+               (company.id, "https://uktn.test/loamweave", stamp, stamp))
+    # Prime the sheet's settings generation, then score fixtures against it.
+    render(db, sheet)
+    db.execute("UPDATE score SET config_hash = (SELECT config_hash FROM config_snapshot "
+               "WHERE is_last_good = 1 ORDER BY created_at DESC LIMIT 1)")
+    from tests.factories import approve_cards
+    approve_cards(db)
     render(db, sheet)
     labels = sheet.column(TODAY, "A")
     values = sheet.column(TODAY, "B")
@@ -174,6 +183,12 @@ def test_today_shows_companies_house_verification_only_when_signal_exists(db, sh
          stamp),
     )
 
+    # Prime the sheet's settings generation, then score fixtures against it.
+    render(db, sheet)
+    db.execute("UPDATE score SET config_hash = (SELECT config_hash FROM config_snapshot "
+               "WHERE is_last_good = 1 ORDER BY created_at DESC LIMIT 1)")
+    from tests.factories import approve_cards
+    approve_cards(db)
     render(db, sheet)
     labels = sheet.column(TODAY, "A")
     values = sheet.column(TODAY, "B")
@@ -459,7 +474,7 @@ def test_source_failures_appear_only_on_the_sources_tab(db, sheet):
         assert "failed" not in sheet.text_of(tab).lower()
 
     # Run Log still names the source that failed — that tab is the audit trail.
-    assert "uktn" in sheet.column(RUN_LOG, "O")
+    assert "uktn" in sheet.column(RUN_LOG, "M")
 
 
 def test_oxford_health_joins_under_its_registry_key(db, sheet):

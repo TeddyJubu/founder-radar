@@ -19,6 +19,7 @@ all Playwright and this server need.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import socket
 import subprocess
@@ -67,12 +68,14 @@ def demo_db(tmp_path_factory) -> Path:
 
 @pytest.fixture(autouse=True)
 def fresh_daily_review(demo_db: Path):
-    """Keep browser tests isolated without clearing lasting verdicts."""
+    """Reset disposable review state so each test starts with the demo queue."""
     from prototype.server import reset_daily_review
 
     conn = sqlite3.connect(str(demo_db))
     try:
         reset_daily_review(conn)
+        conn.execute("DELETE FROM user_field")
+        conn.commit()
     finally:
         conn.close()
 
@@ -84,6 +87,7 @@ def server(demo_db: Path):
     proc = subprocess.Popen(
         [sys.executable, str(SERVER), "--db", str(demo_db), "--port", str(port)],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(REPO),
+        env={**os.environ, "PYTHONPATH": str(REPO)},
     )
     base = f"http://127.0.0.1:{port}"
 

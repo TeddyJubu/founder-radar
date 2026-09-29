@@ -16,7 +16,7 @@ ROOT="${ROOT:-/opt/founder-radar}"
 APP_DIR="${APP_DIR:-$ROOT/app}"
 APP_USER="${APP_USER:-radar}"
 LOCK="${RADAR_UPDATE_LOCK:-/run/founder-radar-update.lock}"
-LOG="${RADAR_UPDATE_LOG:-$ROOT/logs/update.log}"
+LOG="${RADAR_UPDATE_LOG:-/var/log/founder-radar-update.log}"
 DRY="${RADAR_UPDATE_DRY_RUN:-0}"
 FORCE="${RADAR_UPDATE_FORCE_RESCORE:-0}"
 ALLOW_NONROOT="${RADAR_UPDATE_ALLOW_NONROOT:-0}"
@@ -33,10 +33,28 @@ if [ "$(id -u)" -ne 0 ] && [ "$ALLOW_NONROOT" != "1" ]; then
   exit 1
 fi
 
+# Root must never load Git configuration, hooks, or deployment code writable by
+# the service account. Check the whole checkout and each containing directory.
+if [ "$(id -u)" -eq 0 ]; then
+  parent="$APP_DIR"
+  while :; do
+    if [ -L "$parent" ] || [ "$(stat -c %u "$parent")" != 0 ] || \
+        [ -n "$(find "$parent" -maxdepth 0 -perm /022 -print)" ]; then
+      echo "unsafe root update input: $parent" >&2; exit 1
+    fi
+    [ "$parent" = / ] && break
+    parent="$(dirname "$parent")"
+  done
+  if [ -n "$(find "$APP_DIR" \( -type l -o ! -user root -o -perm /022 \) -print -quit)" ]; then
+    echo "unsafe root update input: checkout ownership or permissions" >&2; exit 1
+  fi
+fi
+
 mkdir -p "$(dirname "$LOG")" "$(dirname "$LOCK")"
 touch "$LOG"
 if [ "$(id -u)" -eq 0 ]; then
-  chown "${APP_USER}:${APP_USER}" "$LOG" 2>/dev/null || true
+  chown root:root "$LOG"
+  chmod 600 "$LOG"
 fi
 
 say() {
@@ -49,6 +67,12 @@ say() {
   fi
 }
 
+# Without flock the test below fails for the wrong reason and reads as "another
+# update is running" — the timer would then skip every cycle, silently, for ever.
+if ! command -v flock >/dev/null 2>&1; then
+  echo "flock (util-linux) is required" >&2
+  exit 1
+fi
 exec 9>"$LOCK"
 if ! flock -n 9; then
   say "another founder-radar update is already running — skipping"
@@ -57,7 +81,7 @@ fi
 
 run_git() {
   if [ "$(id -u)" -eq 0 ]; then
-    sudo -H -u "$APP_USER" git -C "$APP_DIR" "$@"
+    git -C "$APP_DIR" "$@"
   else
     git -C "$APP_DIR" "$@"
   fi

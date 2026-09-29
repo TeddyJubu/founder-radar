@@ -177,6 +177,8 @@ CREATE TABLE IF NOT EXISTS score_component (
   PRIMARY KEY (score_id, key)
 );
 
+-- SUPERSEDED by score_snapshot below: keyed on a `run` row, which a rescore does
+-- not have, and never populated. Kept because dropping it needs a migration.
 CREATE TABLE IF NOT EXISTS score_history (
   company_id  TEXT NOT NULL REFERENCES company(id),
   fund_key    TEXT NOT NULL,
@@ -189,6 +191,29 @@ CREATE TABLE IF NOT EXISTS score_history (
   scored_at   TEXT NOT NULL,
   PRIMARY KEY (company_id, fund_key, run_id)
 );
+
+-- What scoring concluded, as it stood at the end of each UTC day, for the dated
+-- and weekly digests (`score` is overwritten by every rescore). Shortlist rows
+-- only, one per company x fund x day — see radar/score/snapshot.py for why.
+-- A new table, so `db migrate` creates it on existing databases from this file.
+CREATE TABLE IF NOT EXISTS score_snapshot (
+  company_id     TEXT NOT NULL REFERENCES company(id),
+  fund_key       TEXT NOT NULL,
+  snapshot_date  TEXT NOT NULL,   -- date(scored_at), UTC
+  vehicle_key    TEXT,
+  config_hash    TEXT NOT NULL,
+  fund_fit_pct   REAL NOT NULL,
+  coverage       REAL NOT NULL,
+  discovery_edge REAL NOT NULL,
+  priority       REAL NOT NULL,
+  tier           TEXT NOT NULL,
+  components     TEXT,            -- JSON [[key, label, sub_score, weight, evidence], ...]
+  approved_snapshot_hash TEXT,    -- exact Today card with a completed QA pass
+  scored_at      TEXT NOT NULL,
+  PRIMARY KEY (company_id, fund_key, snapshot_date)
+);
+CREATE INDEX IF NOT EXISTS ix_score_snapshot_date
+    ON score_snapshot(snapshot_date, tier);
 
 CREATE TABLE IF NOT EXISTS user_field (
   company_id  TEXT NOT NULL REFERENCES company(id),
@@ -255,7 +280,7 @@ CREATE TABLE IF NOT EXISTS run (
   gated_out       INTEGER DEFAULT 0,
   shortlisted     INTEGER DEFAULT 0,
   llm_calls       INTEGER DEFAULT 0,
-  llm_cost_usd    REAL DEFAULT 0,
+  llm_cost_usd    REAL DEFAULT 0,  -- DEPRECATED: cost tracking removed, never written; column kept (SQLite has no DROP IF EXISTS)
   status          TEXT NOT NULL,   -- running | ok | partial | failed
   error           TEXT
 );
@@ -285,7 +310,7 @@ CREATE TABLE IF NOT EXISTS llm_cache (
   response_json TEXT NOT NULL,
   tokens_in   INTEGER,
   tokens_out  INTEGER,
-  cost_usd    REAL,
+  cost_usd    REAL,               -- DEPRECATED: cost tracking removed, never written; column kept
   created_at  TEXT NOT NULL
 );
 

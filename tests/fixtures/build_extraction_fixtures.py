@@ -102,7 +102,6 @@ class Fixture:
             "model_id": DEFAULT_MODEL,
             "tokens_in": int(len(pre.text) / 4) + 300,
             "tokens_out": 350,
-            "cost_usd": 0.001,
         }
         (LLM_CACHE / f"{key}.json").write_text(
             json.dumps(entry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -914,12 +913,12 @@ FIXTURES: list[Fixture] = [
         expected={
             "is_about_single_company": True,
             # grounding drops the invented name: company_name is gone. The
-            # AMOUNT survives — its quote is verbatim — which is the point:
-            # grounding drops the unsupported claim, not the whole record.
+            # Amount also lacks a named subject in its supporting sentence.
+            # A verbatim quote alone cannot establish an unnamed company's facts.
             "company_name": "",
             "sector": "vertical_saas",
             "stage": "pre_seed",
-            "amount": 900000,
+            "amount": None,
             "needs_review": True,
         },
         og_title="Preston startup raises £900,000 to digitise school catering",
@@ -951,7 +950,7 @@ FIXTURES: list[Fixture] = [
         },
         expected={
             "is_about_single_company": True,
-            "company_name": "Seaboard",
+            "company_name": "",
             "sector": "b2b_saas",
             "stage": "pre_seed",
             "amount": None,
@@ -985,7 +984,7 @@ FIXTURES: list[Fixture] = [
         },
         expected={
             "is_about_single_company": True,
-            "company_name": "HumberWorks",
+            "company_name": "",
             "sector": "industrial_tech",
             "stage": "pre_seed",
             "amount": None,

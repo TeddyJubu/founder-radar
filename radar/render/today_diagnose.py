@@ -61,17 +61,28 @@ def diagnose_today(db: Any) -> dict[str, Any]:
             (config_hash,),
         ) or 0)
 
-    hermes_rejected = 0
-    try:
-        hermes_rejected = int(db.scalar(
-            """SELECT COUNT(*) FROM today_check
-                WHERE verdict = 'reject'
-                  AND id IN (
-                        SELECT MAX(id) FROM today_check GROUP BY company_id
-                  )"""
-        ) or 0)
-    except Exception:  # noqa: BLE001 — pre-migration DBs still diagnose
-        hermes_rejected = 0
+    # Today QA state, read through the same rule every surface uses. (This used
+    # to select MAX(id) from a table with no `id` column, fail, and report 0.)
+    from radar.qa.today import withheld_company_ids
+
+    withheld = withheld_company_ids(db)        # {} on a pre-migration DB
+    hermes_rejected = sum(1 for state in withheld.values() if state == "reject")
+    qa_held = {"shortlist": 0, "watchlist": 0}
+    qa_incomplete_ids: set[str] = set()
+    if withheld:
+        reviewable_sql = (
+            "SELECT company_id, tier FROM score "
+            "WHERE tier IN ('shortlist', 'watchlist')"
+        )
+        for row in db.query(
+            reviewable_sql + (" AND config_hash = ?" if config_hash else ""),
+            (config_hash,) if config_hash else (),
+        ):
+            state = withheld.get(row["company_id"])
+            if state:
+                qa_held[row["tier"]] += 1
+            if state == "incomplete":
+                qa_incomplete_ids.add(row["company_id"])
 
     last_run = db.one(
         "SELECT started_at, finished_at, status, items_fetched, gated_out, "
@@ -107,6 +118,13 @@ def diagnose_today(db: Any) -> dict[str, Any]:
             f"Hermes Today QA has {hermes_rejected} stored rejects — check "
             "`today_check` reasons"
         )
+    if qa_incomplete_ids:
+        likely_causes.append(
+            f"Today QA left {len(qa_incomplete_ids)} company(ies) without a "
+            "completed check (Hermes missing, timing out or unparseable) — they "
+            "are withheld from Today, the Sheet and the ping until "
+            "`founder-radar today-qa` completes"
+        )
     if not likely_causes and reviewable == 0:
         likely_causes.append(
             "No shortlist/watchlist rows for the active config — empty Today "
@@ -137,6 +155,10 @@ def diagnose_today(db: Any) -> dict[str, Any]:
         "scored_for_active_hash": scored_for_hash,
         "scores_on_other_hashes": other_hash_scores,
         "hermes_rejects_latest": hermes_rejected,
+        # Reviewable score rows whose company QA withholds, by tier — what the
+        # ping subtracts so it counts only cards Today will actually show.
+        "qa_withheld": qa_held,
+        "qa_incomplete": len(qa_incomplete_ids),
         "reviewable": reviewable,
         "vehicle_keys": vehicle_keys,
         "last_run": dict(last_run) if last_run else None,
@@ -161,6 +183,8 @@ def format_today_diagnosis(report: dict[str, Any]) -> str:
     lines.append(
         f"Fund Criteria {'POISONED' if report['poisoned_fund_criteria'] else 'ok'} · "
         f"Hermes rejects (latest) {report['hermes_rejects_latest']}"
+        + (f" · QA incomplete {report['qa_incomplete']}"
+           if report.get("qa_incomplete") else "")
     )
     last = report.get("last_run")
     if last:

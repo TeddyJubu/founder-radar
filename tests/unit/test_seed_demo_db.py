@@ -20,5 +20,9 @@ def test_seed_demo_db_scores_register_companies(tmp_path):
     try:
         assert db.scalar("SELECT COUNT(*) FROM company WHERE qualified = 1") >= 1
         assert db.scalar("SELECT COUNT(*) FROM score") > 0
+        from prototype.server import build_today
+        assert build_today(db.conn)["companies"], "demo cards need completed offline QA"
+        assert db.scalar("SELECT COUNT(*) FROM today_check WHERE verdict = 'pass' "
+                         "AND checker = 'rules'") > 0
     finally:
         db.close()

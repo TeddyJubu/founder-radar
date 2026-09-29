@@ -111,7 +111,7 @@ SETTING_SPECS: tuple[tuple[str, str, str], ...] = (
     ("max_enrichment_requests_per_run", "int", "Companies House request budget (not companies)"),
     ("daily_digest_max", "int", "Cap on digest length"),
     ("llm_model", "string", "Swap provider without a redeploy"),
-    ("llm_enabled", "bool", "Off = heuristic extraction only, zero AI cost"),
+    ("llm_enabled", "bool", "Off = heuristic extraction only, no AI calls"),
 )
 
 FUND_DISPLAY: dict[str, str] = {
@@ -228,7 +228,8 @@ def mirror_verdict(company_id: str, verdict: str, *,
     """
     if not company_id:
         raise ValueError("company_id is required")
-    if verdict not in {"worth contacting", "not for me", "unsure"}:
+    # "" clears the cell: Undo of a first-ever decision has no verdict to put back.
+    if verdict not in {"worth contacting", "not for me", "unsure", ""}:
         raise ValueError("unsupported verdict")
 
     gw = gateway or open_gateway()
@@ -694,6 +695,8 @@ def build_companies(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
         company, best = view.row, view.best
         months = _months_between(company["incorporated_on"], today)
         owner = user.get(company["id"], {})
+        from radar.score.derive import derived_facts
+        display = derived_facts(company, cfg, today=today)
         cells: dict[str, str] = {
             "A": company["id"],
             "B": str(company["first_seen"] or "")[:10],
@@ -701,9 +704,9 @@ def build_companies(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
             "D": hyperlink(company["website_url"], company["domain"] or company["website_url"]),
             "E": str(company["incorporated_on"] or "")[:10],
             "F": "" if months is None else str(int(round(months))),
-            "G": company["hq_region"] or "",
-            "H": company["sector"] or "",
-            "I": company["stage"] or "",
+            "G": display.get("hq_region", company["hq_region"]) or "",
+            "H": display.get("sector", company["sector"]) or "",
+            "I": display.get("stage", company["stage"]) or "",
             "J": ", ".join(view.founders),
             # Blank means unknown, and £0 means "known none". Never collapse them.
             "K": "" if company["total_funding_gbp"] is None
@@ -742,9 +745,11 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
     views = _gather(db)
     shortlisted = [v for v in views.values()
                    if v.best is not None and v.best["tier"] == "shortlist"]
-    from radar.qa.today import is_rejected
+    from radar.qa.today import is_withheld
 
-    shortlisted = [v for v in shortlisted if not is_rejected(db, v.row["id"])]
+    # Same rule as the live Today page and the ping: rejected, or QA did not
+    # complete, means the card is not shown.
+    shortlisted = [v for v in shortlisted if not is_withheld(db, v.row["id"])]
     shortlisted.sort(key=lambda v: -v.best["priority"])
     cap = int(getattr(cfg.settings, "daily_digest_max", 10)) if cfg else 10
     shortlisted = shortlisted[:cap]
@@ -928,10 +933,8 @@ def build_run_log(db: Any) -> list[Row]:
             "I": _txt(run["companies_merged"]),
             "J": _txt(run["gated_out"]),
             "K": _txt(run["shortlisted"]),
-            "L": _txt(run["llm_calls"]),
-            "M": _num(run["llm_cost_usd"], 4),
-            "N": run["status"],
-            "O": ", ".join(failed.get(run["id"], [])),
+            "L": run["status"],
+            "M": ", ".join(failed.get(run["id"], [])),
         }))
     return rows
 

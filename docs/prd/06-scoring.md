@@ -620,3 +620,9 @@ Notice three things version 1 could not do: it routes to the **specific vehicle*
 | Anticus's Innovate UK Investor Partnerships listing (possible third vehicle) | **UNVERIFIED** |
 | SIC → sector mapping (§2.1) | **Judgement, not fact.** Seeded values are a starting point; tune against real output in Phase 3. |
 | Discovery Edge band boundaries | **Judgement.** Tune against Aryan's verdicts in Phase 9. |
+
+Current scoring integrity: daily scoring and bulk rescoring read the same stored press count, including an unknown count, and normalize stored boolean evidence consistently. Each new evaluation replaces the current vehicle row for each evaluated fund in one transaction, so retired routes cannot win a card by retaining an older priority.
+
+Dated and weekly digests use stored shortlist snapshots: one company/fund/day entry containing scores, route and component evidence. A same-day rescore replaces that day's result; later days preserve earlier results. Days predating this feature can only use remaining current rows: historical results already overwritten cannot be reconstructed. Company identity, descriptions, signals and QA decisions remain current; these are score snapshots, not archived copies of whole messages.
+
+Today and Companies Sheet display sector, stage and region using the same evidence derivation rules as scoring. Source-stated facts remain unchanged. Threshold tuning applies the full shortlist requirements (fit, edge, coverage, flags and hard-gate rejection) to every fund row; a company counts if any in-scope fund qualifies. Lower fit thresholds can admit a previously low-fit rejection, but cannot override a hard gate.

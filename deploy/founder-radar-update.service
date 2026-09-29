@@ -1,7 +1,7 @@
 # /etc/systemd/system/founder-radar-update.service
 #
 # Pull origin/main and reinstall. Runs as root because deploy/install.sh
-# must. The radar user owns the checkout and runs git inside the script.
+# must. Root owns the checkout and runs Git from protected inputs.
 # Secrets stay in /opt/founder-radar/.env — this unit does not load them.
 
 [Unit]
@@ -9,17 +9,19 @@ Description=Pull origin/main and reinstall UK Founder Radar
 Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
 After=network-online.target
 Wants=network-online.target
+# The timer retries every five minutes; the alert unit rate-limits itself.
+OnFailure=founder-radar-alert@%n.service
 
 [Service]
 Type=oneshot
 User=root
 WorkingDirectory=/opt/founder-radar
-ExecStart=/opt/founder-radar/app/deploy/update-from-main.sh
+ExecStart=/usr/local/libexec/founder-radar/update-from-main.sh
 TimeoutStartSec=3600
 Nice=10
 
-StandardOutput=append:/opt/founder-radar/logs/update.log
-StandardError=append:/opt/founder-radar/logs/update.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

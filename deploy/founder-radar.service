@@ -8,6 +8,8 @@ Description=UK Founder Radar daily scan
 Documentation=file:/opt/founder-radar/app/docs/prd/08-deployment.md
 After=network-online.target
 Wants=network-online.target
+# A fatal exit (2) produces no digest; say so now rather than at the 09:00 heartbeat.
+OnFailure=founder-radar-alert@%n.service
 
 [Service]
 Type=oneshot
@@ -21,7 +23,9 @@ EnvironmentFile=-/opt/founder-radar/hermes.env
 Environment=TZ=Europe/London
 
 # Re-assert ACLs before run/publish — Hermes chmod can clear ~/.hermes mask.
-ExecStartPre=+/opt/founder-radar/app/deploy/hermes-acl.sh
+# The root-owned copy (deploy/install.sh puts it there): `+` runs it as root, so
+# it must not be a file the service user can edit.
+ExecStartPre=+/usr/local/libexec/founder-radar/hermes-acl.sh
 
 # Two steps, on purpose.
 #

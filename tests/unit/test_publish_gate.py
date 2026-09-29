@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from radar.store.db import now_iso
+
 from radar.qa.publish import PublishIssue, pre_publish_check
 from radar.qa.today import HermesUnavailable
 
@@ -13,7 +15,7 @@ class _FakeDiag:
             "scored_for_active_hash": scored,
             "scores_on_other_hashes": other,
             "tiers": {"shortlist": min(reviewable, 1), "watchlist": max(reviewable - 1, 0), "reject": 0},
-            "last_run": {"shortlisted": reviewable},
+            "last_run": {"shortlisted": reviewable, "status": "ok", "finished_at": now_iso()},
             "config_hash": "abc",
             "likely_causes": [],
             "reviewable": reviewable,

@@ -166,7 +166,7 @@
     <div class="card good-card">
       <span class="tag good">Version 2</span>
       <div class="kv">
-        <div><b>Starts from</b><span>The UK company register</span></div>
+        <div><b>Starts from</b><span>UK startup signals, checked against the register</span></div>
         <div><b>Guarantees</b><span>A legally recorded birthday</span></div>
         <div><b>Typical age</b><span>0–36 months, gated</span></div>
         <div><b>Fund knows it?</b><span>Scored explicitly</span></div>
@@ -176,7 +176,7 @@
   </div>
 
   <div class="callout">
-    <p><strong>The fix in one sentence.</strong> Companies House lets you search by incorporation date, for free. A company incorporated ninety days ago <em>cannot</em> be six years old. That is a guarantee the register enforces, not a filter we hope works.</p>
+    <p><strong>The fix in one sentence.</strong> Find promising companies through diverse signal sources, then use Companies House to verify incorporation and age. A recent incorporation is useful evidence, but does not prove recent trading activity or investment quality.</p>
   </div>
 </section>
 
@@ -201,7 +201,7 @@
       <div class="sub">Nobody has vetted these</div>
       <ul class="clean">
         <li>Newly incorporated UK tech companies</li>
-        <li>Qualified by share-issue filings (a pre-seed round on the public record)</li>
+        <li>Qualified by a share-issue filing, grant, spinout announcement or tracked press; a website alone does not qualify</li>
         <li>Founders with prior directorships</li>
         <li>Cross-matched to grants and websites</li>
       </ul>
@@ -210,11 +210,11 @@
   </div>
 
   <div class="callout warn" style="margin-top:26px">
-    <p><strong>The highest-value query in the whole system.</strong> "Incorporated in the last 90 days" + "tech sector code" + "in one of our regions" + <code>SH01</code> filed since incorporation. An SH01 is a share allotment — on a young company, that <em>is</em> a pre-seed round being papered. It hits the public register within days, it's free, and no portfolio-page scraper will ever see it.</p>
+    <p><strong>The highest-value query in the whole system.</strong> "Incorporated in the last 90 days" + "tech sector code" + "in one of our regions" + <code>SH01</code> filed since incorporation. An SH01 records a share allotment. SH01 is not proof of outside investment; it is one qualifying signal that needs context. It hits the public register within days, it's free, and no portfolio-page scraper will ever see it.</p>
   </div>
 
   <div class="callout">
-    <p><strong>The trap this design had to solve.</strong> A company register entry contains none of the things we score on — no sector, no stage, no founder type, no traction. Left alone, every register-sourced company would score on location alone, fail the "do we know enough?" check, and sit in a watchlist nobody reads. So the system <em>derives</em> those facts from free public evidence: industry code → sector, postcode → region, share-allotment filing → stage, prior directorships → founder type, grant award → traction. That derivation step is what turns registry-first discovery from an idea into a working pipeline. And a new company with <em>none</em> of that evidence isn't rejected — it just waits, and gets re-checked every morning until it earns a place.</p>
+    <p><strong>The trap this design had to solve.</strong> A company register entry contains none of the things we score on — no sector, no stage, no founder type, no traction. Left alone, every register-sourced company would score on location alone, fail the "do we know enough?" check, and sit in a watchlist nobody reads. So the system <em>derives</em> those facts from free public evidence: industry code → sector, postcode → region, share-allotment filing → stage, prior directorships → founder type, grant award → traction. That derivation step is what turns registry-first discovery from an idea into a working pipeline. And a new company with <em>none</em> of that evidence isn't rejected — it just waits, and gets re-checked on a bounded schedule until it earns a place.</p>
   </div>
 </section>
 
@@ -235,7 +235,7 @@
     </div>
     <div class="stage ai">
       <div class="n">3</div>
-      <div><div class="t">Extract</div><div class="d">The <em>only</em> place AI is used — turning an article into a structured record. Schema-enforced, evidence-quoted, cached. Falls back to plain text parsing if the provider is down.</div></div>
+      <div><div class="t">Extract</div><div class="d">AI turns an article into a structured record. It also maps chat to commands and reviews Today cards before publication. Schema-enforced, evidence-quoted, cached. Falls back to plain text parsing if the provider is down.</div></div>
       <span class="chip ai">AI</span>
     </div>
     <div class="stage">
@@ -255,13 +255,13 @@
     </div>
     <div class="stage">
       <div class="n">7</div>
-      <div><div class="t">Render</div><div class="d">Write the sheet in under 10 API calls, then send the Telegram digest. A run that changes nothing writes nothing.</div></div>
+      <div><div class="t">Render</div><div class="d">Today QA checks the proposed cards before publication. Approved cards reach the Sheet and live review UI (Today/Kept); Telegram actions update the same stored decisions. The deterministic scores stay unchanged by QA.</div></div>
       <span class="chip code">code</span>
     </div>
   </div>
 
   <div class="callout" style="margin-top:26px">
-    <p><strong>The rule that makes it trustworthy.</strong> AI may read prose into a record, and may turn a chat sentence into a command. It may <em>never</em> decide whether a company passes a gate, what it scores, whether it's a duplicate, or what lands in the sheet. When the client asks "why did this drop off my list?", the answer has to be a number he can check — not "the model felt differently today."</p>
+    <p><strong>The rule that makes it trustworthy.</strong> AI may read prose into a record, and may turn a chat sentence into a command. It may <em>never</em> decide whether a company passes a gate, what it scores, whether it's a duplicate, or change deterministic scores. Today QA may veto a card before it reaches the sheet; it cannot add a company or raise its score. When the client asks "why did this drop off my list?", the answer has to be a number he can check — not "the model felt differently today."</p>
   </div>
 </section>
 

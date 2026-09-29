@@ -250,7 +250,7 @@ def fetch_all(
     `source_health` either way, because the *dangerous* failure is the one that
     raises nothing at all and returns an empty list.
     """
-    from radar.fetch.layout import LayoutChanged, check_health
+    from radar.fetch.layout import LayoutChanged, check_health, check_fingerprint
 
     db = db if db is not None else ctx.db
     adapters = list(adapters) if adapters is not None else enabled_adapters(ctx.config, keys)
@@ -262,8 +262,15 @@ def fetch_all(
         status, error, got = "ok", None, []
         try:
             got = list(adapter.fetch(ctx))
+            fingerprint = getattr(adapter, "last_fingerprint", None)
+            if fingerprint and db is not None:
+                check_fingerprint(db, key, fingerprint)
+            failures = getattr(adapter, "last_failures", None)
+            if failures:
+                status, error = "degraded", "; ".join(failures)
+
         except LayoutChanged as exc:
-            status, error = "layout_changed", str(exc)
+            status, error, got = "layout_changed", str(exc), []
         except SourceBlocked as exc:
             # The site answered but refused the crawler (401/403/429/451) —
             # degraded, not failed: a block is usually fixable by allowlisting

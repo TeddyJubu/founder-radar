@@ -60,6 +60,8 @@ def _inject(demo_db, companies) -> list[str]:
             )
             score_company(db, cid, cfg, today=TODAY)
             ids.append(cid)
+        from radar.qa.today import run_today_qa
+        run_today_qa(db, cfg, use_hermes=False)
     finally:
         db.close()
     return ids
@@ -71,6 +73,8 @@ def _remove(demo_db, company_ids) -> None:
     try:
         for cid in company_ids:
             conn.execute("DELETE FROM daily_review WHERE company_id = ?", (cid,))
+            conn.execute("DELETE FROM today_check WHERE company_id = ?", (cid,))
+            conn.execute("DELETE FROM score_snapshot WHERE company_id = ?", (cid,))
             conn.execute("DELETE FROM user_field WHERE company_id = ?", (cid,))
             conn.execute("DELETE FROM signal WHERE company_id = ?", (cid,))
             conn.execute("DELETE FROM founder WHERE company_id = ?", (cid,))

@@ -9,7 +9,7 @@ heavier than `datetime` must be imported inside the function that needs it.
 Four renderers, all pure reads:
 
 * `render_digest` — the daily message. Three shapes: full day, quiet day, zero day.
-* `render_status` — last run, source health, this month's AI spend.
+* `render_status` — last run and source health.
 * `render_show`   — one company, its signals and its score breakdown.
 * `render_fund`   — top current matches for one fund.
 
@@ -87,6 +87,11 @@ def render_today_ping(db) -> str:
 
     report = diagnose_today(db)
     tiers = report.get("tiers") or {}
+    # Count only what Today will show: cards QA rejected, or could not check,
+    # are withheld everywhere, so they are not in the number either.
+    held = report.get("qa_withheld") or {}
+    shortlist_n = max(int(tiers.get("shortlist") or 0) - int(held.get("shortlist") or 0), 0)
+    watchlist_n = max(int(tiers.get("watchlist") or 0) - int(held.get("watchlist") or 0), 0)
     url = review_url()
     lines = [
         "📡 UK Founder Radar",
@@ -98,10 +103,12 @@ def render_today_ping(db) -> str:
     else:
         lines.append("Open the Today page on the review site.")
     lines.append("")
-    lines.append(
-        f"{int(tiers.get('shortlist') or 0)} shortlisted · "
-        f"{int(tiers.get('watchlist') or 0)} watchlist"
-    )
+    lines.append(f"{shortlist_n} shortlisted · {watchlist_n} watchlist")
+    incomplete = int(report.get("qa_incomplete") or 0)
+    if incomplete:
+        lines.append(
+            f"⚠️ {incomplete} held back — their final company check did not complete"
+        )
     return "\n".join(lines)
 
 
@@ -395,14 +402,39 @@ _ENTRY_SQL = """
 
 def _shortlist(db, start: date, end: date) -> list[dict]:
     """One row per company — its best-scoring fund wins the digest slot."""
-    from radar.qa.today import is_rejected
+    from radar.qa.today import historical_pass, is_withheld
 
     seen: set[str] = set()
     out: list[dict] = []
-    for row in db.query(_ENTRY_SQL, (SHORTLIST_TIER, start.isoformat(), end.isoformat())):
+    from radar.score.snapshot import load_components
+    params = (SHORTLIST_TIER, start.isoformat(), end.isoformat())
+    rows = []
+    if "score_snapshot" in db.tables():
+        snapshot_columns = {r["name"] for r in db.query("PRAGMA table_info(score_snapshot)")}
+        approval_sql = "s.approved_snapshot_hash" if "approved_snapshot_hash" in snapshot_columns else "NULL"
+        historical_sql = _ENTRY_SQL.replace("s.id              AS score_id", "NULL              AS score_id")
+        historical_sql = historical_sql.replace("s.explanation     AS explanation", "NULL              AS explanation")
+        historical_sql = historical_sql.replace("s.flags           AS flags", "NULL              AS flags")
+        historical_sql = historical_sql.replace("FROM score s", "FROM score_snapshot s")
+        historical_sql = historical_sql.replace("s.scored_at       AS scored_at,", "s.scored_at       AS scored_at, s.components AS snapshot_components,")
+        historical_sql = historical_sql.replace("s.components AS snapshot_components,",
+            f"s.components AS snapshot_components, {approval_sql} AS approved_snapshot_hash,")
+        rows = [dict(row) for row in db.query(historical_sql, params)]
+    # A legacy date without snapshots can still use its untouched current rows.
+    snapshot_days = {str(row["scored_at"])[:10] for row in rows}
+    rows.extend(dict(row) for row in db.query(_ENTRY_SQL, params)
+                if str(row["scored_at"])[:10] not in snapshot_days)
+    rows.sort(key=lambda row: (-row["priority"], row["canonical_name"]))
+    for row in rows:
+        if "snapshot_components" in row:
+            row["historical_components"] = load_components(row["snapshot_components"])
+
         if row["company_id"] in seen:
             continue
-        if is_rejected(db, row["company_id"]):
+        if "snapshot_components" in row:
+            if not historical_pass(db, row["company_id"], row.get("approved_snapshot_hash")):
+                continue
+        elif is_withheld(db, row["company_id"]):
             continue
         seen.add(row["company_id"])
         out.append(dict(row))
@@ -553,7 +585,7 @@ def _ledger(db, entry: dict) -> list[str]:
     not this one, but "new enough to be worth an email" is the entire premise
     of the product and it was on the line this ledger replaces.
     """
-    components = _components(db, entry.get("score_id"))
+    components = entry.get("historical_components", _components(db, entry.get("score_id")))
     if not components:
         return []
 
@@ -779,7 +811,7 @@ _STATUS_ICON = {"ok": "✅", "partial": "⚠️", "running": "⏳", "failed": "�
 
 
 def render_status(db) -> str:
-    """Last run, source health, this month's AI cost (07-interfaces §2)."""
+    """Last run and source health (07-interfaces §2)."""
     lines = ["📡 Founder Radar — status", ""]
 
     last = db.one(
@@ -797,10 +829,6 @@ def render_status(db) -> str:
             f"          {int(last['items_fetched'] or 0)} scanned · "
             f"{int(last['gated_out'] or 0)} gated out · "
             f"{int(last['shortlisted'] or 0)} shortlisted"
-        )
-        lines.append(
-            f"          AI {int(last['llm_calls'] or 0)} calls · "
-            f"${float(last['llm_cost_usd'] or 0):.2f}"
         )
         if last["error"]:
             lines.append(f"          ⚠️ {_truncate(last['error'], 90)}")
@@ -823,15 +851,7 @@ def render_status(db) -> str:
             line += f" — {_truncate(row['error'], 60)}"
         lines.append(line)
 
-    month = _now().strftime("%Y-%m")
-    spend = db.scalar(
-        "SELECT ROUND(SUM(cost_usd), 2) FROM llm_cache "
-        "WHERE strftime('%Y-%m', created_at) = ?",
-        (month,),
-    )
     lines.append("")
-    lines.append(f"AI cost {month}  ${float(spend or 0):.2f}")
-
     companies = db.scalar("SELECT COUNT(*) FROM company WHERE merged_into IS NULL") or 0
     shortlisted = db.scalar(
         "SELECT COUNT(DISTINCT company_id) FROM score WHERE tier = ?", (SHORTLIST_TIER,)

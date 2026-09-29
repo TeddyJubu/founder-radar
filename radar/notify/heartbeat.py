@@ -8,6 +8,12 @@ is the clock (08-deployment §4).
 Three alerts and only three (08-deployment §9) — stale run, source down, low
 disk. More than three and they get ignored.
 
+Source-level alerts (down, blocked) are said once when the condition appears
+and again weekly while it lasts — a source that has been blocked for a month
+is one problem, not thirty identical messages. The stale-run and disk alerts
+are never suppressed: they mean the whole pipeline is at risk, and the timer
+only fires once a day anyway.
+
 Two entry points, one implementation. `founder-radar status --alert-if-stale
 26h` is the one 08-deployment §4 specifies and the one the systemd unit runs;
 `python -m radar.notify.heartbeat --alert-if-stale 26h` is the same `check()`
@@ -33,6 +39,9 @@ log = logging.getLogger(__name__)
 
 DEFAULT_STALE_AFTER = timedelta(hours=26)
 DEFAULT_MIN_FREE_GB = 5
+# How long a source-level alert stays quiet after it has been delivered.
+SOURCE_ALERT_REPEAT = timedelta(days=7)
+_SEEN_PREFIX = "heartbeat:seen:"
 
 _DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([smhd]?)\s*$", re.IGNORECASE)
 _UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "": "hours"}
@@ -58,10 +67,19 @@ class Heartbeat:
     age: timedelta | None
     alerts: list[str]
     sent: bool = False
+    # Conditions that are still true but were already announced recently.
+    suppressed: list[str] | None = None
 
     @property
     def ok(self) -> bool:
         return not self.alerts
+
+    def lines(self) -> list[str]:
+        """What a human running the check should read."""
+        out = list(self.alerts)
+        if self.suppressed:
+            out.append("ℹ️ Still open, announced earlier: " + ", ".join(self.suppressed))
+        return out or ["✅ Founder Radar heartbeat: healthy."]
 
 
 # --------------------------------------------------------------------- reads
@@ -160,15 +178,22 @@ def stale_sources(db, *, days: int = 7, min_avg: float = 2.0) -> list[str]:
 
     This is the dangerous failure from the runbook — a 200 OK with an empty list
     looks exactly like a quiet week.
+
+    Only sources that are still being observed count. A source that was retired
+    or disabled stops writing `source_health` rows; its old history (a healthy
+    average, then nothing) would otherwise read as "went quiet" forever and the
+    alert would name it every single day.
     """
+    window = f"-{int(days)} days"
     rows = db.query(
         """SELECT source_key,
                   SUM(CASE WHEN observed_on >= date('now', ?) THEN items ELSE 0 END) AS recent,
                   AVG(items) AS overall,
                   COUNT(*)   AS days
              FROM source_health
-            GROUP BY source_key""",
-        (f"-{int(days)} days",),
+            GROUP BY source_key
+           HAVING MAX(observed_on) >= date('now', ?)""",
+        (window, window),
     )
     return sorted(
         row["source_key"]
@@ -177,6 +202,36 @@ def stale_sources(db, *, days: int = 7, min_avg: float = 2.0) -> list[str]:
         and int(row["recent"] or 0) == 0
         and float(row["overall"] or 0) > min_avg
     )
+
+
+# ------------------------------------------------------- repeat suppression
+
+
+def _due(db, key: str, now: datetime, repeat: timedelta = SOURCE_ALERT_REPEAT) -> bool:
+    """True when `key` was never announced, or was announced `repeat` ago."""
+    try:
+        last = _parse_stamp(db.get_meta(_SEEN_PREFIX + key))
+    except Exception:  # noqa: BLE001 - no state means "say it", never "stay silent"
+        return True
+    return last is None or now - last >= repeat
+
+
+def _stamp(db, keys: list[str], now: datetime) -> None:
+    for key in keys:
+        try:
+            db.set_meta(_SEEN_PREFIX + key, now.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        except Exception:  # noqa: BLE001 - failing to remember costs one repeat alert
+            log.warning("heartbeat could not record alert state for %s", key)
+
+
+def _forget_cleared(db, active: set[str]) -> None:
+    try:
+        rows = db.query("SELECT key FROM _meta WHERE key LIKE ?", (_SEEN_PREFIX + "%",))
+        for row in rows:
+            if row["key"][len(_SEEN_PREFIX):] not in active:
+                db.execute("DELETE FROM _meta WHERE key = ?", (row["key"],))
+    except Exception:  # noqa: BLE001
+        log.warning("heartbeat could not prune alert state")
 
 
 # -------------------------------------------------------------------- check
@@ -218,27 +273,52 @@ def check(
                 f"(threshold {hours}h). Last good run {last:%a %d %b %H:%M} UTC."
             )
 
+    suppressed: list[str] = []
+    announce: list[str] = []          # `_meta` keys to stamp once the message is out
     if check_sources:
         try:
-            quiet = stale_sources(db)
+            quiet: list[str] | None = stale_sources(db)
         except Exception:  # noqa: BLE001 - an alerting path must not itself crash
-            quiet = []
-        if quiet:
-            alerts.append(f"⚠️ Source down: {', '.join(quiet)} — zero items for 7 days.")
+            quiet = None
         try:
-            blocked = blocked_sources(db)
+            blocked: list[tuple[str, int]] | None = blocked_sources(db)
         except Exception:  # noqa: BLE001 - an alerting path must not itself crash
-            blocked = []
-        if blocked:
-            detail = "; ".join(f"{key} ({n} consecutive checks)" for key, n in blocked)
+            blocked = None
+
+        quiet_due: list[str] = []
+        for key in quiet or []:
+            if _due(db, f"down:{key}", moment):
+                quiet_due.append(key)
+                announce.append(f"down:{key}")
+            else:
+                suppressed.append(f"down:{key}")
+        blocked_due: list[tuple[str, int]] = []
+        for key, streak in blocked or []:
+            if _due(db, f"blocked:{key}", moment):
+                blocked_due.append((key, streak))
+                announce.append(f"blocked:{key}")
+            else:
+                suppressed.append(f"blocked:{key}")
+
+        if quiet_due:
+            alerts.append(f"⚠️ Source down: {', '.join(quiet_due)} — zero items for 7 days.")
+        if blocked_due:
+            detail = "; ".join(f"{key} ({n} consecutive checks)" for key, n in blocked_due)
             alerts.append(f"⚠️ Source blocked: {detail} — possible anti-bot block.")
+
+        # A condition that has cleared forgets its stamp, so if it comes back
+        # it is announced again rather than treated as the old, known problem.
+        if quiet is not None and blocked is not None:
+            active = {f"down:{k}" for k in quiet} | {f"blocked:{k}" for k, _ in blocked}
+            _forget_cleared(db, active)
 
     if check_disk:
         free = free_gb()
         if free is not None and free < min_free_gb:
             alerts.append(f"⚠️ Disk: {free:.1f} GB free (below {min_free_gb} GB).")
 
-    result = Heartbeat(stale=stale, last_success=last, age=age, alerts=alerts)
+    result = Heartbeat(stale=stale, last_success=last, age=age, alerts=alerts,
+                       suppressed=suppressed)
     if not alerts:
         return result
 
@@ -250,6 +330,10 @@ def check(
     except Exception as exc:  # noqa: BLE001 - an unsent alert is not a crash
         log.error("heartbeat alert could not be delivered: %s", type(exc).__name__)
         result.sent = False
+    if result.sent:
+        # Only a delivered alert starts the quiet period; an undelivered one
+        # must be tried again tomorrow.
+        _stamp(db, announce, moment)
     return result
 
 
@@ -280,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         db.close()
 
     if not args.quiet:
-        for line in (result.alerts or ["✅ Founder Radar heartbeat: healthy."]):
+        for line in result.lines():
             print(line)
     return 1 if result.alerts else 0
 

@@ -169,3 +169,77 @@ Never write the plaintext password into the repo, a chat thread, or anywhere
 that is not the server itself — the same rule as the Google service-account
 key (README). Share the new password with team members over a channel that is
 not this repo.
+
+
+### Incomplete morning checks
+
+A failed scan exits with code 2, so the scheduled service does not publish it.
+Publishing requires the latest scan to have finished successfully within 30 hours;
+a partial scan must have fetched at least one item. An old successful scan cannot
+replace a newer failed scan.
+
+Today, the Sheet's Today tab and Telegram counts require a completed company QA
+pass. Never-checked companies, failed checks and passes older than the company's
+latest score stay hidden until checked again. Hermes errors are saved as
+`incomplete`, never as passes. A deliberate `--no-hermes` or `--no-llm` check can
+still record a rules-only pass. Publishing refuses incomplete QA even if the
+rules-only override is enabled or per-card QA was skipped.
+
+Publish-time QA changes refresh the Sheet before the Telegram ping. A Sheet
+outage is reported as a warning; the approved dashboard can still be announced,
+but the Sheet may be behind until the next successful sync.
+
+### Trusted auto-updates
+
+The installation root, application checkout and Python environment are root-owned.
+Radar can write data, logs, backups and secrets, but cannot edit code run by root.
+The timer runs a root-owned helper under `/usr/local/libexec/founder-radar`.
+Updates refuse writable inputs, symlinks and writable parent directories before Git runs.
+An administrator must review and reinstall an older radar-owned checkout before enabling this timer.
+Runtime packages are installed from `deploy/requirements.lock`, generated from `uv.lock`,
+with versions and artifact hashes checked. The setuptools build backend is pinned separately in `deploy/build-requirements.lock`; the project installs with build isolation disabled so pip cannot select a different backend. Runtime and backend installs require wheels and verified hashes. A missing compatible wheel fails installation rather than building with unspecified tools.
+Integration tests require `TEST_SHEET_ID` and a tab named `FOUNDER_RADAR_TEST_SCRATCH`;
+the marker survives resets. Never put that marker on a real customer spreadsheet.
+
+### Undoing a Today decision
+
+Ctrl+Z asks the server to restore the previous saved verdict and today's review
+marker. It says “Undone” only after the stored change succeeds. If the decision
+was mirrored to the Sheet, that cell must also be restored. A Sheet outage
+leaves the decision saved and shows an error so you can retry. Undo records
+are limited to 200 recent web decisions and expire when the server restarts;
+a later decision from another surface prevents an old undo from overwriting it.
+While a decision is saving, the page pauses navigation and other decisions.
+Write requests require JSON and reject cross-origin browser requests.
+
+
+The installer refuses pre-existing service-owned or writable checkouts and
+virtual environments before it runs any Git hooks, Python launchers or `.pth` files.
+Changing their owner is not a safe migration. To migrate an old installation,
+stop writers, preserve data and secrets separately, and use an administrator's
+trusted copy of the installer. Move the old checkout and venv aside; clone the
+reviewed repository afresh as root under a root-owned installation directory,
+then let the installer build a new venv. Do not copy old Git configuration,
+hooks, Python launchers or `.pth` files into the trusted rebuild. This requires
+an explicit operator maintenance step; the timer fails closed until it is done.
+
+### QA approval and dated history
+
+A live card must match the exact facts and fund route that completed QA approved.
+Even a change within the same second invalidates an old pass. Recheck changed
+cards before showing them on Today, the Sheet or the current digest.
+
+Historical score snapshots save the hash of their exact completed approval.
+A previously approved Monday result remains available in Monday's history after
+its current score changes; an unchecked Monday result cannot borrow a later
+approval. The latest QA rejection still vetoes historical display. Old snapshot
+rows without recorded approval stay withheld until valid evidence is recorded.
+
+
+For a clean rebuild, run the trusted installer with `INSTALL_MAINTENANCE=1`
+after stopping writers and timers and preserving a verified database backup.
+It installs files and migrates the database before any service starts; maintenance
+mode defers service/timer enables and restarts, including Caddy and Hermes gateway.
+After configuration, rescore, completed Today QA and Sheet verification, explicitly
+start the chosen services and timers. The ACL helper grants operator write access
+to mutable data/logs, never the protected application checkout or Python environment.

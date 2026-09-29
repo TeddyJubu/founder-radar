@@ -215,6 +215,18 @@ def test_user_agent_is_honest_and_carries_a_contact_url(monkeypatch):
     assert "radar.example.co.uk" in user_agent()
 
 
+def test_placeholder_user_agent_is_recognised():
+    """The template's example.com contact reaches nobody, so a blocked site has
+    no one to ask for an allowlisting. A real domain must not trip it."""
+    from radar.fetch.http import user_agent_is_placeholder
+
+    assert user_agent_is_placeholder(DEFAULT_UA)
+    assert user_agent_is_placeholder("founder-radar/2.0 (+https://example.org/p; a@example.net)")
+    assert not user_agent_is_placeholder(
+        "founder-radar/2.0 (+https://radar.example.co.uk/crawler; ops@example.co.uk)")
+    assert not user_agent_is_placeholder("founder-radar/2.0 (+https://foundersradar.io/c; ops@foundersradar.io)")
+
+
 # ------------------------------------------------------- sources --list/--test
 
 
@@ -539,7 +551,7 @@ def test_pipeline_routes_portfolio_listings_through_the_denylist(db, monkeypatch
     monkeypatch.setattr("radar.pipeline.enrich_stage", lambda *a, **k: {})
     # No network, no sheet, no Telegram.
     result = run_pipeline(db, config=default_config(), http=object(),
-                          gateway=None, use_llm=False, dry_run=True)
+                          gateway=None, use_llm=False, dry_run=False)
 
     assert result.status in ("ok", "partial")
     assert db.one("SELECT on_vc_portfolio FROM company WHERE id = ?",
@@ -612,7 +624,7 @@ def test_same_run_discovery_is_flagged_before_scoring(db, monkeypatch):
     )
 
     result = run_pipeline(db, config=default_config(), http=object(),
-                          gateway=None, use_llm=False, dry_run=True)
+                          gateway=None, use_llm=False, dry_run=False)
 
     assert result.status in ("ok", "partial")
     row = db.one("SELECT id, on_vc_portfolio, canonical_name FROM company "

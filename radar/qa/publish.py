@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -107,9 +108,17 @@ def _parse_publish_verdict(text: str) -> tuple[str, str, str]:
 
 
 
+#: The root-owned copy `deploy/install.sh` puts outside the git checkout. It is
+#: the only path sudoers lets `radar` run as root: the checkout is radar-owned,
+#: so a sudoers rule pointing into it would let radar edit the script and become
+#: root. Absent on a dev machine — there is nothing to heal there, and running
+#: the repo copy would only try `sudo`.
+TRUSTED_ACL_SCRIPT = Path("/usr/local/libexec/founder-radar/hermes-acl.sh")
+
+
 def _ensure_hermes_acl() -> None:
     """Re-assert radar→Hermes ACLs; chmod under ~/.hermes can clear the mask."""
-    script = _REPO_ROOT / "deploy" / "hermes-acl.sh"
+    script = TRUSTED_ACL_SCRIPT
     if not script.is_file():
         return
     try:
@@ -138,7 +147,10 @@ def _run_hermes_publish_check(payload: dict[str, Any]) -> tuple[str, str, str]:
         f"{brief}\n\n---\nPUBLISH SNAPSHOT (JSON, counts only):\n"
         f"{json.dumps(payload, sort_keys=True, indent=2)}\n"
     )
-    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1"}
+    # QA runs as radar against the operator-owned Hermes installation.
+    # Keep startup read-only: lazy dependency updates require the owner.
+    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1",
+           "HERMES_DISABLE_LAZY_INSTALLS": "1"}
     owner_home = (os.environ.get("HERMES_HOME") or "").strip()
     if owner_home:
         hermes_dir = Path(owner_home) / ".hermes"
@@ -201,6 +213,19 @@ def _collect_issues(db: Any) -> tuple[list[PublishIssue], dict[str, Any]]:
         ))
 
     last = diagnosis.get("last_run") or {}
+    finished = last.get("finished_at")
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(
+            finished.replace("Z", "+00:00"))).total_seconds() / 3600
+    except (ValueError, TypeError, AttributeError):
+        age = None
+    if (last.get("status") not in {"ok", "partial"} or age is None
+            or age < 0 or age > 30
+            or (last.get("status") == "partial" and not last.get("items_fetched"))):
+        detail = (f"latest scan {last.get('status', 'missing')}: "
+                  + (f"{age:.0f}h ago (limit 30h)" if age is not None else "not finished")
+                  + f"; {last.get('error') or ''}; run founder-radar run")
+        issues.append(PublishIssue("no_fresh_scan", detail))
     last_sl = int(last.get("shortlisted") or 0)
     tiers = diagnosis.get("tiers") or {}
     active_sl = int(tiers.get("shortlist") or 0)
@@ -308,6 +333,7 @@ def pre_publish_check(
     blocking = [
         i for i in issues
         if i.code in {
+            "no_fresh_scan",
             "poisoned_fund_criteria",
             "config_hash_drift",
             "shortlist_vanished",

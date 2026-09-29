@@ -24,12 +24,14 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import date, datetime
-from typing import Any, Iterable, Mapping, Sequence
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from radar.config.models import Config
 from radar.score.criteria import SCORER_VERSION
+from radar.score import snapshot
 from radar.store.db import Db, new_id, now_iso
 
 log = logging.getLogger(__name__)
@@ -52,7 +54,8 @@ class RunResult:
     gated_out: int = 0
     shortlisted: int = 0
     llm_calls: int = 0
-    llm_cost_usd: float = 0.0
+    # Cards Today QA could not complete: withheld from Today, the Sheet and the ping.
+    qa_incomplete: int = 0
     error: str | None = None
     run_id: int | None = None
     sources: list[dict] = field(default_factory=list)
@@ -70,14 +73,42 @@ class RunResult:
             "gated_out": self.gated_out,
             "shortlisted": self.shortlisted,
             "llm_calls": self.llm_calls,
-            "llm_cost_usd": round(self.llm_cost_usd, 4),
+            "qa_incomplete": self.qa_incomplete,
             "error": self.error,
             "run_id": self.run_id,
             "sources": self.sources,
         }
 
 
+# A run that has been `running` this long is not running any more: the daily
+# scan takes minutes, so anything older lost its process (OOM kill, a deploy
+# restarting the unit, power loss) before it could write its own outcome.
+ORPHANED_RUN_AFTER = timedelta(hours=3)
+
+
+def reap_orphaned_runs(db: Db, *, older_than: timedelta = ORPHANED_RUN_AFTER) -> int:
+    """Close `run` rows stuck at `running` and return how many were closed.
+
+    Nothing else ever updates such a row, so without this it stays `running`
+    forever — and `status` then shows a run that never ends. The heartbeat is
+    unaffected either way (`running` is never proof of life), but the run log
+    should say what actually happened: the run did not finish, so `failed`.
+    """
+    cutoff = (datetime.now(timezone.utc) - older_than).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cur = db.execute(
+        """UPDATE run SET status = 'failed', finished_at = ?,
+                          error = COALESCE(error,
+                              'interrupted: the process ended before this run finished')
+            WHERE status = 'running' AND finished_at IS NULL AND started_at < ?""",
+        (now_iso(), cutoff),
+    )
+    return cur.rowcount or 0
+
+
 def _begin_run(db: Db, *, mode: str, scope: str | None) -> int:
+    reaped = reap_orphaned_runs(db)
+    if reaped:
+        log.warning("closed %d orphaned run row(s) left in 'running'", reaped)
     db.execute(
         """INSERT INTO run(started_at, mode, scope, status)
            VALUES (?, ?, ?, 'running')""",
@@ -90,12 +121,12 @@ def _finish_run(db: Db, run_id: int, result: RunResult) -> None:
     db.execute(
         """UPDATE run SET finished_at = ?, items_fetched = ?, items_extracted = ?,
                  companies_new = ?, companies_merged = ?, gated_out = ?,
-                 shortlisted = ?, llm_calls = ?, llm_cost_usd = ?, status = ?,
+                 shortlisted = ?, llm_calls = ?, status = ?,
                  error = ?, warnings = ?
            WHERE id = ?""",
         (now_iso(), result.items_fetched, result.items_extracted,
          result.companies_new, result.companies_merged, result.gated_out,
-         result.shortlisted, result.llm_calls, result.llm_cost_usd,
+         result.shortlisted, result.llm_calls,
          result.status, result.error,
          "\n".join(result.warnings) if result.warnings else None, run_id),
     )
@@ -316,20 +347,41 @@ def score_company(db: Db, company_id: str, cfg: Any, *, today: date | None = Non
     # company incorporated today may file an SH01 next month. Never rejected,
     # never shortlisted (qualification is also enforced inside `evaluate`).
     if company.discovery_route == "registry" and not is_qualified(company, cfg):
-        db.execute(
-            "UPDATE company SET qualified = 0, updated_at = ? WHERE id = ?",
-            (now_iso(), company_id),
-        )
-        # Stale watchlist rows otherwise keep filling Today after the
-        # admitting bar tightens (live J25 leak: old `dsw` scores outlived
-        # the new `dsw ventures` rejects).
-        db.execute("DELETE FROM score WHERE company_id = ?", (company_id,))
+        with _atomic(db):
+            db.execute(
+                "UPDATE company SET qualified = 0, updated_at = ? WHERE id = ?",
+                (now_iso(), company_id),
+            )
+            # Stale watchlist rows otherwise keep filling Today after the
+            # admitting bar tightens (live J25 leak: old `dsw` scores outlived
+            # the new `dsw ventures` rejects).
+            db.execute("DELETE FROM score WHERE company_id = ?", (company_id,))
+            snapshot.clear_company(db, company_id, now_iso()[:10])
         return 0
 
     scores = evaluate(company, cfg, today=today, config_hash=config_hash,
                       fund_key=fund_key)
 
     stamp = now_iso()
+    with _atomic(db):
+        _write_scores(db, company_id, scores, stamp, fund_key)
+    return len(scores)
+
+
+@contextmanager
+def _atomic(db: Db) -> Iterator[None]:
+    """One transaction around a company's score writes — or the caller's, when
+    it already opened one. Rows, components, obsolete-row deletes and the
+    snapshot land together or not at all."""
+    if db.conn.in_transaction:
+        yield
+        return
+    with db.tx():
+        yield
+
+
+def _write_scores(db: Db, company_id: str, scores: list[Any], stamp: str,
+                  fund_key: str | None) -> None:
     if scores:
         db.execute(
             "UPDATE company SET qualified = 1, updated_at = ? WHERE id = ?",
@@ -383,20 +435,14 @@ def score_company(db: Db, company_id: str, cfg: Any, *, today: date | None = Non
                 for component in [*score.components, *score.edge_components]
             ],
         )
-    if scores:
-        current_hash = scores[0].config_hash
-        if fund_key is None:
-            db.execute(
-                "DELETE FROM score WHERE company_id = ? AND config_hash != ?",
-                (company_id, current_hash),
-            )
-        else:
-            db.execute(
-                "DELETE FROM score WHERE company_id = ? AND fund_key = ? "
-                "AND config_hash != ?",
-                (company_id, fund_key, current_hash),
-            )
-    return len(scores)
+    # A fresh evaluation owns the entire current row for every evaluated fund.
+    for score in scores:
+        db.execute(
+            "DELETE FROM score WHERE company_id = ? AND fund_key = ? "
+            "AND NOT (config_hash = ? AND COALESCE(vehicle_key, '') = ?)",
+            (company_id, score.fund_key, score.config_hash, score.vehicle_key or ""),
+        )
+    snapshot.record_company(db, company_id, scores, stamp)
 
 
 def company_from_row(db: Db, row: Mapping[str, Any], cfg: Any = None):
@@ -474,6 +520,10 @@ def company_from_row(db: Db, row: Mapping[str, Any], cfg: Any = None):
         founder_signal=row["founder_signal"],
         traction_signal=row["traction_signal"],
         total_funding_gbp=row["total_funding_gbp"],
+        # The stored count, NULL included: `rescore --all` scores the column as
+        # it is, so leaving it out here made the morning run score every
+        # company as press-free (audit H-06).
+        news_mention_count=row["news_mention_count"],
         sic_codes=_parse_list(row["sic_codes"]),
         has_share_issue=bool(row["has_share_issue"]),
         on_vc_portfolio=bool(row["on_vc_portfolio"]),
@@ -530,6 +580,7 @@ def rescore_all(db: Db, cfg: Any, *, today: date | None = None) -> dict[str, Any
     component_rows: list[tuple] = []      # (company_id, fund_key, vehicle, key, label, sub, weight, contribution, evidence)
     qualified_updates: list[tuple] = []   # (qualified, updated_at, company_id)
     shortlisted = 0
+    snapshots = []
 
     for row in companies:
         company = _dict_company(row, founders_by.get(row["id"], []),
@@ -543,11 +594,15 @@ def rescore_all(db: Db, cfg: Any, *, today: date | None = None) -> dict[str, Any
         qualified_updates.append((1, stamp, row["id"]))
         for score_row, components in rows_out:
             score_rows.append(score_row)
+            if score_row[7] == "shortlist":
+                snapshots.append(snapshot.from_bulk(score_row, components))
             shortlisted += 1 if score_row[7] == "shortlist" else 0
             for comp in components:
                 component_rows.append((row["id"],) + comp)
 
     with db.tx():
+        # All companies are evaluated; remove obsolete vehicle rows atomically.
+        db.execute("DELETE FROM score")
         db.executemany(
             "UPDATE company SET qualified = ?, updated_at = ? WHERE id = ?",
             qualified_updates,
@@ -597,6 +652,8 @@ def rescore_all(db: Db, cfg: Any, *, today: date | None = None) -> dict[str, Any
                 [(cid,) for cid in unqualified_ids],
             )
 
+        snapshot.replace_day(db, stamp[:10], snapshots)
+
     return {"scored": len(companies), "shortlisted": shortlisted,
             "config_hash": config_hash}
 
@@ -623,6 +680,8 @@ def _dict_company(row: Mapping[str, Any], founders: list[dict],
         except (TypeError, json.JSONDecodeError):
             parsed = None
         out[key] = parsed if isinstance(parsed, list) else []
+    out["has_share_issue"] = bool(out.get("has_share_issue"))
+    out["on_vc_portfolio"] = bool(out.get("on_vc_portfolio"))
     out["founders"] = founders
     out["signals"] = signals
     return out
@@ -1165,7 +1224,19 @@ def enrich_stage(db: Db, cfg: Any, http: Any, *, api_key: str | None = None,
 # -------------------------------------------------------------------- the run
 
 
-def run_pipeline(
+def run_pipeline(db: Db, **kwargs) -> RunResult:
+    """Preview on an in-memory snapshot, including fetch and config writes."""
+    if not kwargs.get("dry_run", False):
+        return _run_pipeline(db, **kwargs)
+    preview = Db(":memory:")
+    try:
+        db.conn.backup(preview.conn)
+        return _run_pipeline(preview, **kwargs)
+    finally:
+        preview.close()
+
+
+def _run_pipeline(
     db: Db,
     *,
     fund_key: str | None = None,
@@ -1184,7 +1255,7 @@ def run_pipeline(
     """The daily run: fetch → extract → resolve → enrich → score → render.
 
     Every stage is individually wrapped so no single failure ends the run.
-    `dry_run` skips the sheet write and the run-log row. `gateway=None` skips
+    `dry_run` runs against a disposable database snapshot and skips publishing. `gateway=None` skips
     the sheet entirely (tests, `--dry-run`); `http=None` builds a real client.
     """
     from radar.config.loader import load_runtime_config
@@ -1291,6 +1362,10 @@ def run_pipeline(
 
         # Today QA — veto only. Scoring is already written; a reject hides
         # the card from Today / digest / the sheet without touching `score`.
+        # A card whose check did not complete is withheld the same way (it is
+        # recorded `incomplete`, never passed), and the run says so: status
+        # `partial` with a warning, not a clean `ok`.
+        qa_ran = True
         if not dry_run:
             try:
                 from radar.qa.today import run_today_qa
@@ -1299,10 +1374,24 @@ def run_pipeline(
                     db, cfg, checker=today_checker, use_hermes=use_llm,
                 )
                 result.warnings.extend(qa.warnings)
+                result.qa_incomplete = int(getattr(qa, "incomplete", 0) or 0)
+                if getattr(qa, "aborted", None):
+                    qa_ran = False
+                elif result.qa_incomplete:
+                    result.status = "partial"
+                    result.warnings.append(
+                        f"today QA incomplete: {result.qa_incomplete} of "
+                        f"{getattr(qa, 'cards', 0)} cards withheld from Today, "
+                        "the Sheet and the ping until a check completes")
             except Exception as exc:  # noqa: BLE001 — one stage, not the run
+                qa_ran = False
                 result.warnings.append(
                     f"today QA skipped: {type(exc).__name__}: {exc}")
                 log.warning("today QA failed (%s)", type(exc).__name__)
+            if not qa_ran:
+                result.status = "partial"
+                result.warnings.append(
+                    "Today QA did not run: cards it has not checked are unverified")
 
         gated = db.scalar(
             """SELECT COUNT(DISTINCT company_id) FROM score
@@ -1314,7 +1403,13 @@ def run_pipeline(
             "SELECT COUNT(*) FROM company WHERE merged_into IS NULL AND "
             "strftime('%Y-%m-%d', created_at) = strftime('%Y-%m-%d', 'now')") or 0)
 
-        if not dry_run and gateway is not None:
+        if not dry_run and gateway is not None and not qa_ran:
+            # Fail closed: unchecked cards must not reach the Sheet. Same
+            # degraded mode as a Sheets outage — a late sheet, no lost data.
+            result.warnings.append(
+                "sheet not written: Today QA did not run, so unchecked cards "
+                "are not pushed")
+        if not dry_run and gateway is not None and qa_ran:
             from radar.render.sheet import sync_sheet
 
             # 02-architecture §7: a Sheets outage is "a late sheet, no lost

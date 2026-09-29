@@ -8,13 +8,23 @@ backed is not a scout lead. Those titles are inverted into the denylist.
 Non-investment articles (trends, awards write-ups) stay as ordinary news —
 they do not name a closed cheque in the title, so they are not demoted.
 
-Two layout details worth keeping:
+Layout details worth keeping:
 
 * **The class names are styled-components hashes** —
   `NewsSection__NewsArticleBox-sc-13vxttl-0`. The `-sc-13vxttl-0` suffix is
   generated at build time and changes whenever the component tree does, so an
   exact-match selector would break on a deploy that changed nothing visible.
   The adapter matches on the *stable* half with `[class*="NewsArticleBox"]`.
+* **September 2026 redesign.** The `NewsArticleBox` wrapper disappeared: each
+  card is now the anchor itself (`<a href="/articles/<slug>/">` holding the
+  image, a category chip, an `<h3>` title and the relative date), styled with
+  Tailwind utilities that carry no stable name. The old selector then
+  matched nothing and the adapter failed on every run. The last
+  selector, `a[href^="/articles/"]`, keys on the one thing that has not
+  changed — the URL shape — and `_item` drops the navigation links that share
+  it, because they have no heading.
+* **The same card appears twice** (featured strip and grid); `unique_by_id`
+  collapses them in `parse`.
 * **The dates are relative** — "a month ago", not a date. There is nothing to
   parse, so `published_at` is None and `date_confidence` is `unknown`.
 """
@@ -42,7 +52,12 @@ from radar.sources.denylist import listing
 BASE = "https://foundersfactory.com"
 ARTICLES = f"{BASE}/articles/"
 
-CARD_SELECTORS = ('[class*="NewsArticleBox"]', "article", ".article-card")
+CARD_SELECTORS = (
+    '[class*="NewsArticleBox"]',
+    "article",
+    ".article-card",
+    'a[href^="/articles/"]',          # the 2026-09 layout: the card is the link
+)
 TITLE_SELECTORS = ("h2", "h3", "h4")
 
 #: "Investing in Halden Robotics" / "Investment in Marrow Bio"
@@ -82,8 +97,18 @@ class FoundersFactoryAdapter:
         )
         self.last_selector = selector
         self.last_fingerprint = node_fingerprint(cards)
-        items = [self._item(card) for card in cards]
-        return [item for item in items if item is not None]
+        items = [item for item in (self._item(card) for card in cards) if item is not None]
+        # Nodes matched but not one was a titled article link: the selector
+        # still finds *something* while the page has changed underneath it —
+        # the worst case, because it reads as a quiet week rather than a break.
+        items = guard_nonempty(
+            self.key, items,
+            detail=f"{len(cards)} node(s) matched {selector!r} but none had a title and a link",
+            document=payload if isinstance(payload, str)
+            else payload.decode("utf-8", "replace"),
+        )
+        # The page renders each article twice (featured strip, then grid).
+        return list(unique_by_id(items))
 
     @staticmethod
     def company_from_title(title: str) -> str | None:
@@ -97,7 +122,10 @@ class FoundersFactoryAdapter:
 
     def _item(self, card) -> RawItem | None:
         title = first_text(card, TITLE_SELECTORS)
-        link = card.css_first("a[href]")
+        # The 2026-09 card *is* the anchor, and `css_first` only searches
+        # descendants, so a card that is itself a link answers for itself.
+        link = card if card.tag == "a" and card.attributes.get("href") \
+            else card.css_first("a[href]")
         href = link.attributes.get("href") if link else None
         if not title or not href:
             return None
