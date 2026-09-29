@@ -211,7 +211,18 @@ def store_company(db, company: Company) -> str:
              str(s.occurred_on) if s.occurred_on else None,
              s.amount_gbp, s.source_key, s.source_url, stamp),
         )
-    from radar.qa.today import TodayCard, TodayCheckResult, record_check
-    record_check(db, TodayCard(company_id=company.id, name=company.canonical_name),
-                 TodayCheckResult(verdict="pass", checker="rules", summary="Test fixture approved"))
     return company.id
+
+
+def approve_cards(db, company_ids=None):
+    """An explicit test checker pass for the actual scored fixture cards.
+
+    Call after all evidence and scores are written; no synthetic partial card
+    hash can stand in for the version a renderer will read.
+    """
+    from radar.qa.today import _config_for, load_today_cards, TodayCheckResult, record_check
+    wanted = set(company_ids) if company_ids is not None else None
+    for card in load_today_cards(db, _config_for(db, None), limit=10000):
+        if wanted is None or card.company_id in wanted:
+            record_check(db, card, TodayCheckResult(
+                verdict="pass", checker="rules", summary="Fixture checker approved current card"))

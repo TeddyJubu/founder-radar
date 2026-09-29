@@ -1051,6 +1051,8 @@ def test_today_requires_verified_age_and_uk_presence(db):
           hq_region=None, hq_postcode=None, companies_house_no=None,
           hq_city="Dubai"), priority=94)
 
+    from tests.factories import approve_cards
+    approve_cards(db)
     payload = build_today(db.conn)
     shown = [c["company_id"] for c in payload["companies"]]
     assert news_unknown in shown

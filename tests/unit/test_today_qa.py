@@ -153,7 +153,7 @@ def test_today_qa_hides_a_rejected_company(db):
 def test_today_qa_pass_still_shown(db):
     ids = seed_companies(db, count=1, shortlist=1)
     record_check(
-        db, _card(company_id=ids[0]),
+        db, load_today_cards(db, default_config(), company_id=ids[0])[0],
         TodayCheckResult(verdict="pass", checker="hermes", summary="Looks early."),
     )
     shown = {row["company_id"] for row in build_today(db.conn)["companies"]}
@@ -435,6 +435,8 @@ def _watchlist_row(db, company, *, source_key, source_url, priority, fund="dsw")
         (cid, fund, None, 80.0, 0.8, 70.0, priority, "watchlist", None,
          "Queued for review.", None, "testhash", "1", stamp),
     )
+    from tests.factories import approve_cards
+    approve_cards(db, [cid])
     return cid
 
 

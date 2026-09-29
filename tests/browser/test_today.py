@@ -273,6 +273,15 @@ def test_b16_eligibility_diagnostics_are_visible_without_company_rows(today, api
 
 def test_b17_companies_house_badge_follows_verification_signal(page, server, demo_db, api):
     """A verified company gets the badge; the next ordinary card gets nothing."""
+    def approve_changed_card():
+        from radar.store.db import Db
+        from tests.factories import approve_cards
+        db = Db(str(demo_db))
+        try:
+            approve_cards(db, [company_id])
+        finally:
+            db.close()
+
     company_id = api["companies"][0]["company_id"]
     source_url = "https://find-and-update.company-information.service.gov.uk/company/15021884"
     with sqlite3.connect(demo_db) as conn:
@@ -290,6 +299,7 @@ def test_b17_companies_house_badge_follows_verification_signal(page, server, dem
         )
         conn.commit()
 
+    approve_changed_card()
     try:
         page.goto(server + "/", wait_until="networkidle")
         page.wait_for_selector(tid("card"))
@@ -305,6 +315,7 @@ def test_b17_companies_house_badge_follows_verification_signal(page, server, dem
             conn.execute("DELETE FROM signal WHERE company_id = ? AND source_url = ?",
                          (company_id, source_url))
             conn.commit()
+        approve_changed_card()
 
 
 def test_b8_b9_progress_count(today, api):

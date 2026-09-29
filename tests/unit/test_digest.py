@@ -45,9 +45,9 @@ def seed_company(db, name, *, cid=None, incorporated_on="2026-06-14", city="Newc
          f"https://{domain}" if domain else None, incorporated_on, postcode, region, city,
          sector, stage, funding, "registry", one_liner, stamp, stamp, stamp, stamp),
     )
-    from radar.qa.today import TodayCard, TodayCheckResult, record_check
-    record_check(db, TodayCard(company_id=cid, name=name),
-                 TodayCheckResult(verdict="pass", checker="rules"))
+    db.execute("INSERT INTO company_source(company_id, source_key, external_id, source_url, "
+               "first_seen, last_seen) VALUES (?, 'fixture_article', ?, ?, ?, ?)",
+               (cid, cid, f"https://example.org/company/{cid}", stamp, stamp))
     return cid
 
 
@@ -64,7 +64,10 @@ def seed_score(db, cid, *, fund="northstar", vehicle="spinout_inspire", tier="sh
          json.dumps(flags) if flags else None, config_hash, "1",
          f"{scored_on}T06:34:00Z"),
     )
-    return db.scalar("SELECT last_insert_rowid()")
+    score_id = db.scalar("SELECT last_insert_rowid()")
+    from tests.factories import approve_cards
+    approve_cards(db, [cid])
+    return score_id
 
 
 # The five fund-fit components plus age, in the shape `score_component` holds
@@ -111,6 +114,8 @@ def seed_signal(db, cid, headline, *, kind="spinout", occurred_on="2026-07-28",
         (cid, kind, occurred_on, headline, "northern_accelerator",
          url or f"https://example.org/{abs(hash(headline)) % 10**6}", f"{DAY}T06:30:00Z"),
     )
+    from tests.factories import approve_cards
+    approve_cards(db, [cid])
 
 
 @pytest.fixture
@@ -403,11 +408,14 @@ def test_digest_cap_is_read_from_settings(db):
     seed_run(db, shortlisted=4)
     for n in range(4):
         seed_score(db, seed_company(db, f"Co {n}"), priority=90.0 - n)
-    db.execute(
-        "INSERT INTO config_snapshot (config_hash, config_json, is_last_good, created_at) "
-        "VALUES (?,?,?,?)",
-        ("cfg1", json.dumps({"settings": {"daily_digest_max": 2}}), 1, f"{DAY}T06:00:00Z"),
-    )
+    from radar.config.defaults import default_config
+    from radar.config.loader import save_snapshot
+    cfg = default_config()
+    cfg.settings.daily_digest_max = 2
+    active_hash = save_snapshot(db, cfg)
+    db.execute("UPDATE score SET config_hash = ?", (active_hash,))
+    from tests.factories import approve_cards
+    approve_cards(db)
     text = render_digest(db, on_date=DAY)
     assert "+2 more on the dashboard" in text
     assert "3. " not in text

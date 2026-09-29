@@ -349,6 +349,8 @@ def seed_companies(db: Any, count: int = 200, *, shortlist: int = 6) -> list[str
              "testhash", "1", stamp),
         )
         ids.append(company.id)
+    from tests.factories import approve_cards
+    approve_cards(db, ids)
     return ids
 
 

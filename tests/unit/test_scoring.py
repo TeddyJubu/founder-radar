@@ -15,7 +15,7 @@ from radar.pipeline import evaluate
 from radar.score.derive import Company, Signal, derive_attributes
 from radar.score.fund_fit import fund_fit
 
-from tests.factories import C, F, months_ago, registry_company, score_all, score_one
+from tests.factories import approve_cards, C, F, months_ago, registry_company, score_all, score_one
 
 
 @pytest.fixture
@@ -167,6 +167,7 @@ def test_edge_varies_across_the_today_queue(db, cfg):
             (cid, "uktn", f"ext-{name}", f"https://uktn.co.uk/{name}", stamp, stamp),
         )
         score_company(db, cid, cfg, today=date(2026, 8, 8))
+        approve_cards(db)
 
     add("Obscure Co", age_months=3, funding=0, news_mention_count=0)
     add("Famous Co", age_months=30, funding=2_000_000, news_mention_count=8,
@@ -197,6 +198,7 @@ def test_no_shortlist_row_under_the_coverage_floor(db, cfg):
         )
         cid = store_company(db, company)
         score_company(db, cid, cfg, today=date(2026, 8, 8))
+        approve_cards(db)
 
     rows = db.query("SELECT fund_fit_pct, coverage FROM score WHERE tier = 'shortlist'")
     assert rows, "expected at least one shortlisted row from the seeded queue"
@@ -494,6 +496,7 @@ def test_the_tier_reason_is_appended_once_by_the_caller_chain(db, cfg):
                 stage=None, founder_signal=None, traction_signal=None)
     cid = store_company(db, company)
     score_company(db, cid, cfg, today=date(2026, 8, 8))
+    approve_cards(db)
 
     for row in db.query("SELECT tier, explanation FROM score WHERE company_id = ?", (cid,)):
         text = (row["explanation"] or "").lower()

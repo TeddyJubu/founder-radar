@@ -18,7 +18,7 @@ from radar.pipeline import rescore_all, score_company
 from radar.score.derive import Company, Signal
 from radar.store.db import now_iso
 
-from tests.factories import C, F, registry_company, store_company
+from tests.factories import approve_cards, C, F, registry_company, store_company
 
 TODAY = date(2026, 8, 8)
 
@@ -52,9 +52,11 @@ def _daily_then_bulk(db, config, ids):
     """Score `ids` one at a time, then wipe and score them in bulk."""
     for cid in ids:
         score_company(db, cid, config, today=TODAY)
+        approve_cards(db)
     daily = (_scores(db), _components(db))
     db.execute("DELETE FROM score")
     rescore_all(db, config, today=TODAY)
+    approve_cards(db)
     bulk = (_scores(db), _components(db))
     return daily, bulk
 
@@ -79,7 +81,7 @@ def _metzero(**over) -> Company:
 def _add_source(db, company_id: str) -> None:
     stamp = now_iso()
     db.execute(
-        "INSERT INTO company_source(company_id, source_key, external_id, source_url,"
+        "INSERT OR IGNORE INTO company_source(company_id, source_key, external_id, source_url,"
         " first_seen, last_seen) VALUES (?,?,?,?,?,?)",
         (company_id, "news_x", "1", "https://example.com/article", stamp, stamp))
 
@@ -128,6 +130,7 @@ def test_a_registry_company_admitted_by_press_is_scored_daily(db, config):
         news_mention_count=2))
 
     assert score_company(db, cid, config, today=TODAY) > 0
+    approve_cards(db)
 
     (daily_scores, _), (bulk_scores, _) = _daily_then_bulk(db, config, [cid])
     assert daily_scores and daily_scores == bulk_scores
@@ -154,12 +157,15 @@ def _scored_then_rerouted(db, config, *, bulk: bool = False) -> str:
     cid = store_company(db, _metzero())
     _add_source(db, cid)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     assert _vehicles_for(db, cid) == ["ne_innovation_fund"]
     _become_a_durham_spinout(db, cid)
     if bulk:
         rescore_all(db, config, today=TODAY)
+        approve_cards(db)
     else:
         score_company(db, cid, config, today=TODAY)
+        approve_cards(db)
     return cid
 
 
@@ -189,11 +195,14 @@ def test_removing_an_obsolete_vehicle_row_removes_its_components(db, config):
 def test_a_fund_scoped_run_only_cleans_its_own_fund(db, config):
     """`--fund` refreshes one fund and must leave the others alone."""
     cid = store_company(db, _metzero())
+    _add_source(db, cid)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     _become_a_durham_spinout(db, cid)
     dsw_before = _vehicles_for(db, cid, "dsw")
 
     score_company(db, cid, config, today=TODAY, fund_key="northstar")
+    approve_cards(db)
 
     assert _vehicles_for(db, cid, "northstar") == ["spinout_inspire"]
     assert _vehicles_for(db, cid, "dsw") == dsw_before
@@ -255,8 +264,11 @@ def test_score_snapshot_only_keeps_what_the_digests_read(db, config, monkeypatch
     """Growth bound: shortlist rows only, one per company × fund × day."""
     _Clock(monkeypatch).at(MON)
     cid = store_company(db, _metzero())
+    _add_source(db, cid)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     score_company(db, cid, config, today=TODAY)          # a second pass, same day
+    approve_cards(db)
 
     rows = db.query("SELECT * FROM score_snapshot")
     assert [(r["company_id"], r["fund_key"], r["tier"], r["snapshot_date"])
@@ -269,8 +281,10 @@ def test_a_later_rescore_does_not_change_an_earlier_days_digest(db, config, monk
     digest filtered on `score.scored_at`, which Tuesday's pass had overwritten."""
     clock = _Clock(monkeypatch)
     cid = store_company(db, _metzero())
+    _add_source(db, cid)
     clock.at(MON)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     monday_before = _digest(db, "2026-08-03")
     assert "METzero Technologies" in monday_before
 
@@ -278,6 +292,7 @@ def test_a_later_rescore_does_not_change_an_earlier_days_digest(db, config, monk
     db.execute("UPDATE company SET sector = 'life_sciences' WHERE id = ?", (cid,))
     clock.at(TUE)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
 
     assert _digest(db, "2026-08-03") == monday_before      # byte for byte
     tuesday = _digest(db, "2026-08-04")
@@ -292,12 +307,15 @@ def test_a_later_rescore_does_not_change_an_earlier_days_digest(db, config, monk
 def test_the_weekly_digest_keeps_a_company_that_was_later_dropped(db, config, monkeypatch):
     clock = _Clock(monkeypatch)
     cid = store_company(db, _metzero())
+    _add_source(db, cid)
     clock.at(MON)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     # Wednesday: too old for the freshness gate, so every fund rejects it.
     db.execute("UPDATE company SET incorporated_on = '2020-01-01' WHERE id = ?", (cid,))
     clock.at(WED)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     assert db.scalar("SELECT COUNT(*) FROM score WHERE tier = 'shortlist'") == 0
 
     assert "METzero Technologies" in _digest(db, "2026-08-09", period="week")
@@ -310,13 +328,16 @@ def test_a_same_day_rescore_replaces_that_days_snapshot(db, config, monkeypatch)
     the shortlist must drop it from today's digest too."""
     clock = _Clock(monkeypatch)
     cid = store_company(db, _metzero())
+    _add_source(db, cid)
     clock.at(MON)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     assert "METzero Technologies" in _digest(db, "2026-08-03")
 
     db.execute("UPDATE company SET incorporated_on = '2020-01-01' WHERE id = ?", (cid,))
     clock.at("2026-08-03T15:00:00Z")
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
 
     assert db.scalar("SELECT COUNT(*) FROM score_snapshot") == 0
     assert "METzero Technologies" not in _digest(db, "2026-08-03")
@@ -327,6 +348,8 @@ def test_bulk_rescore_writes_the_same_snapshots_as_the_daily_path(db, config, mo
     ids = [store_company(db, _metzero()),
            store_company(db, _metzero(id="second", canonical_name="Second Co",
                                       norm_key="secondco", news_mention_count=5))]
+    for fixture_cid in ids:
+        _add_source(db, fixture_cid)
 
     def snapshot():
         return [tuple(r) for r in db.query(
@@ -336,9 +359,11 @@ def test_bulk_rescore_writes_the_same_snapshots_as_the_daily_path(db, config, mo
 
     for cid in ids:
         score_company(db, cid, config, today=TODAY)
+        approve_cards(db)
     daily = snapshot()
     db.execute("DELETE FROM score_snapshot")
     rescore_all(db, config, today=TODAY)
+    approve_cards(db)
 
     assert daily and snapshot() == daily
 
@@ -346,8 +371,10 @@ def test_bulk_rescore_writes_the_same_snapshots_as_the_daily_path(db, config, mo
 def test_a_day_before_snapshots_existed_still_renders_from_score(db, config, monkeypatch):
     """Legacy databases hold `score` rows and no snapshots. They keep rendering."""
     cid = store_company(db, _metzero())
+    _add_source(db, cid)
     _Clock(monkeypatch).at(MON)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     db.execute("DELETE FROM score_snapshot")
 
     assert "METzero Technologies" in _digest(db, "2026-08-03")
@@ -361,6 +388,7 @@ def test_an_unqualified_company_leaves_no_snapshot(db, config, monkeypatch):
         has_share_issue=True))
     _Clock(monkeypatch).at(MON)
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     db.execute(
         "INSERT INTO score_snapshot(company_id, fund_key, snapshot_date, config_hash,"
         " fund_fit_pct, coverage, discovery_edge, priority, tier, scored_at)"
@@ -370,6 +398,7 @@ def test_an_unqualified_company_leaves_no_snapshot(db, config, monkeypatch):
                (cid,))
 
     assert score_company(db, cid, config, today=TODAY) == 0
+    approve_cards(db)
     assert db.scalar("SELECT COUNT(*) FROM score_snapshot") == 0
 
 
@@ -399,6 +428,7 @@ def test_derived_facts_are_what_scoring_derived(db, config):
         "hq_region": "north_east", "sector": "life_sciences", "stage": "pre_seed"}
     # ...and they are the values the score's own components report.
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
     evidence = {r["key"]: r["evidence"] for r in db.query(
         "SELECT sc.key, sc.evidence FROM score_component sc JOIN score s"
         " ON s.id = sc.score_id WHERE s.company_id = ? AND s.fund_key = 'northstar'",
@@ -422,6 +452,7 @@ def test_the_sheet_shows_the_facts_the_score_used(db, config):
 
     cid = store_company(db, _derived_company())
     score_company(db, cid, config, today=TODAY)
+    approve_cards(db)
 
     (row,) = build_companies(db, config, {}, today=TODAY)
 
@@ -440,6 +471,7 @@ def test_the_today_card_shows_the_facts_the_score_used(db, config):
     cid = store_company(db, _derived_company(hq_region="north_east"))
     _add_source(db, cid)
     score_company(db, cid, config, today=date.today())
+    approve_cards(db)
 
     cards = build_today(db.conn)["companies"]
 
