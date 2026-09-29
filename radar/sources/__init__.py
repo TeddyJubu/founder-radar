@@ -260,12 +260,16 @@ def fetch_all(
         key = getattr(adapter, "key", adapter.__class__.__name__)
         started = time.monotonic()
         status, error, got = "ok", None, []
+        budget_warnings = []
         try:
             got = list(adapter.fetch(ctx))
             fingerprint = getattr(adapter, "last_fingerprint", None)
             if fingerprint and db is not None:
                 check_fingerprint(db, key, fingerprint)
-            failures = getattr(adapter, "last_failures", None)
+            from radar.sources._article import hydrate_articles
+            got, article_failures = hydrate_articles(got, ctx, kind=getattr(adapter, "kind", ""))
+            budget_warnings = [f for f in article_failures if f.startswith("budget:")]
+            failures = list(getattr(adapter, "last_failures", None) or []) + [f for f in article_failures if not f.startswith("budget:")]
             if failures:
                 status, error = "degraded", "; ".join(failures)
 
@@ -307,6 +311,9 @@ def fetch_all(
                     (run_id, key, status, len(got), elapsed, error),
                 )
 
+        if budget_warnings:
+            budget_note = f"Article budget reached; {len(budget_warnings)} excerpts withheld"
+            run.warning = "; ".join(filter(None, [run.warning, budget_note]))
         result.sources.append(run)
         result.items.extend(got)
 

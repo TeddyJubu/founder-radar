@@ -147,3 +147,33 @@ instead of the noindex JSON API and requires individual article extraction.
 Its reviewed replacement fingerprint is `d7250bd328be69a6` for adapter ID
 `cambridge_enterprise`; accept this reviewed transition before the next scan.
 No noindex/robots restriction was bypassed. No live scan or data writes ran.
+
+## Article hydration at the fetch boundary
+
+The `full_text_in_feed=False` flag is now consumed before extraction for news
+and spinout sources. Source-specific wrappers collect substantive article text;
+there is no whole-page/navigation fallback. Cambridge collects its separate
+`main section.block--text div.prose` blocks. Already-complete feed bodies and
+already-hydrated items avoid duplicate requests. UKTN now uses this same boundary.
+
+Each source gets at most 20 articles, each GET has an eight-second timeout and
+no retry backoff. Up to three redirects are followed explicitly, with public
+address validation and robots checks at every destination. Meta/header noindex
+remains binding. A bare 304 gets one unconditional retry; a second 304 is
+withheld rather than substituting the excerpt. Unreadable/blocked articles are
+withheld individually and reported as degraded without losing healthy neighbors.
+An exhausted article budget produces a warning, not a broken-source heartbeat.
+Other source kinds (registry/grant/portfolio/accelerator) retain their existing
+structured extraction path; this change does not invent company facts or add AI calls.
+
+Read-only real article verification on 30 September extracted:
+
+- BusinessCloud: 1790 characters from its Monzo/Nubank takeover article.
+- Bdaily: 3746 characters from its Gateshead flyover-demolition article.
+- Startups Magazine: 1468 characters from its future-of-the-magazine article.
+- Cambridge Enterprise: 4479 characters from its biotechnology-ecosystems article.
+
+These prove text retrieval, not that these particular stories are qualifying
+startups. The normal company extraction and fund gates still make that decision.
+147 targeted regressions passed across hydration, sources, source registry,
+Companies House, provenance, source safety and phase-eight sources.
