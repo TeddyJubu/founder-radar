@@ -129,6 +129,14 @@ for path in \
   "$H/cache" \
   "$H/hermes-agent" \
   "$H/installs" \
+  "$H/backups" \
+  "$H/state" \
+  "$H/sessions" \
+  "$H/memories" \
+  "$H/shared" \
+  "$H/state.db" \
+  "$H/state.db-wal" \
+  "$H/state.db-shm" \
   "$H/config.yaml" \
   "$H/auth.json" \
   "$HOME_DIR/.local" \
@@ -138,6 +146,10 @@ for path in \
 do
   acl_tree "$path" "$APP_USER"
 done
+
+# Today QA uses the operator provider configuration; it only needs to read
+# this file, unlike runtime backup/session trees.
+acl_user "$H/.env" "$APP_USER" "r--"
 
 if [[ -x "$H/hermes-agent/venv/bin/hermes" ]]; then
   acl_user "$H/hermes-agent/venv/bin/hermes" "$APP_USER"

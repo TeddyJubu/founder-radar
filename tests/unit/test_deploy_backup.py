@@ -442,6 +442,10 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
     home = tmp_path / "operator"
     (home / ".hermes" / "installs" / "test-install").mkdir(parents=True)
     (home / ".hermes" / "installs" / "test-install" / "facts.json").write_text("{}")
+    for directory in ("backups/config", "state", "sessions", "memories", "shared"):
+        (home / ".hermes" / directory).mkdir(parents=True)
+    for filename in ("state.db", "state.db-wal", "state.db-shm", ".env"):
+        (home / ".hermes" / filename).write_text("runtime state")
     root = tmp_path / "install"
     for name in ("app", "venv", "data", "logs", "backups"):
         (root / name).mkdir(parents=True)
@@ -470,6 +474,11 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
     assert str(root / "data") in recorded
     assert str(home / ".hermes") in recorded
     assert str(home / ".hermes" / "installs") in recorded
+    for path in ("backups", "state", "sessions", "memories", "shared",
+                 "state.db", "state.db-wal", "state.db-shm"):
+        assert str(home / ".hermes" / path) in recorded
+    assert "-m u:radar:r-- " + str(home / ".hermes" / ".env") in recorded
+    assert "u:radar:rwx " + str(home / ".hermes" / ".env") not in recorded
 
 
 def test_install_migrates_before_starting_any_service_or_timer():
