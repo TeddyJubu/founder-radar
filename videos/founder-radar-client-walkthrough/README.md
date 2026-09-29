@@ -1,6 +1,8 @@
 # Finished client walkthrough
 
-The editable source for the 6 minute 38 second walkthrough is `scenes.json`.
+The editable source for the complete narrated owner handover is `scenes.json`.
+It contains the original 13 product chapters plus 12 practical owner chapters.
+The original 6 minute 38 second export remains preserved in `baseline-6m38/`.
 `SCRIPT.md` contains the measured, chapter-timed transcript. This replaces
 the September 29 outline with an actual narrated, captioned video and worked settings edits.
 
@@ -11,6 +13,11 @@ Final media and editable HyperFrames project are kept outside Git at:
 This directory contains `founder-radar-client-walkthrough.mp4`, the measured
 transcript, SRT captions, sentence timing, local narration WAV, screenshots,
 settings/scoring evidence, HTML compositions and validation reports.
+`OWNER-CARDS.md` supplies copyable owner prompts and reference commands.
+The full written [owner handover](../../docs/owner-handover.md) provides the
+detailed recovery steps. `owner-scenes.json` keeps the owner chapters separately
+for review; `scenes.json` is the canonical full timeline input.
+
 No upload or client delivery is implied by creating the export.
 
 ## Demonstration boundaries
@@ -28,6 +35,17 @@ No upload or client delivery is implied by creating the export.
 - Source disabled affects future collection; it does not erase stored companies.
 - Score threshold changes do not invent evidence or alter the score arithmetic.
 - Incomplete final checks withhold companies from publication.
+
+## Owner-operation scope
+
+The added chapters use the current owner runbook and the parent agent’s
+verified VPS service/timer inventory. They explain the actual login addresses,
+Hermes requests, saved decisions, daily/weekly checks, read-only diagnosis,
+server services and account boundaries, trusted updates, conditional reboot,
+backup/restore, failure recovery, Sheet sync, passwords and key rotation.
+They do not claim account access was transferred or an off-server backup exists.
+The current Hermes launcher must be verified before using its version-specific
+maintenance/setup commands; none are invented in this recording.
 
 ## Rebuild
 

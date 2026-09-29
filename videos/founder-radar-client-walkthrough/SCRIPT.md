@@ -51,3 +51,51 @@ Three buttons finish the morning review. Worth contacting saves the company to K
 ## 00:06:05,830 — A simple daily routine
 
 For daily use, open Today, check the explanation and evidence, then choose yes, maybe, or no. Return to Kept when you are ready to contact companies. Change settings in the Sheet when you have a clear reason, then recalculate and complete the final checks before publishing again. Use the teaching guide for the Easy explanation or the Technical detail. This walkthrough used demonstration data throughout. Your live settings and decisions were untouched. The goal is a small, explainable UK company list that helps you make the next decision, while leaving unknowns and unfinished checks visible.
+
+## 00:06:37,966 — Your control room and logins
+
+Now let us make you the owner of the day to day operation. Bookmark the review website, the shared Google Sheet, and the Hermes Web UI address shown here. Today, Kept, Dashboard, and Help use the review login. The teaching guide is public. Hermex connects to the webui address, using its app password, without custom headers. The similar hermes address is a review page alias, not the chat service. Use the Sheet link supplied with your handover. Passwords, your server key, and account invitations must be supplied privately. This video deliberately does not display them.
+
+## 00:07:09,412 — Ask Hermes for an action you can verify
+
+You can speak to Hermes through Telegram or Hermex. Be specific about the outcome. Say: run a fresh Founder Radar scan, complete the final checks, and give me the Today link. For research, ask it to run a new UK company search and give you the Today link. To keep or reject a company, name it precisely and ask Hermes to save the decision with founder radar decide. Then confirm the saved result. For sources or fund rules, Hermes can explain the row and proposed change. Edit the accepted cell yourself in Google Sheet, then ask Hermes to rescore and complete the final checks. A brand new source website needs a developer to add a tested connector.
+
+## 00:07:45,663 — Your daily and weekly checklist
+
+Each morning, check Today, the ready and waiting counts, and your saved choices. If the list is empty, ask why rather than assuming the scan failed. Once a week, ask Hermes for a health summary: the most recent successful scan, source failures, Sheet synchronization, available disk, and the newest backup. Ask it to show dates, not just say everything is fine. Once a month, review fund criteria, recurring costs, and backup access. A source that returns nothing for weeks can have a broken page layout, even when it reports success. Your routine is to notice that pattern and ask Hermes to investigate it.
+
+## 00:08:19,049 — Three useful checks, in plain language
+
+Doctor means the system health check. Why today means an explanation of the candidate counts and the reasons companies are excluded. These are good first diagnostic steps. Ask Hermes to run them on the actual server and explain failures in plain English. Today QA is different: it performs and saves the final company checks, and may withhold a bad card. The limit eighty example checks a larger pending batch; completed current approvals do not use those new check slots. If a check cannot finish, keep the company waiting. If chat works but final checks repeatedly fail, ask Hermes to check shared access, use the installed repair, then recheck. Do not solve an empty list by switching off the protection or forcing an unchecked digest to send.
+
+## 00:09:01,201 — What runs on the VPS
+
+The VPS is the computer that stays on when your laptop is closed. A service is one running job. The Founder Radar web service serves the review app. Caddy handles its public secure address. The Hermes gateway handles conversations, and the Hermes Web UI supports Hermex. Hermes runs as aryan; the company database work runs as radar. Use the supported founder radar command wrapper, which switches to the correct account. Do not fix a permission problem by making everything writable or changing ownership of the application. To check the machine, ask Hermes to inspect failed services, timers, free disk, and recent error logs without printing secrets. Administration needs an owner account with verified permission; the command wrapper does not grant general administrator access.
+
+## 00:09:45,714 — Updates, schedules and sensible reboots
+
+The scheduled jobs use London time. Database backup is at five, the scan starts around six thirty with a small delay, and the heartbeat checks for a missed morning at nine. The trusted project updater checks approved main branch changes about every five minutes. The server also has automatic operating system security updates enabled. These are different update paths. For a Hermes upgrade, ask it to check the installed runtime and compatibility first, back up configuration, and test conversations and final QA afterwards. Do not paste a random reinstall command. Reboot only when a real maintenance reason requires it, at a quiet time, after reviewing the plan. Automatic reboot is not guaranteed.
+
+## 00:10:26,539 — Backups protect choices. Recovery needs a plan.
+
+The daily database snapshots are in the folder shown here, with fourteen days retained. Ask Hermes to confirm the newest file and test that it is readable. This protects stored companies and choices, but a local database backup alone does not protect against losing the entire server. Keep an encrypted complete recovery copy in storage you control, including private configuration and Sheet rules. That off-server copy has not been confirmed by this handover. Before restoring, ask for the exact backup, the choices that would be lost, and a recovery plan. Stop writers, preserve the current state, and use the validated restore command. Confirm a destructive recovery before it happens.
+
+## 00:11:04,533 — When Today, Telegram or Hermex stops
+
+If Today will not open, check its address and review login, then ask about the web service and Caddy. If Today opens but is empty, use doctor and why today; an unfinished company check is not a website outage. If Telegram is silent, try a simple message, check the gateway, and check whether the latest scan and publication gate completed. Use Hermex if that channel still works. If Hermex fails, verify its webui address and app password, try the same address in a browser, and check the Web UI service. If all conversation channels are down, use your VPS console or authorized SSH access. Diagnose, repair the specific service, then test the original channel again.
+
+## 00:11:44,046 — When the Google Sheet is behind
+
+If the Sheet is behind but Kept contains your choices, do not delete or re-enter everything. The app database is the main saved record. Ask Hermes to run doctor, confirm that the Google service account, the account the server uses, still has Editor permission to change the Sheet, and inspect the latest synchronization. Then request sync sheet and verify the intended rows; this action writes the Sheet mirror. For changed rules, check the Status cells. Invalid settings can fall back to the last good copy, so a saved cell is not proof that the new rule loaded. Keep the fixed fund and vehicle keys unchanged. After a valid rule edit, rescore and complete the final checks again. Before synchronizing a restored database, preserve and review the Sheet inputs, because newer Sheet verdicts can change restored choices.
+
+## 00:12:29,613 — Own the accounts and protect the keys
+
+Make sure you control the VPS account, the Sheet and Google Cloud project, the GitHub repository, the Telegram bot, and the AI provider actually used by Hermes. Obtain the needed invitations and recovery information; this video does not mean ownership was already transferred. Keep passwords and private keys in your password manager, with suitable recovery contacts and two factor authentication. Review real billing and renewal dates. When rotating a key, prepare the replacement privately, update the correct protected configuration, test the affected connection, and only then revoke the old key. Never ask Hermes to paste credentials into chat, logs, screenshots, or a public guide. Hermes's final-check login and the extraction AI credential are separate connections, so test the one you actually changed.
+
+## 00:13:15,986 — Change passwords without losing access
+
+For the review password, an administrator runs Caddy hash password interactively. Store the generated hash in the protected Radar configuration, restart Caddy, and test the new review login. Do not type a real password into a copied command that may remain in history. Hermex uses a different app password. Identify the installed Web UI configuration location without printing its contents, replace that password privately, restart the Web UI service, and update your phone. For Telegram, renew the token through BotFather and update every consumer using it. For an expired AI login, check the actual working Hermes installation before using its supported setup. Test the changed connection before removing the old access.
+
+## 00:13:57,293 — You can run the next day yourself
+
+Here are two prompts you can reuse. For health: check Founder Radar on the VPS, diagnose first, and show the latest scan, ready and waiting counts, failed services, disk, newest backup, and Sheet access, without printing secrets. For a repair: explain the cause and the smallest fix, take a backup where needed, ask before restoring, deleting, rebooting, or rotating keys, then test the original problem. If chats are down, use your provider console or your own authorized SSH connection. The address is shown here; a private local shortcut on someone else's laptop is not your access setup. Keep the written owner handover alongside this video. You now have a daily routine and a recovery route.

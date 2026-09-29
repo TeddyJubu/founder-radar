@@ -18,9 +18,15 @@ for name, crop in [("today-focus.png", "880:420:200:280"),
                         "-frames:v", "1", str(out/"assets"/name)], check=True)
 
 
+def card_text(text):
+    return '\n'.join('<span class="url">'+html.escape(line)+'</span>'
+                     if line.startswith('https://') else html.escape(line)
+                     for line in text.splitlines())
+
+
 def boxes(items, flow=False):
     return ('<div class="boxes flow">' if flow else '<div class="boxes">')+''.join(
-        f'<div class="box"><span>{i+1:02}</span><h2>{html.escape(title)}</h2><p>{html.escape(text)}</p></div>'
+        f'<div class="box"><span>{i+1:02}</span><h2>{html.escape(title)}</h2><p>{card_text(text)}</p></div>'
         for i,(title,text) in enumerate(items))+'</div>'
 
 
@@ -34,6 +40,9 @@ def shot(name, start=0, duration=999):
 
 def body(scene):
     visual = scene['visual']; d=scene['duration']
+    if visual == 'owner':
+        return boxes([(c['title'], c['text']) for c in scene['cards']]) + \
+            '<div class="note">' + html.escape(scene.get('note','')) + '</div>'
     if visual.endswith('.png'):
         if visual == "today.png":
             visual = "today-header.png" if scene["title"].startswith("Ready") else "today-focus.png"
@@ -75,7 +84,8 @@ for i,s in enumerate(data['scenes']):
     #{root} .boxes{{display:flex;gap:17px;margin:25px 48px 0;align-items:stretch}}
     #{root} .box{{position:relative;flex:1;background:#e0e8dc;padding:22px 18px;border-top:4px solid #ad5938;border-radius:10px;min-height:215px}}
     #{root} .flow .box:not(:last-child)::after{{content:'→';position:absolute;right:-22px;top:62px;color:#914329;font-size:30px;z-index:4}}
-    #{root} .box span{{font-size:17px;color:#914329}}#{root} h2{{font:27px GeorgiaLocal;line-height:1.16;margin:18px 0}}#{root} .box p{{font-size:22px;line-height:1.4;margin:0}}
+    #{root} .box span{{font-size:17px;color:#914329}}#{root} h2{{font:27px GeorgiaLocal;line-height:1.16;margin:18px 0}}#{root} .box p{{font-size:22px;line-height:1.4;margin:0;white-space:pre-line;overflow-wrap:anywhere}}
+    #{root} .box p .url{{font:20px ArialLocal;color:#143e3a;white-space:nowrap}}
     #{root} .note{{text-align:center;font-size:23px;line-height:1.45;margin:30px 60px;color:#425d50}}
     #{root} .scoreboard{{display:flex;gap:22px;padding:45px 85px 0}}#{root} .scoreboard>div{{flex:1;background:#e0e8dc;text-align:center;padding:25px;border-radius:16px}}
     #{root} small{{font-size:18px;color:#456959}}#{root} strong{{display:block;font:70px GeorgiaLocal;margin:16px}}#{root} .scoreboard p{{font-size:21px}}

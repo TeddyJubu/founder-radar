@@ -21,6 +21,15 @@ engine = Kokoro(str(home / ".cache/hyperframes/tts/models/kokoro-v1.0.onnx"),
 sr = 24000
 audio, cues = [], []
 clock = 0.0
+cached = {}
+old_audio = None
+prior_path = output / "timeline.json"
+voice_path = output / "assets/narration.wav"
+if prior_path.exists() and voice_path.exists():
+    prior = json.loads(prior_path.read_text())
+    old_audio, old_rate = sf.read(voice_path, dtype="float32")
+    assert old_rate == sr and old_audio.ndim == 1
+    cached = {(s["title"],s["text"].strip()):s for s in prior["scenes"]}
 
 
 def stamp(t):
@@ -30,6 +39,18 @@ def stamp(t):
 
 for i, scene in enumerate(scenes):
     scene["start"] = clock
+    old = cached.get((scene["title"],scene["text"].strip()))
+    if old is not None:
+        start, end = old["start"], old["start"]+old["duration"]
+        segment = old_audio[round(start*sr):round(end*sr)]
+        audio.append(segment)
+        shift = clock-start
+        cues.extend({**c,"start":c["start"]+shift,"end":c["end"]+shift}
+                    for c in prior["captions"] if start <= c["start"] < end)
+        scene["duration"] = len(segment)/sr
+        clock += scene["duration"]
+        print(f"{i+1:02} {clock:.1f}s {scene['title']} (cached)",flush=True)
+        continue
     for sentence in re.split(r"(?<=[.!?])\s+", scene["text"].strip()):
         samples, rate = engine.create(sentence, voice="bf_emma", speed=1.08, lang="en-gb")
         assert rate == sr
