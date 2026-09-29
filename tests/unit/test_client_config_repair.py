@@ -79,6 +79,15 @@ def test_changed_sheet_refuses_stale_approval_without_writing():
     assert not gw.calls
 
 
+def test_empty_bgv_note_gets_the_honest_denylist_description():
+    gw=Gateway()
+    gw.grids['Sources'][1][7]=''
+    plan=plan_repair(read_state(gw))
+    assert len(plan['changes'])==1
+    assert plan['changes'][0]['before']==''
+    assert 'already invested' in plan['changes'][0]['after']
+
+
 def test_missing_banner_fails_before_any_write():
     gw=legacy()
     gw.grids['Scoring Weights']=[row for row in gw.grids['Scoring Weights'] if not(row and row[0]==IMPORTANCE_BANNER)]

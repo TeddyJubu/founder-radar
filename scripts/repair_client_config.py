@@ -127,7 +127,7 @@ def plan_repair(state):
     for row_index,row in enumerate(sources[1:],1):
         if _value(row,source_col)=='bethnal_green':
             current=_value(row,note_col)
-            if current=='Bethnal Green Ventures portfolio':
+            if current in ('', 'Bethnal Green Ventures portfolio'):
                 put('Sources',row_index,note_col,current,note)
             elif current!=note:
                 skipped.append({'tab':'Sources','cell':f'{col_letter(note_col)}{row_index+1}',
