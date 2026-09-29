@@ -54,7 +54,7 @@ company list, scores, or source-by-source narration.
 | check if safe to publish | `founder-radar publish-check` |
 | why is Today empty | `founder-radar why-today` |
 | health / env / hash | `founder-radar doctor` |
-| re-check Today's cards | `founder-radar today-qa` |
+| re-check Today's cards | `founder-radar today-qa --limit 80` |
 | heal empty generation | `founder-radar rescore --all` |
 | fill missing incorporation dates | `founder-radar hydrate-ages` then `rescore --all` |
 | top matches for a fund | `founder-radar fund <key>` |
@@ -105,8 +105,51 @@ him the Today URL.
 - A run takes several minutes. Say "running, I'll message you when it's done."
   On the VPS, call `founder-radar` directly — `/usr/local/bin/founder-radar`
   re-execs as `radar` with `.env` + `hermes.env` loaded. Do not hand-craft
-  `sudo -u radar` unless the wrapper is missing. You own hard ops here:
-  edit `/opt/founder-radar/app`, run CLI, restart units, diagnose with
-  `doctor` / `why-today`. Never invent scores or sheet rows by hand.
+  `sudo -u radar` unless the wrapper is missing. For authorised operations:
+  use supported CLI repairs, and diagnose with `doctor` / `why-today`.
+  Application code and the Python environment are root-protected. Do not edit
+  `/opt/founder-radar/app` directly, change its ownership, or install packages
+  into the protected runtime. Use the trusted main update path below. Never
+  invent scores or sheet rows by hand.
 - Quiet Hermes: deterministic gate still blocks hash drift; zero-day PASS is OK
   only when there are no reviewable scores. With cards present, Hermes must run.
+
+
+## Owner operations: use the supported paths
+
+Use the installed `/usr/local/bin/founder-radar` wrapper. It switches to `radar`
+with the correct environment; it requires the operator's existing sudo permission
+and does not grant it. `radar` has permission to write data, logs and backups and
+run the narrow root-owned Hermes ACL helper, not administer arbitrary services.
+Hermes runs as the operator. Use privileged actions only when the owner has
+requested them and that account's actual sudo permission is established.
+
+- **Read first:** `founder-radar doctor`, `status`, `why-today`,
+  `systemctl list-timers 'founder-radar*' --all`, and relevant service/log status.
+  `publish-check` is not purely read-only: it can auto-heal supported drift.
+- **New QA batch:** `founder-radar today-qa --limit 80` checks sources and current
+  cards without sending. Current completed approvals do not consume those new
+  slots. After a rescore, changed cards need fresh completed checks.
+- **Database backup:** `founder-radar db backup --to
+  /opt/founder-radar/backups/before-maintenance.db --retain-days 0`, followed by
+  a local SQLite integrity check. Use SQLite backup, not a copy of a live file.
+  The automatic backup timer retains local database snapshots; it does not
+  back up credentials or create an off-server copy.
+- **Code update:** after reviewed code reaches GitHub `main`, the root-owned
+  update timer deploys it. An authorised administrator can request
+  `sudo systemctl start founder-radar-update.service` and inspect its journal.
+  Do not use direct source rewrites, an unpinned `pip install`, or a forced Git
+  reset as a repair. The updater's dry-run setting can still move the checkout.
+- **Restart / restore / credential changes:** require the owner/admin boundary.
+  Stop relevant writers and timers, preserve and verify a current backup, and
+  use `founder-radar db restore <verified-backup>` for an intentional restore.
+  Follow `docs/owner-handover.md`; do not copy a backup over a running database.
+- **Hermes itself:** the operator owns `/home/aryan/.hermes`; Radar QA disables
+  lazy installation updates. Do not update Hermes as `radar`. If its launcher
+  fails before opening, diagnose it via owner SSH and installed service logs;
+  verify the installed version's help before suggesting auth/update commands.
+
+Owner SSH is `aryan@srv1821489.hstgr.cloud`, with an authorised owner key.
+Today is `https://srv1821489.hstgr.cloud/`. The `hermes.` alias is the same
+review UI. Hermex uses `https://webui.srv1821489.hstgr.cloud` and its separate
+WebUI app password. Do not swap these login surfaces or expose auth files.
