@@ -18,6 +18,7 @@ shape, and the scoring path is a pure function of `(company, config)`.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import date
 from typing import Any, Iterable, Mapping, Sequence
@@ -108,7 +109,9 @@ class Company(BaseModel):
 
     has_share_issue: bool | None = None
     officer_count: int | None = None
-    news_mention_count: int = 0
+    # `None` is a stored NULL — "press count unknown" — and scores as such. Only
+    # a `Company` built by hand, with no count to speak of, defaults to zero.
+    news_mention_count: int | None = 0
     on_vc_portfolio: bool = False
     discovery_route: str | None = None
     announced_round_stage: str | None = None
@@ -558,6 +561,40 @@ def derive_attributes(
         for field, value, rule, evidence in trace
     ]
     return company.model_copy(update={**updates, "derivations": derivations})
+
+
+# The derived facts a card or a sheet row can show. Founder and traction signal
+# only ever appear inside the score's own components, which already report them.
+DISPLAY_FACTS = ("hq_region", "sector", "stage")
+
+
+def derived_facts(row: Any, config: Any = None, *,
+                  today: date | None = None) -> dict[str, str]:
+    """The sector, stage and region scoring derived for a stored company row.
+
+    Scoring derives these in memory (`derive_updates`) and never writes them
+    back — a derived stage is a function of today's date and a derived sector
+    of the current SIC table, so freezing one into the `company` column would
+    make it a stated fact that outlives the evidence. Cards and sheet rows that
+    read the raw column therefore showed a company as unknown on a fact its
+    score had already counted.
+
+    This runs the same `derive_updates` on the same stored row, so a card shows
+    exactly what the score used. Only what the row leaves blank comes back (and
+    `uk_wide`, which a stated city or outcode may refine); a fact a source
+    stated is never replaced. Read-only, no database access.
+    """
+    data = dict(row)
+    codes = data.get("sic_codes")
+    if isinstance(codes, str):
+        try:
+            codes = json.loads(codes)
+        except (TypeError, ValueError):
+            codes = None
+    data["sic_codes"] = codes if isinstance(codes, list) else []
+    data["has_share_issue"] = bool(data.get("has_share_issue"))
+    updates, _ = derive_updates(data, config, today=today)
+    return {key: updates[key] for key in DISPLAY_FACTS if updates.get(key)}
 
 
 def _founder_evidence(company: Any) -> str:

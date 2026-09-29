@@ -406,7 +406,25 @@ def _shortlist(db, start: date, end: date) -> list[dict]:
 
     seen: set[str] = set()
     out: list[dict] = []
-    for row in db.query(_ENTRY_SQL, (SHORTLIST_TIER, start.isoformat(), end.isoformat())):
+    from radar.score.snapshot import load_components
+    params = (SHORTLIST_TIER, start.isoformat(), end.isoformat())
+    rows = []
+    if "score_snapshot" in db.tables():
+        historical_sql = _ENTRY_SQL.replace("s.id              AS score_id", "NULL              AS score_id")
+        historical_sql = historical_sql.replace("s.explanation     AS explanation", "NULL              AS explanation")
+        historical_sql = historical_sql.replace("s.flags           AS flags", "NULL              AS flags")
+        historical_sql = historical_sql.replace("FROM score s", "FROM score_snapshot s")
+        historical_sql = historical_sql.replace("s.scored_at       AS scored_at,", "s.scored_at       AS scored_at, s.components AS snapshot_components,")
+        rows = [dict(row) for row in db.query(historical_sql, params)]
+    # A legacy date without snapshots can still use its untouched current rows.
+    snapshot_days = {str(row["scored_at"])[:10] for row in rows}
+    rows.extend(dict(row) for row in db.query(_ENTRY_SQL, params)
+                if str(row["scored_at"])[:10] not in snapshot_days)
+    rows.sort(key=lambda row: (-row["priority"], row["canonical_name"]))
+    for row in rows:
+        if "snapshot_components" in row:
+            row["historical_components"] = load_components(row["snapshot_components"])
+
         if row["company_id"] in seen:
             continue
         if is_withheld(db, row["company_id"]):    # rejected, or QA never completed
@@ -560,7 +578,7 @@ def _ledger(db, entry: dict) -> list[str]:
     not this one, but "new enough to be worth an email" is the entire premise
     of the product and it was on the line this ledger replaces.
     """
-    components = _components(db, entry.get("score_id"))
+    components = entry.get("historical_components", _components(db, entry.get("score_id")))
     if not components:
         return []
 

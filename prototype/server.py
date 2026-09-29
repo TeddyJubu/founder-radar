@@ -1467,15 +1467,18 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             conn, r["company_id"], config, vehicles, config_hash=config_hash,
         )
 
+        from radar.score.derive import derived_facts
+        stored = conn.execute("SELECT * FROM company WHERE id = ?", (r["company_id"],)).fetchone()
+        display = derived_facts(stored, config)
         out.append({
             "company_id": r["company_id"],
             "name": r["canonical_name"],
             "domain": r["domain"],
             "website": r["website_url"],
             "city": r["hq_city"],
-            "region": r["hq_region"],
-            "sector": r["sector"],
-            "stage": r["stage"],
+            "region": display.get("hq_region", r["hq_region"]),
+            "sector": display.get("sector", r["sector"]),
+            "stage": display.get("stage", r["stage"]),
             "one_liner": r["one_liner"],
             "route": r["discovery_route"],
             "ch_number": r["companies_house_no"],

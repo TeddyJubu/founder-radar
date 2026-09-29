@@ -87,28 +87,29 @@ def _f1(precision: float | None, recall: float | None) -> float | None:
 
 
 def _score_rows(db: Any, *, fund_key: str | None = None) -> list[dict]:
-    """The best (highest-priority) score row per company, optionally per fund."""
-    where = ""
-    params: list[Any] = []
-    if fund_key:
-        where = "WHERE s.fund_key = ?"
-        params.append(fund_key)
-    rows = db.query(
-        f"""SELECT s.company_id AS company_id, s.priority AS priority,
-                   s.fund_fit_pct AS fund_fit_pct, s.tier AS tier
-              FROM score s
-              JOIN (SELECT company_id, MAX(priority) AS best
-                      FROM score {where}
-                     GROUP BY company_id) best
-                ON best.company_id = s.company_id AND best.best = s.priority
-             ORDER BY s.company_id""",
-        params,
-    )
-    return [dict(r) for r in rows]
+    """All fund rows: any eligible fund can shortlist a company."""
+    where = "WHERE s.fund_key = ?" if fund_key else ""
+    params = [fund_key] if fund_key else []
+    return [dict(r) for r in db.query(
+        f"SELECT s.* FROM score s {where} ORDER BY s.company_id", params)]
+
+
+def _eligible(row, settings=None):
+    from radar.config.models import Settings
+    settings = settings or Settings()
+    flags = row.get("flags")
+    if isinstance(flags, str):
+        try:
+            flags = json.loads(flags)
+        except ValueError:
+            return False
+    return (not row.get("reject_reason") and not flags
+            and float(row.get("discovery_edge") or 0) >= settings.shortlist_edge
+            and float(row.get("coverage") or 0) >= settings.min_coverage)
 
 
 def change_points(rows: Iterable[Mapping[str, Any]], *,
-                  limit: int = MAX_SWEEP_ROWS) -> list[int]:
+                  limit: int = MAX_SWEEP_ROWS, settings=None) -> list[int]:
     """The integer thresholds at which the shortlist actually changes.
 
     `shortlist_fit` is an `int`, so there are only 101 thresholds to choose
@@ -128,18 +129,18 @@ def change_points(rows: Iterable[Mapping[str, Any]], *,
     Above `limit` distinct floors the range is sampled evenly, keeping both
     ends. That is a real loss of resolution, so `sweep` reports it.
     """
-    floors = _floors(rows)
+    floors = _floors(rows, settings=settings)
     if len(floors) <= limit:
         return floors
     step = (len(floors) - 1) / (limit - 1)
     return sorted({floors[round(index * step)] for index in range(limit)})
 
 
-def _floors(rows: Iterable[Mapping[str, Any]]) -> list[int]:
+def _floors(rows: Iterable[Mapping[str, Any]], *, settings=None) -> list[int]:
     """Every distinct `floor(fund_fit_pct)`, clamped to a settable threshold."""
     return sorted({
         max(0, min(100, math.floor(float(r["fund_fit_pct"]))))
-        for r in rows if r.get("fund_fit_pct") is not None
+        for r in rows if r.get("fund_fit_pct") is not None and _eligible(r, settings)
     })
 
 
@@ -165,15 +166,19 @@ def sweep(
     # Change points must be computed over the rows the sweep actually counts.
     # A gated company's fit still has a floor, but moving the threshold across
     # it changes nothing — those produced three rows reading 792 in a row.
-    eligible = [r for r in rows if r["tier"] != "reject"]
-    grid = change_points(eligible) if derived else list(fit_grid)
+    from radar.config.loader import load_last_good
+    from radar.config.models import Settings
+    config = load_last_good(db)
+    settings = config.settings if config else Settings()
+    eligible = [r for r in rows if _eligible(r, settings)]
+    grid = change_points(eligible, settings=settings) if derived else list(fit_grid)
 
     out: list[SweepRow] = []
     for threshold in grid:
         shortlisted = {
             r["company_id"]
             for r in rows
-            if r["fund_fit_pct"] >= threshold and r["tier"] != "reject"
+            if r["fund_fit_pct"] >= threshold and _eligible(r, settings)
         }
         positives = {cid for cid, v in labels.items() if v == WORTH_CONTACTING}
 
@@ -203,14 +208,14 @@ def sweep(
     best = max((r for r in out if r.f1 is not None), key=lambda r: r.f1 or 0, default=None)
     # No silent caps: if the range was too wide to show every change point,
     # say so rather than letting the table read as complete.
-    dropped = len(_floors(eligible)) - len(grid) if derived else 0
+    dropped = len(_floors(eligible, settings=settings)) - len(grid) if derived else 0
     return {
         "sweep": [r.to_dict() for r in out],
         "thresholds": "change points" if derived else "explicit grid",
         "change_points_omitted": max(dropped, 0),
         "labels": {WORTH_CONTACTING: len([v for v in labels.values() if v == WORTH_CONTACTING]),
                    NOT_FOR_ME: len([v for v in labels.values() if v == NOT_FOR_ME])},
-        "scored_companies": len(rows),
+        "scored_companies": len({r["company_id"] for r in rows}),
         "best": best.to_dict() if best else None,
         "recommendation": (
             f"At {best.threshold} you'd shortlist {best.would_shortlist} companies "

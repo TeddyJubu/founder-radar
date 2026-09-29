@@ -695,6 +695,8 @@ def build_companies(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
         company, best = view.row, view.best
         months = _months_between(company["incorporated_on"], today)
         owner = user.get(company["id"], {})
+        from radar.score.derive import derived_facts
+        display = derived_facts(company, cfg, today=today)
         cells: dict[str, str] = {
             "A": company["id"],
             "B": str(company["first_seen"] or "")[:10],
@@ -702,9 +704,9 @@ def build_companies(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
             "D": hyperlink(company["website_url"], company["domain"] or company["website_url"]),
             "E": str(company["incorporated_on"] or "")[:10],
             "F": "" if months is None else str(int(round(months))),
-            "G": company["hq_region"] or "",
-            "H": company["sector"] or "",
-            "I": company["stage"] or "",
+            "G": display.get("hq_region", company["hq_region"]) or "",
+            "H": display.get("sector", company["sector"]) or "",
+            "I": display.get("stage", company["stage"]) or "",
             "J": ", ".join(view.founders),
             # Blank means unknown, and £0 means "known none". Never collapse them.
             "K": "" if company["total_funding_gbp"] is None

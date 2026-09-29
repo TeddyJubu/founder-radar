@@ -364,7 +364,9 @@ def test_sweep_uses_change_points_not_a_fixed_grid(db):
     # Gated companies below the eligible range. Their fit still has a floor,
     # but no threshold crossing it changes the shortlist — on live data these
     # produced three consecutive rows all reading 792.
-    _seed_scored(db, 8, fit_from=50.0, tier="reject")
+    gated = _seed_scored(db, 8, fit_from=50.0, tier="reject")
+    db.executemany("UPDATE score SET reject_reason = ? WHERE company_id = ?",
+                   [("max_company_age_months", cid) for cid in gated])
 
     result = sweep(db)
 
