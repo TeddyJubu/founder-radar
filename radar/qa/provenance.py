@@ -20,6 +20,7 @@ from urllib.parse import urlsplit, urljoin, parse_qs
 import httpx
 from radar.fetch.http import HttpClient, RobotsDenied, Response, user_agent
 from radar.sources.innovate_uk import PUBLICATION, citation_url
+from radar.sources._common import header_noindex
 from radar.store.db import Db
 
 
@@ -113,7 +114,9 @@ def verify_source(db, url: str, *, http=None, now: datetime | None = None,
                     break
                 current = urljoin(current, location)
                 continue
-            if 200 <= status < 300:
+            if header_noindex(response.headers):
+                state, reason = 'blocked', 'source requests noindex; verification incomplete'
+            elif 200 <= status < 300:
                 state, reason = 'reachable', 'GET succeeded'
             elif status in (404, 410):
                 state, reason = 'dead', f'HTTP {status}'

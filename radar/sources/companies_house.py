@@ -335,6 +335,10 @@ class CompaniesHouseAdapter:
             raise SourceError(self.key, "401 — bad API key (key is the USERNAME, password empty)")
         if resp.status == 429:
             raise SourceError(self.key, "429 — rate limit breached; back off before retrying")
+        # The documented advanced-search 404 means no matching companies,
+        # unlike profile endpoints where it means a missing resource.
+        if resp.status == 404:
+            return 0, []
         if not resp.ok:
             raise SourceError(self.key, f"HTTP {resp.status} from advanced-search")
 

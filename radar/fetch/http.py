@@ -115,6 +115,9 @@ class HttpClient:
         headers: Mapping[str, str] | None = None,
         auth: tuple[str, str] | None = None,
         check_robots: bool | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        follow_redirects: bool | None = None,
     ) -> Response:
         host = urlsplit(url).netloc
 
@@ -125,20 +128,23 @@ class HttpClient:
             if delay:
                 self.limiter.set_delay(host, delay)
 
+        retries = self.max_retries if max_retries is None else max_retries
         last_exc: Exception | None = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(retries + 1):
             self.limiter.acquire(host, sleep=self._sleep)
             try:
                 self.request_count += 1
-                r = self._client.get(url, params=params, headers=dict(headers or {}), auth=auth)
+                r = self._client.get(url, params=params, headers=dict(headers or {}), auth=auth,
+                                     timeout=self.timeout if timeout is None else timeout,
+                                     follow_redirects=self._client.follow_redirects if follow_redirects is None else follow_redirects)
             except httpx.HTTPError as exc:      # transport failure
                 last_exc = exc
-                if attempt == self.max_retries:
+                if attempt == retries:
                     raise
                 self._backoff(attempt, None)
                 continue
 
-            if r.status_code in RETRY_STATUS and attempt < self.max_retries:
+            if r.status_code in RETRY_STATUS and attempt < retries:
                 self._backoff(attempt, r.headers.get("Retry-After"))
                 continue
 

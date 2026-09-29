@@ -125,3 +125,55 @@ Its own offer says every portfolio company begins with a £60,000 equity
 investment for 7%: https://www.bethnalgreenventures.com/our-offer. The active
 and exited portfolio therefore both feed denial evidence; no new companies
 are created from it. Existing matched companies are flagged on a future scan.
+
+## Follow-up after live run 66
+
+UKTN article bodies now use `div.js-post-content`. Three permitted live article
+GETs returned HTTP 200 and extracted 3321, 3215 and 3041 characters on 30 September.
+Index selector fingerprint remains `a5033e6dfaf4064a`.
+
+Companies House's official advanced-search specification explicitly documents
+HTTP 404 as "No companies found":
+https://developer-specs.company-information.service.gov.uk/companies-house-public-data-api/reference/search/advanced-company-search
+A read-only request with the configured production key to that exact API host,
+for today's active ltd SIC 62012 window, returned empty-body 404. A controlled
+MONZO name query to the same endpoint/key returned JSON 200 with 14 hits. Only
+advanced-search 404 is now an empty window; other endpoint/status errors remain errors.
+
+Cambridge Enterprise's public `https://www.enterprise.cam.ac.uk/feed/` returned
+HTTP 200 without a noindex response directive, through the robots-respecting
+client. It parsed 150 dated items. The adapter now reads this permitted RSS
+instead of the noindex JSON API and requires individual article extraction.
+Its reviewed replacement fingerprint is `d7250bd328be69a6` for adapter ID
+`cambridge_enterprise`; accept this reviewed transition before the next scan.
+No noindex/robots restriction was bypassed. No live scan or data writes ran.
+
+## Article hydration at the fetch boundary
+
+The `full_text_in_feed=False` flag is now consumed before extraction for news
+and spinout sources. Source-specific wrappers collect substantive article text;
+there is no whole-page/navigation fallback. Cambridge collects its separate
+`main section.block--text div.prose` blocks. Already-complete feed bodies and
+already-hydrated items avoid duplicate requests. UKTN now uses this same boundary.
+
+Each source gets at most 20 articles, each GET has an eight-second timeout and
+no retry backoff. Up to three redirects are followed explicitly, with public
+address validation and robots checks at every destination. Meta/header noindex
+remains binding. A bare 304 gets one unconditional retry; a second 304 is
+withheld rather than substituting the excerpt. Unreadable/blocked articles are
+withheld individually and reported as degraded without losing healthy neighbors.
+An exhausted article budget produces a warning, not a broken-source heartbeat.
+Other source kinds (registry/grant/portfolio/accelerator) retain their existing
+structured extraction path; this change does not invent company facts or add AI calls.
+
+Read-only real article verification on 30 September extracted:
+
+- BusinessCloud: 1790 characters from its Monzo/Nubank takeover article.
+- Bdaily: 3746 characters from its Gateshead flyover-demolition article.
+- Startups Magazine: 1468 characters from its future-of-the-magazine article.
+- Cambridge Enterprise: 4479 characters from its biotechnology-ecosystems article.
+
+These prove text retrieval, not that these particular stories are qualifying
+startups. The normal company extraction and fund gates still make that decision.
+147 targeted regressions passed across hydration, sources, source registry,
+Companies House, provenance, source safety and phase-eight sources.

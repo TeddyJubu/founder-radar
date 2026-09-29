@@ -1,4 +1,4 @@
-"""Cambridge Enterprise — WordPress JSON. The pattern generalises.
+"""Cambridge Enterprise — permitted public RSS, with archived JSON replay.
 
 Second JSON adapter, and the point of it is how little there is: same helper,
 same shape, different host and a different `kind_hint` policy. If this file had
@@ -17,7 +17,7 @@ from radar.sources._common import after, require_ok, unique_by_id, wp_fingerprin
 from radar.sources.base import FetchContext, RawItem
 
 BASE = "https://www.enterprise.cam.ac.uk"
-ENDPOINT = f"{BASE}/wp-json/wp/v2/posts"
+ENDPOINT = f"{BASE}/feed/"
 PER_PAGE = 50
 
 SPINOUT_WORDS = ("spinout", "spin-out", "spin out", "launches", "founded",
@@ -34,15 +34,23 @@ class CambridgeEnterpriseAdapter:
     homepage = BASE
 
     def fetch(self, ctx: FetchContext) -> Iterable[RawItem]:
-        resp = ctx.http.get(ENDPOINT, params={"per_page": PER_PAGE, "page": 1})
+        resp = ctx.http.get(ENDPOINT)
         if resp.status == 304:
             return []
         require_ok(resp, self.key, ENDPOINT)
         return list(after(unique_by_id(self.parse(resp.text)), ctx.since))
 
     def parse(self, payload: str | bytes) -> list[RawItem]:
-        posts = wp_posts(payload, self.key)
-        self.last_fingerprint = wp_fingerprint(posts)
+        body = payload.decode('utf-8', 'replace') if isinstance(payload, bytes) else payload
+        if body.lstrip().startswith('<'):
+            from radar.sources._common import rss_entries, selector_fingerprint
+            entries = rss_entries(payload, self.key)
+            posts = [dict(id=e['id'],link=e['link'],title=e['title'],date=e['date'],
+                          body=e['body'],excerpt='',full_text_in_feed=False) for e in entries]
+            self.last_fingerprint = selector_fingerprint(['rss>channel>item'])
+        else:
+            posts = wp_posts(payload, self.key)
+            self.last_fingerprint = wp_fingerprint(posts)
         return [self._item(post) for post in posts]
 
     def _item(self, post: dict) -> RawItem:
@@ -50,6 +58,7 @@ class CambridgeEnterpriseAdapter:
         haystack = f"{post['title']} {body}".lower()
         structured: dict = {
             "date_confidence": "exact",
+            "full_text_in_feed": post.get("full_text_in_feed", True),
             "university_name": "University of Cambridge",
         }
         if any(word in haystack for word in SPINOUT_WORDS):

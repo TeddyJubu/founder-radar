@@ -77,7 +77,7 @@ A source returning zero repeatedly deserves investigation, even when it says OK.
 
 READ ONLY
 founder-radar doctor
-Checks configuration, database, disk and connected access.
+Checks configuration, saved data, credential presence and disk. Check live access separately.
 
 ### Why is Today thin?
 

@@ -147,7 +147,7 @@
     "cards": [
       {
         "title": "Is the system healthy?",
-        "text": "READ ONLY\nfounder-radar doctor\nChecks configuration, database, disk and connected access."
+        "text": "READ ONLY\nfounder-radar doctor\nChecks configuration, saved data, credential presence and disk. Check live access separately."
       },
       {
         "title": "Why is Today thin?",

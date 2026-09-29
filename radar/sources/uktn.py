@@ -34,6 +34,7 @@ INDEX = f"{BASE}/"
 MAX_ARTICLE_FETCHES = 30
 
 ARTICLE_SELECTORS = (
+    "div.js-post-content",
     "article .entry-content",
     "div.article-content",
     "div.post-content",
@@ -71,8 +72,9 @@ class UktnAdapter:
         require_ok(resp, self.key, INDEX)
 
         items = list(after(unique_by_id(self.parse(resp.text)), ctx.since))
-        return [self._with_body(ctx, item) for item in items[:MAX_ARTICLE_FETCHES]] \
-            + items[MAX_ARTICLE_FETCHES:]
+        # The registry hydrates excerpts with shared per-source bounds and
+        # isolates individual article failures from index health.
+        return items
 
     # ------------------------------------------------------------------ parse
 
@@ -160,12 +162,12 @@ class UktnAdapter:
         and date are already useful, and the pipeline can re-fetch tomorrow.
         """
         try:
-            resp = ctx.http.get(_assert_no_query(item.source_url))
+            resp = ctx.http.get(_assert_no_query(item.source_url), timeout=8.0, max_retries=0)
             if not resp.ok:
                 return item
             text = self.parse_article(resp.text)
         except (LayoutChanged, QueryStringForbidden):
-            raise
+            return item
         except Exception:                                # noqa: BLE001
             return item
         structured = dict(item.structured or {})
