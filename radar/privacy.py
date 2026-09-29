@@ -87,6 +87,7 @@ _SCRUB_TARGETS: tuple[tuple[str, tuple[str, ...], str, str | None], ...] = (
     ("quarantine", ("raw_json", "error"), "delete", None),
     ("sheet_row_state", ("last_value",), "delete", "company_id"),
     ("signal", ("headline", "detail"), "redact", "company_id"),
+    ("score_snapshot", ("components",), "redact", "company_id"),
     ("company", ("one_liner",), "redact", "id"),
     ("user_field", ("value",), "redact", "company_id"),
     ("today_check", ("summary", "raw_text"), "redact", "company_id"),

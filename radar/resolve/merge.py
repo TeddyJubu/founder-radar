@@ -54,6 +54,7 @@ DECISION_TIME: dict[str, str] = {
     "user_field": "updated_at",
     "daily_review": "reviewed_at",
     "today_check": "checked_at",
+    "score_snapshot": "scored_at",
 }
 
 # Filled on the winner only where the winner is NULL: a merge adds knowledge,
@@ -343,7 +344,11 @@ def merge_companies(db, winner_id: str, loser_id: str, *, rule: str,
 
 def _move_rows(db, winner_id: str, loser_id: str, ev: dict[str, Any]) -> None:
     """Re-point the loser's child rows, dropping only exact collisions."""
-    for table, pk_cols, unique_cols in MOVABLE:
+    movable = list(MOVABLE)
+    if "score_snapshot" in db.tables():
+        movable.append(("score_snapshot", ("company_id", "fund_key", "snapshot_date"),
+                        ("fund_key", "snapshot_date")))
+    for table, pk_cols, unique_cols in movable:
         rows = db.query(f"SELECT * FROM {table} WHERE company_id = ?", (loser_id,))
         for row in rows:
             data = _row_dict(row)

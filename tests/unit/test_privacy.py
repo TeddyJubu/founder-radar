@@ -322,3 +322,17 @@ def test_suppression_matches_accented_and_plain_registry_spellings(db):
     suppress(db, "Zoë Smith")
     assert is_suppressed(db, "Zoe Smith")
     assert is_suppressed(db, "ZOË SMITH")
+
+
+def test_forget_redacts_score_snapshot_component_evidence(db, company):
+    db.execute("CREATE TABLE IF NOT EXISTS score_snapshot(company_id TEXT, "
+               "fund_key TEXT, snapshot_date TEXT, config_hash TEXT, fund_fit_pct REAL, "
+               "coverage REAL, discovery_edge REAL, priority REAL, tier TEXT, "
+               "components TEXT, scored_at TEXT)")
+    db.execute("INSERT INTO score_snapshot(company_id, fund_key, snapshot_date, config_hash, "
+               "fund_fit_pct, coverage, discovery_edge, priority, tier, scored_at, components) "
+               "VALUES (?, 'northstar', '2026-08-03', 'h', 80, 1, 80, 80, 'shortlist', "
+               "'2026-08-03T01:00:00Z', ?)",
+               (company, '[["founder", "Founder", 1, 2, "Jane Smith research spinout"]]'))
+    forget_person(db, "Jane Smith")
+    assert "Jane Smith" not in db.scalar("SELECT components FROM score_snapshot")

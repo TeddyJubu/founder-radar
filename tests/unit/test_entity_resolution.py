@@ -358,3 +358,22 @@ def test_unmerge_restores_reviews_qa_checks_and_verdicts_exactly(db):
     unmerge(db, event)
 
     assert _decisions(db) == before
+
+
+def test_merge_and_unmerge_preserve_score_snapshots(db):
+    from tests.factories import C, store_company
+    winner = store_company(db, C(canonical_name="Winner", norm_key="winner"))
+    loser = store_company(db, C(canonical_name="Loser", norm_key="loser"))
+    db.execute("CREATE TABLE IF NOT EXISTS score_snapshot(company_id TEXT, fund_key TEXT, "
+               "snapshot_date TEXT, config_hash TEXT, fund_fit_pct REAL, coverage REAL, "
+               "discovery_edge REAL, priority REAL, tier TEXT, scored_at TEXT, "
+               "PRIMARY KEY(company_id, fund_key, snapshot_date))")
+    db.execute("INSERT INTO score_snapshot(company_id, fund_key, snapshot_date, config_hash, "
+               "fund_fit_pct, coverage, discovery_edge, priority, tier, scored_at) "
+               "VALUES (?, 'northstar', '2026-08-03', 'h', 80, 1, 80, 80, 'shortlist', "
+               "'2026-08-03T01:00:00Z')", (loser,))
+    before = [tuple(row) for row in db.query("SELECT * FROM score_snapshot")]
+    event = merge_companies(db, winner, loser, rule="test")
+    assert db.scalar("SELECT company_id FROM score_snapshot") == winner
+    unmerge(db, event)
+    assert [tuple(row) for row in db.query("SELECT * FROM score_snapshot")] == before
