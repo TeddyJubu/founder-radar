@@ -222,3 +222,15 @@ reviewed repository afresh as root under a root-owned installation directory,
 then let the installer build a new venv. Do not copy old Git configuration,
 hooks, Python launchers or `.pth` files into the trusted rebuild. This requires
 an explicit operator maintenance step; the timer fails closed until it is done.
+
+### QA approval and dated history
+
+A live card must match the exact facts and fund route that completed QA approved.
+Even a change within the same second invalidates an old pass. Recheck changed
+cards before showing them on Today, the Sheet or the current digest.
+
+Historical score snapshots save the hash of their exact completed approval.
+A previously approved Monday result remains available in Monday's history after
+its current score changes; an unchecked Monday result cannot borrow a later
+approval. The latest QA rejection still vetoes historical display. Old snapshot
+rows without recorded approval stay withheld until valid evidence is recorded.
