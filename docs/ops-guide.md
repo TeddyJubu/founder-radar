@@ -159,6 +159,12 @@ can be checked later. Innovate UK workbook links identify the project to
 find in the official dataset rather than pretending a missing GtR profile
 exists.
 
+The scheduled scan can run the installed, root-owned Hermes permission-repair
+helper before and after QA. Its service permits that narrow sudo rule; the
+web service retains `NoNewPrivileges`. A privileged stop hook repairs shared
+permissions even when a scan fails. This prevents a normal Hermes launch from
+leaving the next scheduled check unable to open the operator's files.
+
 1. Open **Today** in the web UI after the morning run (or after Telegram pings).
 2. Decide with 1 / 2 / 3. Kept updates live; open **Kept** to track everything
    you have saved, or **Dashboard** to revisit the dated history.

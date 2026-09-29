@@ -159,7 +159,7 @@ There is no single password for every surface. Store the owner’s access detail
 | Telegram | Radar `.env` and Hermes gateway’s operator-owned configuration | Renew the bot token through BotFather; update every configured consumer of that same bot token, check allowed users/chat ID, then restart the gateway as appropriate |
 | Optional Actions key | `RADAR_CHATGPT_API_KEY` in Radar `.env` and the Custom GPT’s authentication setting | Replace both privately and restart the Actions service |
 
-If a Hermes terminal command fails before opening (for example, a missing Python package), diagnose the installed launcher and its environment through SSH; do not build a second installation or run an unverified bare maintenance command. The current launcher issue is being investigated separately.
+If a Hermes terminal command fails before opening (for example, a missing Python package), diagnose the installed launcher and its environment through SSH; do not build a second installation or run an unverified bare maintenance command. The owner launcher and Radar QA runner were verified after repairing shared folder permissions. Scheduled scans now retain access to the protected permission-repair helper.
 
 Restart a long-running consumer after its environment changes. The CLI wrapper rereads its files on each invocation. Recheck with `doctor`, the relevant surface, and an explicitly authorised delivery test if messaging changed. Do not run a Hermes installer/update as `radar` against the operator-owned Hermes tree. Radar’s QA sets `HERMES_DISABLE_LAZY_INSTALLS=1` so it will not self-update that installation; updating Hermes itself is an operator task.
 
