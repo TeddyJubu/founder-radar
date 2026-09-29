@@ -902,15 +902,33 @@ def fund_criteria_blocks_last_good(
     return None
 
 
+@dataclass
+class HardGeoFault:
+    """A HARD geography rule whose Geo values cell held an unrecognised value.
+
+    Dropping the value is not safe for a HARD rule: if it was the only one the
+    list ends up empty and the gate reads that as "no rule" (06-scoring §4.7).
+    `load_config` therefore holds or blocks the vehicle instead.
+    """
+
+    values: list[str]
+    cell: StatusCell
+
+
 def parse_fund_criteria(
     grid: Sequence[Sequence[Any]],
     *,
     lists: Mapping[str, Sequence[str]],
+    invalid_hard_geo: dict[tuple[str, str], HardGeoFault] | None = None,
 ) -> tuple[list[Fund], dict[str, str], list[StatusCell], str | None]:
     """One row per vehicle. Eleven of them by default (07-interfaces tab 4).
 
     Returns ``(funds, warnings, status_cells, layout_error)``. A non-None
     ``layout_error`` means the tab must not become last-good.
+
+    ``invalid_hard_geo``, when given, is filled with one `HardGeoFault` per
+    ``(fund_key, vehicle_key)`` whose HARD Geo values held an invalid entry, so
+    the caller can fail that vehicle closed.
     """
     funds: dict[str, Fund] = {}
     warnings: dict[str, str] = {}
@@ -965,7 +983,9 @@ def parse_fund_criteria(
 
         stage_min = _enum_or_note(_cell(row, 5), stages, "stage", notes)
         stage_max = _enum_or_note(_cell(row, 6), stages, "stage", notes)
-        geo_values = _enum_list(_cell(row, 10), geos, "geo value", notes)
+        geo_rejected: list[str] = []
+        geo_values = _enum_list(_cell(row, 10), geos, "geo value", notes,
+                                rejected=geo_rejected)
         sectors_plus = _enum_list(_cell(row, 13), sectors, "sector", notes)
         sectors_minus = _enum_list(_cell(row, 14), sectors, "sector", notes)
 
@@ -979,6 +999,15 @@ def parse_fund_criteria(
         if geo_rule not in {"HARD", "SOFT"}:
             notes.append(f"⚠️ geo rule '{geo_rule}' unknown — treated as HARD")
             geo_rule = "HARD"
+        hard_geo_rejected = geo_rejected if geo_rule == "HARD" else []
+        if hard_geo_rejected:
+            # Still never an error that stops the run (07-interfaces tab 4),
+            # but a HARD rule must not be loosened by a typo either.
+            notes.append(
+                "❌ HARD geography rule has invalid value(s) "
+                + ", ".join(f"'{v}'" for v in hard_geo_rejected)
+                + " — the rule is not loosened; fix the cell"
+            )
 
         vehicle = Vehicle(
             fund_key=fund_key,
@@ -1007,10 +1036,14 @@ def parse_fund_criteria(
         rows_kept += 1
 
         text = " · ".join(notes) if notes else OK
-        cells.append(StatusCell("Fund Criteria", FUND_CRITERIA_STATUS_COL, offset,
-                                text, bool(notes)))
+        cell = StatusCell("Fund Criteria", FUND_CRITERIA_STATUS_COL, offset,
+                          text, bool(notes))
+        cells.append(cell)
         if notes:
             warnings[f"{fund_key}.{vehicle_key}"] = text
+        if hard_geo_rejected and invalid_hard_geo is not None:
+            invalid_hard_geo[(fund_key, vehicle_key)] = HardGeoFault(
+                list(hard_geo_rejected), cell)
 
     if data_rows_seen and rows_kept == 0 and layout_error is None:
         layout_error = (
@@ -1033,13 +1066,15 @@ def _enum_or_note(raw: str, allowed: Sequence[str], label: str,
 
 
 def _enum_list(raw: str, allowed: Sequence[str], label: str,
-               notes: list[str]) -> list[str]:
+               notes: list[str], rejected: list[str] | None = None) -> list[str]:
     out: list[str] = []
     for part in coerce_csv(raw):
         if _is_note(part):
             continue                      # "*(agnostic)*" is a comment, not a value
         canon = canon_enum(part, tuple(allowed))
         if canon is None:
+            if rejected is not None:
+                rejected.append(part)
             hint = suggest_enum(part, tuple(allowed))
             notes.append(f"⚠️ '{part}' is not a {label}"
                          + (f" — did you mean '{hint}'?" if hint else ""))
@@ -1234,6 +1269,55 @@ def parse_sources(grid: Sequence[Sequence[Any]]) -> list[SourceConfig]:
 # ------------------------------------------------------------------- entry
 
 
+def _fail_closed_hard_geography(
+    funds: Sequence[Fund],
+    faults: Mapping[tuple[str, str], HardGeoFault],
+    last_good: Config | None,
+    warnings: dict[str, str],
+    errors: dict[str, str],
+) -> bool:
+    """Fail closed every vehicle whose HARD geography rule held an invalid value.
+
+    The vehicle is replaced, in place, by its last valid configuration. With no
+    usable one (never seen, or itself a HARD rule with no values) it is blocked:
+    `active=False`, so it is not scored, rather than left as an empty rule the
+    gate would read as "no rule". Either way the outcome is written next to the
+    invalid value in the status cell and the run warnings, and the result goes
+    in `errors` so the config is not promoted to last-good. Geography policy and
+    values are untouched. Returns True when any vehicle was held.
+    """
+    prior = {
+        (v.fund_key, v.vehicle_key): v
+        for v in (last_good.all_vehicles() if last_good else [])
+    }
+    held_any = False
+    for fund in funds:
+        for index, vehicle in enumerate(fund.vehicles):
+            key = (vehicle.fund_key, vehicle.vehicle_key)
+            fault = faults.get(key)
+            if fault is None:
+                continue
+            previous = prior.get(key)
+            if previous is not None and not (
+                    previous.geo_rule == "HARD" and not previous.geo_values):
+                fund.vehicles[index] = previous.model_copy(deep=True)
+                outcome = "vehicle held at its last valid configuration"
+                held_any = True
+            else:
+                fund.vehicles[index] = vehicle.model_copy(update={"active": False})
+                outcome = ("vehicle BLOCKED (not scored): no last valid "
+                           "configuration to fall back on")
+            label = f"{key[0]}.{key[1]}"
+            values = ", ".join(f"'{v}'" for v in fault.values)
+            fault.cell.text = f"{fault.cell.text} · ❌ {outcome}"
+            fault.cell.is_error = True
+            warnings[label] = fault.cell.text
+            errors[f"fund_criteria.{label}.geo_values"] = (
+                f"❌ {label}: HARD geography value(s) {values} invalid — {outcome}"
+            )
+    return held_any
+
+
 def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> LoadResult:
     """Read, coerce, validate, fall back, and report — in that order.
 
@@ -1244,8 +1328,10 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
     last_good = load_last_good(db) if db is not None else None
 
     lists = parse_lists(raw.get("Lists") or [])
+    hard_geo_faults: dict[tuple[str, str], HardGeoFault] = {}
     funds, fund_warnings, criteria_cells, layout_error = parse_fund_criteria(
-        raw.get("Fund Criteria") or [], lists=lists)
+        raw.get("Fund Criteria") or [], lists=lists,
+        invalid_hard_geo=hard_geo_faults)
 
     fund_alias, _ = identity_aliases()
     fund_keys: dict[str, str] = dict(fund_alias)
@@ -1285,6 +1371,12 @@ def load_config(raw: Mapping[str, Sequence[Sequence[Any]]], db: Any = None) -> L
             fund_warnings["fund_criteria"] = (
                 f"⚠️ {block}; reseeding vehicles from code defaults"
             )
+    elif hard_geo_faults:
+        # A HARD rule with an invalid value must fail closed: hold the vehicle
+        # at its last valid configuration, or block it. Never empty the rule.
+        if _fail_closed_hard_geography(
+                funds, hard_geo_faults, last_good, fund_warnings, errors):
+            used_last_good = True
 
     sources = parse_sources(raw.get("Sources") or [])
     if not sources:

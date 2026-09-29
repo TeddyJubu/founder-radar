@@ -770,8 +770,18 @@ def db_backup(ctx, dest, retain_days):
 @click.argument("src")
 @click.pass_context
 def db_restore(ctx, src):
-    """Replace the live database with a backup."""
-    shutil.copy2(src, ctx.obj["db_path"])
+    """Replace the live database with a backup.
+
+    The backup is verified (PRAGMA integrity_check) before anything is replaced,
+    and the restore is refused while another process is writing to the live
+    database — stop the daily run and the web service first.
+    """
+    from radar.store.db import RestoreError, restore_database
+
+    try:
+        restore_database(src, ctx.obj["db_path"])
+    except RestoreError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(f"restored {ctx.obj['db_path']} from {src}")
 
 
