@@ -4,39 +4,27 @@
   <main>
     <h1>Articles</h1>
     <!--
-      Live layout, abridged (fetched 9 August 2026).
+      Live layout after the September 2026 redesign, abridged (fetched
+      30 September 2026, names invented).
 
-      Two deliberate details. The class carries a styled-components build hash
-      (`-sc-13vxttl-0`) that changes on any deploy, so the adapter matches the
-      stable half with [class*="NewsArticleBox"]. And the first card inlines a
-      <style> block, which is why the adapter drops body text that starts like
-      a CSS rule.
-
-      Dates are relative ("a month ago"), so `published_at` is None. Unknown is
-      the honest answer; guessing the crawl day would invent a fact.
+      The `NewsArticleBox` wrapper is gone: each card is the anchor itself,
+      styled with Tailwind utilities, holding the image, a category chip, an
+      <h3> title and a relative date. The adapter now keys on the URL shape
+      (`a[href^="/articles/"]`). Two things in here are deliberate: links into
+      /articles/ that have no heading (navigation, "read the story") must be
+      dropped, and the same card appears twice (featured strip, then grid) and
+      must collapse to one item.
     -->
-    <div class="news-list">
-      <div class="NewsSection__NewsArticleBox-sc-13vxttl-0 css-vurnku">
-        <style>.css-css047{box-sizing:border-box;margin:0;min-width:0;}</style>
-        <a href="/articles/investing-in-halden-robotics/">
-          <h3>Investing in Halden Robotics</h3>
-        </a>
-        <span class="meta">venture &mdash; a month ago</span>
-      </div>
-      <div class="NewsSection__NewsArticleBox-sc-13vxttl-0 css-vurnku">
-        <a href="/articles/building-logistics-tech-for-humanitarian-aid/">
-          <h3>Building Logistics Tech For Humanitarian Aid</h3>
-        </a>
-        <p>As part of the CMA CGM Awards we look at one of the ventures.</p>
-        <span class="meta">trends &mdash; a month ago</span>
-      </div>
-      <div class="NewsSection__NewsArticleBox-sc-13vxttl-0 css-vurnku">
-        <a href="/articles/investing-in-marrow-bio/">
-          <h3>Investing in Marrow Bio</h3>
-        </a>
-        <p>We have invested in Marrow Bio, a London life-sciences venture.</p>
-        <span class="meta">venture &mdash; 2 months ago</span>
-      </div>
+    <div class="grid gap-6">
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type ff-button--undefined" href="/articles/">All articles</a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type ff-button--undefined" href="/articles/building-logistics-tech-for-humanitarian-aid/">Read the story</a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type overlayOverBkg group flex flex-col overflow-hidden rounded border border-white/10 bg-white/5 no-underline" href="/articles/building-logistics-tech-for-humanitarian-aid/"><div class="relative h-[220px] overflow-hidden bg-white/10 md:h-[360px]"><img src="https://a.storyblok.example/f/1200x675/building-logistics-tech-for-humanitarian-aid.png" alt="Building Logistics Tech For Humanitarian Aid" loading="lazy" class="absolute inset-0 h-full w-full object-cover"><span class="absolute left-4 top-4 rounded-full border border-white/15 px-3 py-1.5 text-xs uppercase text-white">Insights &amp; Trends</span></div><div class="flex flex-col gap-2 p-6 md:p-7"><h3 class="break-words ff-type overlayOverBkg font-helvetica text-h3 leading-tight text-white">Building Logistics Tech For Humanitarian Aid</h3><span class="break-words ff-type overlayOverBkg text-xs uppercase text-white/70">19 hours ago</span></div></a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type overlayOverBkg group flex flex-col overflow-hidden rounded border border-white/10 bg-white/5 no-underline" href="/articles/investing-in-halden-robotics/"><div class="relative h-[220px] overflow-hidden bg-white/10 md:h-[360px]"><img src="https://a.storyblok.example/f/1200x675/investing-in-halden-robotics.png" alt="Investing in Halden Robotics" loading="lazy" class="absolute inset-0 h-full w-full object-cover"><span class="absolute left-4 top-4 rounded-full border border-white/15 px-3 py-1.5 text-xs uppercase text-white">Venture</span></div><div class="flex flex-col gap-2 p-6 md:p-7"><h3 class="break-words ff-type overlayOverBkg font-helvetica text-h3 leading-tight text-white">Investing in Halden Robotics</h3><span class="break-words ff-type overlayOverBkg text-xs uppercase text-white/70">a month ago</span></div></a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type overlayOverBkg group flex flex-col overflow-hidden rounded border border-white/10 bg-white/5 no-underline" href="/articles/investing-in-marrow-bio/"><div class="relative h-[220px] overflow-hidden bg-white/10 md:h-[360px]"><img src="https://a.storyblok.example/f/1200x675/investing-in-marrow-bio.png" alt="Investing in Marrow Bio – a London life-sciences venture" loading="lazy" class="absolute inset-0 h-full w-full object-cover"><span class="absolute left-4 top-4 rounded-full border border-white/15 px-3 py-1.5 text-xs uppercase text-white">Venture</span></div><div class="flex flex-col gap-2 p-6 md:p-7"><h3 class="break-words ff-type overlayOverBkg font-helvetica text-h3 leading-tight text-white">Investing in Marrow Bio – a London life-sciences venture</h3><span class="break-words ff-type overlayOverBkg text-xs uppercase text-white/70">2 months ago</span></div></a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type overlayOverBkg group flex flex-col overflow-hidden rounded border border-white/10 bg-white/5 no-underline" href="/articles/building-logistics-tech-for-humanitarian-aid/"><div class="relative h-[220px] overflow-hidden bg-white/10 md:h-[360px]"><img src="https://a.storyblok.example/f/1200x675/building-logistics-tech-for-humanitarian-aid.png" alt="Building Logistics Tech For Humanitarian Aid" loading="lazy" class="absolute inset-0 h-full w-full object-cover"><span class="absolute left-4 top-4 rounded-full border border-white/15 px-3 py-1.5 text-xs uppercase text-white">Insights &amp; Trends</span></div><div class="flex flex-col gap-2 p-6 md:p-7"><h3 class="break-words ff-type overlayOverBkg font-helvetica text-h3 leading-tight text-white">Building Logistics Tech For Humanitarian Aid</h3><span class="break-words ff-type overlayOverBkg text-xs uppercase text-white/70">19 hours ago</span></div></a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type overlayOverBkg group flex flex-col overflow-hidden rounded border border-white/10 bg-white/5 no-underline" href="/articles/investing-in-halden-robotics/"><div class="relative h-[220px] overflow-hidden bg-white/10 md:h-[360px]"><img src="https://a.storyblok.example/f/1200x675/investing-in-halden-robotics.png" alt="Investing in Halden Robotics" loading="lazy" class="absolute inset-0 h-full w-full object-cover"><span class="absolute left-4 top-4 rounded-full border border-white/15 px-3 py-1.5 text-xs uppercase text-white">Venture</span></div><div class="flex flex-col gap-2 p-6 md:p-7"><h3 class="break-words ff-type overlayOverBkg font-helvetica text-h3 leading-tight text-white">Investing in Halden Robotics</h3><span class="break-words ff-type overlayOverBkg text-xs uppercase text-white/70">a month ago</span></div></a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type overlayOverBkg group flex flex-col overflow-hidden rounded border border-white/10 bg-white/5 no-underline" href="/articles/investing-in-marrow-bio/"><div class="relative h-[220px] overflow-hidden bg-white/10 md:h-[360px]"><img src="https://a.storyblok.example/f/1200x675/investing-in-marrow-bio.png" alt="Investing in Marrow Bio – a London life-sciences venture" loading="lazy" class="absolute inset-0 h-full w-full object-cover"><span class="absolute left-4 top-4 rounded-full border border-white/15 px-3 py-1.5 text-xs uppercase text-white">Venture</span></div><div class="flex flex-col gap-2 p-6 md:p-7"><h3 class="break-words ff-type overlayOverBkg font-helvetica text-h3 leading-tight text-white">Investing in Marrow Bio – a London life-sciences venture</h3><span class="break-words ff-type overlayOverBkg text-xs uppercase text-white/70">2 months ago</span></div></a>
+      <a class="Link___StyledInternalLink-sc-8j6er0-1 dEhbIF ff-type ff-button--undefined" href="/articles/">Load more</a>
     </div>
   </main>
 </body></html>

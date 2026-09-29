@@ -198,6 +198,14 @@ adapter falls back to the official `https://northernaccelerator.org/feed/`
 route, which carries `content:encoded`; if both routes are blocked, the source
 is recorded as degraded rather than being mistaken for a quiet day.
 
+> **Known state (September 2026):** both routes return 403 from the production VPS
+> for every User-Agent tried, while the same URLs answer from other networks — an
+> IP-reputation block on the VPS address range, not a crawler-identity or robots
+> problem, so no adapter change fixes it. The source therefore sits at `degraded`
+> and the heartbeat says so once and then weekly. Options if it matters: a
+> different egress IP, or asking Northern Accelerator to allowlist the crawler
+> (its User-Agent should first carry a real contact address — see `radar/fetch`).
+
 Returns `id`, `date` (ISO), `link`, `title.rendered`, `content.rendered`, `excerpt.rendered`. Map `date` → `published_at`, `id` → `external_id`, strip HTML from `content.rendered` → `body_text`.
 
 > ⚠️ **UKTN exception.** Its robots.txt disallows `/feed`, `/*/feed`, `/page/` and — critically — **`/*?`**. So: use `/wp-json/wp/v2/posts/latest` (which is *not* disallowed), and **never append a query string to any UKTN URL**. The `latest` endpoint returns titles, dates and links but no body; fetch each article page individually for the text.

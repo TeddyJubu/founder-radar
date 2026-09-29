@@ -395,6 +395,44 @@ def check_founders_factory(items):
     assert all(not (i.body_text or "").startswith(".css-") for i in items)
 
 
+def test_founders_factory_september_2026_layout_end_to_end():
+    """The redesign made each card the anchor itself. Through the real `fetch`:
+    the featured strip and the grid show the same three articles (collapsed to
+    three), and links into /articles/ with no heading — navigation, "read the
+    story" — are not mistaken for articles."""
+    items = list(founders_factory.ADAPTER.fetch(
+        _ctx(StubHttp(text=load("founders_factory.html")))))
+
+    assert [i.external_id for i in items] == [
+        "building-logistics-tech-for-humanitarian-aid",
+        "investing-in-halden-robotics",
+        "investing-in-marrow-bio",
+    ]
+    assert founders_factory.ADAPTER.last_selector == 'a[href^="/articles/"]'
+    marrow = next(i for i in items if i.external_id == "investing-in-marrow-bio")
+    # An en dash after the name must not leak into it.
+    assert marrow.structured["company_name"] == "Marrow Bio"
+    assert marrow.source_url == "https://foundersfactory.com/articles/investing-in-marrow-bio/"
+
+
+def test_founders_factory_still_parses_the_previous_layout():
+    """The old `NewsArticleBox` wrapper stays first in the selector list, so a
+    rollback of the site redesign does not break the adapter a second time."""
+    items = founders_factory.ADAPTER.parse(load("founders_factory_previous_layout.html"))
+    check_founders_factory(items)
+    assert founders_factory.ADAPTER.last_selector == '[class*="NewsArticleBox"]'
+
+
+def test_founders_factory_fails_loudly_when_only_navigation_links_match():
+    """A selector that still finds *something* while the articles are gone is
+    worse than one that finds nothing: it reads as a quiet week."""
+    only_nav = ('<html><body><main><a href="/articles/">All articles</a>'
+                '<a href="/articles/x/">Read more</a></main></body></html>')
+    with pytest.raises(LayoutChanged) as excinfo:
+        founders_factory.ADAPTER.parse(only_nav)
+    assert excinfo.value.source_key == "founders_factory"
+
+
 def check_techstars_london(items):
     """The newsroom is global, and the adapter must not pretend otherwise.
 
