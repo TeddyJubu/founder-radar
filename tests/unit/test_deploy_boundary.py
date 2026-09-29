@@ -122,5 +122,49 @@ def test_lock_export_matches_entire_runtime_dependency_closure(tmp_path):
         expected.add(name)
         pending.extend(d["name"] for d in packages[name].get("dependencies", []))
     actual = {line.split("==")[0] for line in (scratch / "deploy/requirements.lock").read_text().splitlines() if not line.startswith("#")}
+    # jusText requires lxml[html_clean], whose dependency lives under the
+    # optional table rather than lxml.dependencies. Keep this independent
+    # check: the old exporter and old closure test both missed that edge.
+    expected.add("lxml-html-clean")
     assert actual == expected
+    assert "lxml-html-clean" in actual
     assert "pytest" not in actual and "playwright" not in actual
+
+
+def test_lock_export_follows_later_requested_and_nested_extras(tmp_path):
+    import shutil
+    import subprocess
+    import sys
+    scratch = tmp_path / "extra-export"
+    (scratch / "deploy").mkdir(parents=True)
+    shutil.copy2(ROOT / "deploy/export-lock.py", scratch / "deploy/export-lock.py")
+    (scratch / "uv.lock").write_text('''
+[[package]]
+name = "founder-radar"
+dependencies = [{name = "base", extra = ["feature"]}, {name = "base"}]
+[package.optional-dependencies]
+extract = []
+[[package]]
+name = "base"
+version = "1.0"
+wheels = [{hash = "sha256:base"}]
+[package.optional-dependencies]
+feature = [{name = "child", extra = ["nested"]}]
+unused = [{name = "must-not-export"}]
+[[package]]
+name = "child"
+version = "2.0"
+wheels = [{hash = "sha256:child"}]
+[package.optional-dependencies]
+nested = [{name = "leaf"}]
+[[package]]
+name = "leaf"
+version = "3.0"
+wheels = [{hash = "sha256:leaf"}]
+''')
+    subprocess.run([sys.executable, str(scratch / "deploy/export-lock.py")], check=True)
+    text = (scratch / "deploy/requirements.lock").read_text()
+    assert "base==1.0" in text
+    assert "child==2.0" in text
+    assert "leaf==3.0" in text
+    assert "must-not-export" not in text
