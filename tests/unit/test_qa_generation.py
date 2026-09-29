@@ -1,7 +1,7 @@
 """QA must approve the current card even when writes share one second."""
 from radar.config.defaults import default_config
 from radar.qa.today import TodayCheckResult, load_today_cards, qa_state, record_check, run_today_qa
-from tests.fakes import seed_companies
+from tests.fakes import seed_companies, source_link_proof
 
 
 def test_same_second_company_change_invalidates_a_qa_pass(db):
@@ -24,6 +24,7 @@ def test_same_second_route_change_invalidates_a_qa_pass(db):
     cfg = default_config()
     card = load_today_cards(db, cfg)[0]
     stamp = db.scalar("SELECT MAX(scored_at) FROM score WHERE company_id = ?", (cid,))
+    source_link_proof(db, card.source_url)
     record_check(db, card, TodayCheckResult(verdict="pass", checker="hermes"), checked_at=stamp)
     assert qa_state(db, cid) == "pass"
     db.execute("UPDATE score SET vehicle_key = 'new_vehicle' WHERE company_id = ?", (cid,))
@@ -33,13 +34,13 @@ def test_same_second_route_change_invalidates_a_qa_pass(db):
 def test_unchanged_rules_pass_is_reusable_and_changed_card_is_rechecked(db):
     cid = seed_companies(db, count=1, shortlist=1)[0]
     cfg = default_config()
-    first = run_today_qa(db, cfg, use_hermes=False)
+    first = run_today_qa(db, cfg, use_hermes=False, source_verifier=source_link_proof)
     assert first.passed == 1 and qa_state(db, cid) == "pass"
-    again = run_today_qa(db, cfg, use_hermes=False)
+    again = run_today_qa(db, cfg, use_hermes=False, source_verifier=source_link_proof)
     assert again.cached == 1
     db.execute("UPDATE company SET one_liner = 'New company description' WHERE id = ?", (cid,))
     assert qa_state(db, cid) == "incomplete"
-    checked = run_today_qa(db, cfg, use_hermes=False)
+    checked = run_today_qa(db, cfg, use_hermes=False, source_verifier=source_link_proof)
     assert checked.cached == 0 and checked.passed == 1
     assert qa_state(db, cid) == "pass"
 
@@ -113,6 +114,7 @@ def test_later_rescore_with_same_card_hash_requires_a_real_new_check(db):
     cfg = default_config()
     db.execute("UPDATE score SET scored_at='2020-01-01T00:00:00Z' WHERE company_id=?", (cid,))
     card = load_today_cards(db, cfg)[0]
+    source_link_proof(db, card.source_url)
     record_check(db, card, TodayCheckResult(verdict='pass', checker='hermes'),
                  checked_at='2020-01-01T00:00:00Z')
     db.execute("UPDATE score SET scored_at='2020-01-02T00:00:00Z' WHERE company_id=?", (cid,))
@@ -127,7 +129,7 @@ def test_later_rescore_with_same_card_hash_requires_a_real_new_check(db):
             return TodayCheckResult(verdict='pass', checker='hermes')
 
     checker = Checker()
-    report = run_today_qa(db, cfg, checker=checker)
+    report = run_today_qa(db, cfg, checker=checker, source_verifier=source_link_proof)
     assert checker.calls == 1
     assert report.cached == 0 and report.passed == 1
     assert qa_state(db, cid) == 'pass'
@@ -173,7 +175,7 @@ def test_decided_cards_do_not_consume_the_qa_limit_but_remain_available_by_id(db
             self.calls.append(card.company_id)
             return TodayCheckResult(verdict='pass', checker='hermes')
     checker = Checker()
-    report = run_today_qa(db, cfg, checker=checker)
+    report = run_today_qa(db, cfg, checker=checker, source_verifier=source_link_proof)
     assert checker.calls == [ids[24]]
     assert report.cards == report.passed == 1 and report.uncovered == 0
     assert qa_state(db, ids[24]) == 'pass'
@@ -201,7 +203,7 @@ def test_exact_cached_rejects_do_not_consume_qa_slots_and_changed_cards_return(d
             self.calls.append(card.company_id)
             return TodayCheckResult(verdict='pass', checker='hermes')
     checker = Checker()
-    report = run_today_qa(db, cfg, checker=checker)
+    report = run_today_qa(db, cfg, checker=checker, source_verifier=source_link_proof)
     assert checker.calls == [ids[24]]
     assert report.cards == report.passed == 1
     assert qa_state(db, ids[0]) == 'reject'
