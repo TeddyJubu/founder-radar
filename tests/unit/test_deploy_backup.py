@@ -440,7 +440,8 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
     tools = tmp_path / "bin"
     tools.mkdir()
     home = tmp_path / "operator"
-    (home / ".hermes").mkdir(parents=True)
+    (home / ".hermes" / "installs" / "test-install").mkdir(parents=True)
+    (home / ".hermes" / "installs" / "test-install" / "facts.json").write_text("{}")
     root = tmp_path / "install"
     for name in ("app", "venv", "data", "logs", "backups"):
         (root / name).mkdir(parents=True)
@@ -468,6 +469,7 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
     assert str(root / "venv") not in recorded
     assert str(root / "data") in recorded
     assert str(home / ".hermes") in recorded
+    assert str(home / ".hermes" / "installs") in recorded
 
 
 def test_install_migrates_before_starting_any_service_or_timer():

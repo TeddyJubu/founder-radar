@@ -128,6 +128,7 @@ for path in \
   "$H/skills" \
   "$H/cache" \
   "$H/hermes-agent" \
+  "$H/installs" \
   "$H/config.yaml" \
   "$H/auth.json" \
   "$HOME_DIR/.local" \
