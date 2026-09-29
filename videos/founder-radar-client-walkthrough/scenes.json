@@ -1,0 +1,80 @@
+[
+  {
+    "title": "Your morning, in one place",
+    "subtitle": "UK Founder Radar · client walkthrough",
+    "visual": "today.png",
+    "text": "Welcome to Founder Radar. This short walkthrough shows where the companies come from, how the fund matches are calculated, and how to change the settings. Your daily job starts on Today. You review companies, rather than a pile of articles. Kept holds the companies you want to revisit. The names and example facts are teaching data. The completed checks in this copy are simulated. We are not changing your live list, your decisions, or your Google Sheet."
+  },
+  {
+    "title": "Two tracks. Different jobs.",
+    "subtitle": "Discovery first · official verification alongside it",
+    "visual": "tracks",
+    "text": "Track A looks for useful signals. These can be university spinouts, accelerator companies, grant awards, or a specific technology news story. Track B uses Companies House, the official company register. It helps verify the company identity and incorporation date. A newly registered company is not automatically a promising startup. Registration is also not proof of when trading began, or proof that no investment has happened. Missing facts stay unknown until there is evidence."
+  },
+  {
+    "title": "How a clue becomes a company card",
+    "subtitle": "Evidence travels with the company",
+    "visual": "pipeline",
+    "text": "Here is the whole journey. A source provides a clue. The system checks which company it belongs to, combines duplicate sightings, and keeps the supporting links. It turns longer text into small facts, such as location, business type, stage, and funding evidence. Next come the fund rules and the scores. This calculation uses code, not a chat model. The same facts and settings give the same result. Finally, Hermes checks the proposed company before publication. This last check can withhold a bad match. It cannot invent another company or change the calculated scores."
+  },
+  {
+    "title": "Read Today without guessing",
+    "subtitle": "Company → explanation → scores → supporting sources",
+    "visual": "today.png",
+    "text": "On Today, start with the company name and the short description. Check where it is based, the evidence about its age, and the suggested fund. Match means how closely the known facts fit that fund's preferences. Fresh means the discovery opportunity, using the evidence available about age, tracked coverage, funding, and how it was found. A high Fresh score is not proof that nobody knows the company. Coverage tells you how much evidence supports the match. If a field says unknown, treat it as a gap, rather than silently filling it in."
+  },
+  {
+    "title": "Four funds. Keep the real rules.",
+    "subtitle": "Check the current Fund Criteria rows before changing a mandate",
+    "visual": "funds",
+    "text": "The four fund groups are Northstar, DSW, Outward, and Anticus. Northstar has regional and specialist vehicles, with the North East especially relevant. DSW has separate SEIS and EIS paths. Outward looks at early technology serving complex industries. Anticus has Yorkshire regional vehicles. London remains eligible for the softer DSW EIS regional rule. When another suitable fund matches, Today can suggest that alternative and explain the regional preference. If none does, it shows the weaker regional match honestly."
+  },
+  {
+    "title": "Understand the calculation",
+    "subtitle": "DEMO River Finance · actual scoring engine output",
+    "visual": "score",
+    "text": "Let us use one fictional company, River Finance. Our example says it is a twelve month old UK fintech company, with pilot customers and two million pounds of disclosed funding. The current default calculation gives Outward a Match of sixty one point seven, and Fresh of sixty five point five. Priority combines these: sixty percent Match, plus forty percent Fresh. That gives sixty three point two after rounding. These numbers describe the example under these settings. Hard rules decide eligibility first. An attractive score cannot rescue a company that fails an applicable hard rule."
+  },
+  {
+    "title": "Change a source safely",
+    "subtitle": "Sources → northern_accelerator → Enabled",
+    "visual": "source-demo",
+    "text": "The Google Sheet is the durable place for configuration: sources, fund criteria, scoring weights, and general settings. Here we use a local replica, clearly marked demo. In Sources, we switch northern accelerator from enabled to disabled, then save the demo settings. This really updates the source configuration. A future collection run will skip that source. It does not erase companies already stored, and it does not automatically lower their scores. For the live system, make a small deliberate edit, check that configuration loads, and then run the appropriate update flow."
+  },
+  {
+    "title": "Change a genuine fund rule",
+    "subtitle": "Fund Criteria → Outward fund_ii → prior_total_max",
+    "visual": "rule-demo",
+    "text": "Now we edit a real field from the default Outward fund row: prior total max, the ceiling used for previously raised capital. The default row contains twenty million pounds. For teaching only, we tighten it to one million. This is not a claim that Outward changed its mandate. River Finance has two million of previous funding in our example, so it now fails this vehicle's hard rule. Rescoring returns reject, with no eligible vehicle. In real use, only change a fund rule when the fund's current criteria support that change, and keep the evidence for it."
+  },
+  {
+    "title": "Thresholds and weights do different things",
+    "subtitle": "Settings → shortlist_fit · weight_fit / weight_edge",
+    "visual": "threshold-demo",
+    "text": "The shortlist threshold controls the label. Our default Match threshold is seventy. Lowering it to sixty puts River Finance on the shortlist because the example also meets the Fresh and coverage conditions. Match stays sixty one point seven. Fresh stays sixty five point five. We changed the threshold, not the facts or their scores. Next we restore the threshold and change Priority to eighty percent Match and twenty percent Fresh. Priority becomes sixty two point five. The two underlying scores still stay the same. Weights control emphasis. Thresholds control which bucket a result enters."
+  },
+  {
+    "title": "Save → rescore → final check → publish",
+    "subtitle": "New settings need a fresh calculation and approval",
+    "visual": "rescore",
+    "text": "After a live settings change, load the updated configuration and rescore the stored companies. The system records which configuration produced each score, so old results can be identified. Hermes must then complete the final company checks for the updated candidates. A successful calculation alone does not approve publication. If the final check is unavailable or incomplete, the company waits. It stays off Today, the published Today sheet, and the digest until it passes. This is useful protection: a quiet morning is better than presenting an unchecked list as ready."
+  },
+  {
+    "title": "Ready and waiting are separate",
+    "subtitle": "The backlog is larger than the current card or page",
+    "visual": "today.png",
+    "text": "The counter separates ready to review from awaiting final check. In our demo, two companies are ready and one is waiting. The ready count reflects the remaining review backlog, rather than resetting to the number on one page. Today also aims for a useful mix of qualified sources, funds, and sectors. This is soft ordering, not a compulsory equal quota. A company does not get fake points to make the mix look balanced. Quality and the real fund rules still come first."
+  },
+  {
+    "title": "Keep your decisions in the same store",
+    "subtitle": "Today decisions → SQLite → Kept → Sheet mirror",
+    "visual": "decisions",
+    "text": "Three buttons finish the morning review. Worth contacting saves the company to Kept. Unsure also saves it there for later. Not for me stores the rejection, and that company does not return to Today. Here we actually save one decision in the isolated copy, then open Kept. The application database, called SQLite, is the main store for these choices. The Sheet can mirror the verdicts when configured, and a full synchronization catches up missed writes. Phone actions must call the same saved decision command. A chat reply alone is not a saved choice."
+  },
+  {
+    "title": "A simple daily routine",
+    "subtitle": "Review · verify · decide · adjust deliberately",
+    "visual": "dashboard.png",
+    "text": "For daily use, open Today, check the explanation and evidence, then choose yes, maybe, or no. Return to Kept when you are ready to contact companies. Change settings in the Sheet when you have a clear reason, then recalculate and complete the final checks before publishing again. Use the teaching guide for the Easy explanation or the Technical detail. This walkthrough used demonstration data throughout. Your live settings and decisions were untouched. The goal is a small, explainable UK company list that helps you make the next decision, while leaving unknowns and unfinished checks visible."
+  }
+]
