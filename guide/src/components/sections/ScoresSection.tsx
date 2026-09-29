@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 const EASY_FUND_BLURBS: Record<string, string> = {
   dsw: "Cares about UK tech companies that can get special early-stage tax deals.",
   northstar: "Cares about companies linked to the North East of England.",
-  outward: "Cares when money or payments are a big part of the product.",
+  outward: "Looks for young technology companies improving finance, insurance, property, legal services, healthcare or work.",
   anticus: "Cares about companies in Yorkshire (or moving there).",
 }
 

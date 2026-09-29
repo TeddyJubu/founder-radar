@@ -75,7 +75,8 @@ a { color: var(--blue); }
 
   <div class="note">
     Full self-serve detail also lives in <code>docs/ops-guide.md</code> in the repo —
-    same content, for reading outside the app.
+    for reading outside the app. For server access, backups and recovery, read
+    <a href="https://github.com/TeddyJubu/founder-radar/blob/main/docs/owner-handover.md">the owner handover</a>.
   </div>
 
   <h2>Match, Fresh, and the four fund bars</h2>
@@ -86,10 +87,23 @@ a { color: var(--blue); }
     <li><strong>Fresh</strong> — how likely that fund has not already seen the
         company (age, tracked press, disclosed funding, how we found it).</li>
     <li><strong>Fit with each fund</strong> — four separate scores against four
-        mandates. They do not add up to 100%. Send to mixes Match and Fresh, so
-        the tallest bar is not always the route.</li>
+        mandates. They do not add up to 100%. Compare each score with that fund’s
+        own rules. The suggested fund must have a viable match. For a London
+        company, a suitable alternative to regional DSW can be suggested even
+        with a lower score; the card explains why. Scores stay unchanged.</li>
   </ul>
 
+  <h2>Ready and waiting</h2>
+  <p><strong>Ready to review</strong> counts all undecided companies that pass
+     the rules and have a completed final company check for their current card.
+     <strong>Awaiting final check</strong> counts undecided companies that pass
+     the rules but still need that check. Together they are the full eligible
+     backlog, even when only one small batch is displayed. Rejected and already
+     decided companies are excluded.</p>
+  <p>Zero ready does not mean a quiet day when companies are waiting. The final
+     check verifies source links and company evidence; a failed or unfinished
+     check keeps the card off Today. Changed facts or scores need a fresh check.
+     Ask Hermes for status before starting another run.</p>
   <h2>Shortlist vs Kept</h2>
   <ul>
     <li><strong>Engine shortlist</strong> — <code>score.tier = 'shortlist'</code>. The system’s
@@ -139,10 +153,12 @@ a { color: var(--blue); }
 
   <h2>Change the login password</h2>
   <p>This app sits behind a Caddy reverse proxy with basic auth. On the server,
-     run <code>caddy hash-password --plaintext 'your-new-password'</code>, put the
+     use your owner SSH terminal and run <code>caddy hash-password</code>.
+     Enter the password at its private prompt, then put the
      resulting hash into <code>RADAR_WEB_PASS_HASH</code> in
      <code>/opt/founder-radar/.env</code>, then restart Caddy with
-     <code>systemctl restart caddy</code>. The username is
+     <code>sudo systemctl restart caddy</code>. This requires owner administrator access;
+     the Radar command wrapper does not grant it. The username is
      <code>RADAR_WEB_USER</code> in the same file. Never write the plaintext
      password into the repo, a chat thread, or anywhere else that is not the
      server itself.</p>

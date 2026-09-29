@@ -8,7 +8,7 @@ export const morningContent: MorningContent = {
   easySteps: [
     {
       title: "Open Today",
-      body: "In the morning, open the Today page (or wait for the Telegram ping). You might see about five to ten companies — or none. Zero is okay. It means a quiet day, not a broken tool.",
+      body: "In the morning, open the Today page (or wait for the Telegram ping). Ready to review means checked companies you can decide on. Awaiting final check means eligible companies still being checked. Both counts cover the whole backlog, not just the small batch on screen. Zero ready can mean checks are still running; it does not always mean a quiet day.",
     },
     {
       title: "Press 1, 2, or 3",

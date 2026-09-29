@@ -129,7 +129,7 @@ export const architectureNodes: ArchNode[] = [
     role: "6:30 London time",
     question: "What wakes the system?",
     easy:
-      "A small computer wakes at half past six, London time, runs the engine, and leaves a list — or an empty list on a quiet day, which is the filter working.",
+      "A small computer wakes at half past six, London time, runs the engine, and checks companies before showing them. An empty list can mean no suitable companies, or that final checks are still unfinished. Today tells you how many are waiting.",
     technical:
       "systemd timer at 06:30 Europe/London under /opt/founder-radar (user radar). Hermes is not the scheduler — OS cron/systemd survives hermes update.",
     related: ["engine", "hermes"],

@@ -41,7 +41,7 @@ export const practiceCompanies: PracticeCompany[] = [
 
 export const practiceTeaching = {
   quietMorning:
-    "Some mornings the list is empty. That is okay. The tool should not invent companies just to fill space.",
+    "An empty list can mean final checks are still running. Read the waiting count first. The tool should not invent companies just to fill space.",
   keyboard:
     "Press 1 (yes), 2 (maybe), or 3 (no). Watch the card go to Kept — or to “won’t show again.”",
 }
