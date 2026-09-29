@@ -33,6 +33,41 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# BEGIN trusted install checks
+# Changing ownership does not remove malicious Git hooks, pip launchers or .pth
+# files. Refuse old untrusted inputs before executing any of them as root.
+assert_trusted_install_path() {
+  local parent="$1"
+  while :; do
+    if [ -L "$parent" ] || [ "$(stat -c %u "$parent")" != 0 ] ||
+        [ -n "$(find "$parent" -maxdepth 0 -perm /022 -print)" ]; then
+      echo "untrusted existing installation: $parent; rebuild from a trusted root-owned checkout and fresh venv" >&2
+      exit 1
+    fi
+    [ "$parent" = / ] && break
+    parent="$(dirname "$parent")"
+  done
+}
+assert_trusted_install_input() {
+  local tree="$1" link target
+  assert_trusted_install_path "$tree"
+  if [ -n "$(find -L "$tree" \( ! -user root -o -perm /022 \) -print -quit)" ]; then
+    echo "untrusted existing installation: $tree; refusing to execute existing code" >&2
+    exit 1
+  fi
+  # Venv Python links are normal, but their resolved targets and parents must
+  # also be protected. A root-owned link into a writable directory is unsafe.
+  while IFS= read -r -d '' link; do
+    target="$(readlink -f "$link")"
+    assert_trusted_install_path "$target"
+  done < <(find "$tree" -type l -print0)
+}
+assert_trusted_install_input "$APP_DIR"
+if [ -e "$VENV" ] || [ -L "$VENV" ]; then
+  assert_trusted_install_input "$VENV"
+fi
+# END trusted install checks
+
 # ---------------------------------------------------------------- 1. account
 
 say "service account and directories"

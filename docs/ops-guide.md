@@ -200,6 +200,7 @@ Runtime packages are installed from `deploy/requirements.lock`, generated from `
 with versions and artifact hashes checked. Python build tooling remains supplied by pip's isolated build.
 Integration tests require `TEST_SHEET_ID` and a tab named `FOUNDER_RADAR_TEST_SCRATCH`;
 the marker survives resets. Never put that marker on a real customer spreadsheet.
+
 ### Undoing a Today decision
 
 Ctrl+Z asks the server to restore the previous saved verdict and today's review
@@ -210,3 +211,14 @@ are limited to 200 recent web decisions and expire when the server restarts;
 a later decision from another surface prevents an old undo from overwriting it.
 While a decision is saving, the page pauses navigation and other decisions.
 Write requests require JSON and reject cross-origin browser requests.
+
+
+The installer refuses pre-existing service-owned or writable checkouts and
+virtual environments before it runs any Git hooks, Python launchers or `.pth` files.
+Changing their owner is not a safe migration. To migrate an old installation,
+stop writers, preserve data and secrets separately, and use an administrator's
+trusted copy of the installer. Move the old checkout and venv aside; clone the
+reviewed repository afresh as root under a root-owned installation directory,
+then let the installer build a new venv. Do not copy old Git configuration,
+hooks, Python launchers or `.pth` files into the trusted rebuild. This requires
+an explicit operator maintenance step; the timer fails closed until it is done.

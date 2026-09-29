@@ -61,3 +61,34 @@ def test_locked_requirements_match_uv_artifacts():
         available = {a["hash"] for a in pkg.get("wheels", [])}
         if "sdist" in pkg: available.add(pkg["sdist"]["hash"])
         assert {h.removeprefix("--hash=") for h in hashes} == available
+
+
+def test_installer_refuses_untrusted_venv_before_launcher(tmp_path):
+    import subprocess
+    script = (ROOT / "deploy/install.sh").read_text()
+    assert "assert_trusted_install_input" in script
+    checks = script.split("# BEGIN trusted install checks")[1].split("# END trusted install checks")[0]
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    for name, body in {
+        "stat": 'case "$*" in *venv*) echo 1000;; *) echo 0;; esac',
+        "find": "exit 0",
+    }.items():
+        executable = tools / name
+        executable.write_text("#!/bin/sh\n" + body + "\n")
+        executable.chmod(0o755)
+    app = tmp_path / "app"
+    app.mkdir()
+    venv = tmp_path / "venv"
+    venv.mkdir()
+    launcher = venv / "pip"
+    sentinel = tmp_path / "executed"
+    launcher.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n')
+    launcher.chmod(0o755)
+    payload = 'set -eu\nAPP_DIR="' + str(app) + '"\nVENV="' + str(venv) + '"\n' + checks + '\n"' + str(launcher) + '"\n'
+    result = subprocess.run(["/bin/bash", "-c", payload],
+                            env={"PATH": str(tools) + ":/usr/bin:/bin"},
+                            text=True, capture_output=True)
+    assert result.returncode == 1
+    assert "untrusted existing installation" in result.stderr
+    assert not sentinel.exists()
