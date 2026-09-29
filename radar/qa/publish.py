@@ -147,7 +147,10 @@ def _run_hermes_publish_check(payload: dict[str, Any]) -> tuple[str, str, str]:
         f"{brief}\n\n---\nPUBLISH SNAPSHOT (JSON, counts only):\n"
         f"{json.dumps(payload, sort_keys=True, indent=2)}\n"
     )
-    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1"}
+    # QA runs as radar against the operator-owned Hermes installation.
+    # Keep startup read-only: lazy dependency updates require the owner.
+    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1",
+           "HERMES_DISABLE_LAZY_INSTALLS": "1"}
     owner_home = (os.environ.get("HERMES_HOME") or "").strip()
     if owner_home:
         hermes_dir = Path(owner_home) / ".hermes"

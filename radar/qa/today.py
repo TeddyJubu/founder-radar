@@ -384,7 +384,10 @@ def resolve_hermes_binary() -> str | None:
 
 def _hermes_subprocess_env() -> dict[str, str]:
     """Env for Hermes subagents: remap HERMES_HOME to the data dir Hermes expects."""
-    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1"}
+    # QA runs as radar against the operator-owned Hermes installation.
+    # Keep startup read-only: lazy dependency updates require the owner.
+    env = {**os.environ, "TERM": "dumb", "HERMES_NONINTERACTIVE": "1",
+           "HERMES_DISABLE_LAZY_INSTALLS": "1"}
     owner_home = (os.environ.get("HERMES_HOME") or "").strip()
     if owner_home:
         hermes_dir = Path(owner_home) / ".hermes"
