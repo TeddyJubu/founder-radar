@@ -68,8 +68,26 @@ acl_tree() {
   fi
 }
 
-# --- Hermes home: operator owns it; radar may read/write via ACL ----------
-setfacl -m "u:${APP_USER}:rwx" "$HOME_DIR" 2>/dev/null || true
+# --- Hermes home: operator owns it; radar gets access tree by tree --------
+# radar may *enter* the operator's home but never create, rename or replace
+# anything directly in it. Write access here would let a compromised radar
+# (the web-facing service account) swap ~/.ssh/authorized_keys, ~/.bashrc or
+# ~/.profile and log in as the operator, who has full sudo. It had exactly
+# that: rwx on the home directory, default ACLs inherited by every new file,
+# and rw on the SSH key file. Today QA needs only the trees granted below.
+setfacl -k "$HOME_DIR" 2>/dev/null || true             # no inherited access
+setfacl -m "u:${APP_USER}:--x" "$HOME_DIR" 2>/dev/null || true
+setfacl -m "m::--x" "$HOME_DIR" 2>/dev/null || true
+for login in .ssh .bashrc .profile .bash_profile .bash_login .bash_logout \
+             .bash_history .zshrc .zprofile .zshenv .sudo_as_admin_successful; do
+  login_path="$HOME_DIR/$login"
+  [[ -e "$login_path" && ! -L "$login_path" ]] || continue
+  setfacl -R -P -b "$login_path" 2>/dev/null || true    # drop every extended ACL
+done
+if [[ -d "$HOME_DIR/.ssh" && ! -L "$HOME_DIR/.ssh" ]]; then
+  chmod 700 "$HOME_DIR/.ssh" 2>/dev/null || true
+  [[ -f "$HOME_DIR/.ssh/authorized_keys" ]] && chmod 600 "$HOME_DIR/.ssh/authorized_keys" 2>/dev/null || true
+fi
 
 # Clear the empty mask Hermes leaves behind.
 setfacl -m "g::r-x" "$H" 2>/dev/null || true

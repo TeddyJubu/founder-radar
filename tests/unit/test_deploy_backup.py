@@ -276,6 +276,21 @@ def test_hermes_acl_script_never_follows_a_planted_symlink():
     assert "chown -h" in text and "chown \"$HERMES_USER" not in text
 
 
+def test_hermes_acl_script_keeps_radar_out_of_the_operators_login_files():
+    """radar is the web-facing service account and the operator has full sudo.
+    The old script gave radar rwx on the operator's home directory (plus default
+    ACLs inherited by every new file), which is enough to replace
+    ~/.ssh/authorized_keys and log in as the operator."""
+    text = (DEPLOY_DIR / "hermes-acl.sh").read_text()
+    assert 'setfacl -m "u:${APP_USER}:rwx" "$HOME_DIR"' not in text
+    assert 'setfacl -m "u:${APP_USER}:--x" "$HOME_DIR"' in text      # traverse only
+    assert 'setfacl -k "$HOME_DIR"' in text                          # no inherited ACL
+    for login in (".ssh", ".bashrc", ".profile"):
+        assert login in text.split("for login in", 1)[1].split("; do", 1)[0]
+    assert "setfacl -R -P -b" in text                                # strips existing ACLs
+    assert 'chmod 700 "$HOME_DIR/.ssh"' in text
+
+
 def test_failing_jobs_alert_through_the_template_unit():
     """The auto-deploy, the backup and the daily scan can each stay broken for
     days with nobody told. They must all name the alert template, the template
