@@ -724,7 +724,10 @@ def _today_eligibility_diagnostics(
             conn, row, config, today=today, config_hash=config_hash,
         )
         if blocked:
-            exclude(blocked)
+            # QA cannot load a card without provenance. Report that concrete
+            # prerequisite rather than asking the operator to retry QA.
+            exclude("missing_provenance" if blocked == "qa_incomplete"
+                    and company_id not in source_ids else blocked)
             continue
         if company_id not in source_ids:
             exclude("missing_provenance")
