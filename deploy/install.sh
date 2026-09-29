@@ -109,8 +109,9 @@ fi
 if [ ! -x "$VENV/bin/python" ]; then
   python3 -m venv "$VENV"
 fi
-"$VENV/bin/pip" install --quiet --require-hashes -r deploy/requirements.lock
-"$VENV/bin/pip" install --quiet --no-deps -e .
+"$VENV/bin/pip" install --quiet --only-binary=:all: --require-hashes -r deploy/requirements.lock
+"$VENV/bin/pip" install --quiet --require-hashes --only-binary=:all: -r deploy/build-requirements.lock
+"$VENV/bin/pip" install --quiet --no-build-isolation --no-deps -e .
 chown -R root:root "$VENV"
 chmod -R go-w "$VENV"
 # Hermes (operator user) cannot read radar-owned .env — install a wrapper that

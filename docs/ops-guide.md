@@ -197,7 +197,7 @@ The timer runs a root-owned helper under `/usr/local/libexec/founder-radar`.
 Updates refuse writable inputs, symlinks and writable parent directories before Git runs.
 An administrator must review and reinstall an older radar-owned checkout before enabling this timer.
 Runtime packages are installed from `deploy/requirements.lock`, generated from `uv.lock`,
-with versions and artifact hashes checked. Python build tooling remains supplied by pip's isolated build.
+with versions and artifact hashes checked. The setuptools build backend is pinned separately in `deploy/build-requirements.lock`; the project installs with build isolation disabled so pip cannot select a different backend. Runtime and backend installs require wheels and verified hashes. A missing compatible wheel fails installation rather than building with unspecified tools.
 Integration tests require `TEST_SHEET_ID` and a tab named `FOUNDER_RADAR_TEST_SCRATCH`;
 the marker survives resets. Never put that marker on a real customer spreadsheet.
 

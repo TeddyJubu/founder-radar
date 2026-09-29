@@ -14,7 +14,7 @@ def test_root_update_inputs_are_protected():
 def test_production_dependencies_are_locked():
     install = (ROOT / "deploy/install.sh").read_text()
     assert '--require-hashes -r deploy/requirements.lock' in install
-    assert '--no-deps -e .' in install
+    assert '--no-build-isolation --no-deps -e .' in install
 
 def test_scratch_sheet_requires_marker_before_mutating():
     from tests.integration.conftest import blank
@@ -92,3 +92,35 @@ def test_installer_refuses_untrusted_venv_before_launcher(tmp_path):
     assert result.returncode == 1
     assert "untrusted existing installation" in result.stderr
     assert not sentinel.exists()
+
+
+def test_project_build_uses_verified_pinned_backend():
+    installer = (ROOT / "deploy/install.sh").read_text()
+    assert '--require-hashes --only-binary=:all: -r deploy/build-requirements.lock' in installer
+    assert '--no-build-isolation --no-deps -e .' in installer
+    assert installer.index('build-requirements.lock') < installer.index('--no-build-isolation')
+    build_lock = (ROOT / "deploy/build-requirements.lock").read_text()
+    assert "setuptools==84.0.0" in build_lock
+    assert "--hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670" in build_lock
+
+def test_lock_export_matches_entire_runtime_dependency_closure(tmp_path):
+    import subprocess, sys, tomllib
+    import shutil
+    scratch = tmp_path / "export"
+    (scratch / "deploy").mkdir(parents=True)
+    for source in ("uv.lock", "deploy/export-lock.py"):
+        shutil.copy2(ROOT / source, scratch / source)
+    subprocess.run([sys.executable, str(scratch / "deploy/export-lock.py")], check=True)
+    assert (scratch / "deploy/requirements.lock").read_bytes() == (ROOT / "deploy/requirements.lock").read_bytes()
+    packages = {p["name"]: p for p in tomllib.loads((scratch / "uv.lock").read_text())["package"]}
+    project = packages["founder-radar"]
+    pending = [d["name"] for d in project["dependencies"] + project["optional-dependencies"]["extract"]]
+    expected = set()
+    while pending:
+        name = pending.pop()
+        if name in expected: continue
+        expected.add(name)
+        pending.extend(d["name"] for d in packages[name].get("dependencies", []))
+    actual = {line.split("==")[0] for line in (scratch / "deploy/requirements.lock").read_text().splitlines() if not line.startswith("#")}
+    assert actual == expected
+    assert "pytest" not in actual and "playwright" not in actual
