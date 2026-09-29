@@ -37,6 +37,14 @@ def test_redirects_checked_and_private_destination_refused(db):
     assert result.state=='invalid' and len(seen)==1
 
 
+def test_noindex_response_does_not_approve_a_reachable_link(db):
+    with client(lambda req: httpx.Response(200, headers={'X-Robots-Tag': 'noindex'})) as http:
+        result = verify_source(db, 'https://source.test/private-article', http=http, resolve=False)
+    assert result.state == 'blocked'
+    assert result.status == 200
+    assert cached_outcome(db, result.url).state == 'blocked'
+
+
 def test_redirect_success_timeout_and_expiry(db):
     def handle(req):
         if req.url.path=='/old':
