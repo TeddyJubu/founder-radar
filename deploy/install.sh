@@ -65,7 +65,9 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet --upgrade pip
 sudo -H -u "$APP_USER" "$VENV/bin/pip" install --quiet -e .
-ln -sf "$VENV/bin/founder-radar" /usr/local/bin/founder-radar
+# Hermes (operator user) cannot read radar-owned .env — install a wrapper that
+# re-execs as $APP_USER so Telegram ops work without hand-rolled sudo.
+install -m 755 "$HERE/founder-radar-wrap.sh" /usr/local/bin/founder-radar
 cd "$ROOT"
 
 # ---------------------------------------------------------------- 3. secrets
@@ -121,6 +123,9 @@ done
 chmod 755 "$HERE/backup.sh" "$HERE/update-from-main.sh"
 if [ -f "$HERE/hermes-acl.sh" ]; then
   chmod 755 "$HERE/hermes-acl.sh"
+fi
+if [ -f "$HERE/founder-radar-wrap.sh" ]; then
+  chmod 755 "$HERE/founder-radar-wrap.sh"
 fi
 # hermes-dashboard.sh remains in the tree for local ops, but is not published.
 if [ -f "$HERE/hermes-dashboard.sh" ]; then
@@ -312,6 +317,12 @@ if [ -n "$HERMES_HOME" ] && [ -d "$HERMES_HOME/.hermes" ]; then
   # lookups into Telegram and never wrote Today. Every deploy must kill it.
   if [ -x "$HERE/retire-v1-scout.sh" ]; then
     bash "$HERE/retire-v1-scout.sh" "$HERMES_HOME" "${HERMES_USER:-}"
+  fi
+  # Restore operator ownership of ~/.hermes (Today QA as radar can steal
+  # auth.json) and grant Hermes write ACL on /opt/founder-radar/{app,data,…}.
+  if [ -x "$HERE/hermes-acl.sh" ]; then
+    APP_USER="$APP_USER" HERMES_USER="${HERMES_USER:-aryan}" ROOT="$ROOT" \
+      bash "$HERE/hermes-acl.sh" || true
   fi
 else
   say "no ~/.hermes yet — install Hermes, then copy"

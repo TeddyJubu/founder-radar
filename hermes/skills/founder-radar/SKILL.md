@@ -103,8 +103,10 @@ him the Today URL.
 - Never re-surface companies that already have a lasting verdict (Kept /
   not for me) — that is intentional.
 - A run takes several minutes. Say "running, I'll message you when it's done."
-  Run as the `radar` user with `/opt/founder-radar/.env` and `hermes.env`
-  loaded (the systemd unit does this). A bare `sudo -u radar founder-radar`
-  still writes the database; Today QA may time out without that env.
+  On the VPS, call `founder-radar` directly — `/usr/local/bin/founder-radar`
+  re-execs as `radar` with `.env` + `hermes.env` loaded. Do not hand-craft
+  `sudo -u radar` unless the wrapper is missing. You own hard ops here:
+  edit `/opt/founder-radar/app`, run CLI, restart units, diagnose with
+  `doctor` / `why-today`. Never invent scores or sheet rows by hand.
 - Quiet Hermes: deterministic gate still blocks hash drift; zero-day PASS is OK
   only when there are no reviewable scores. With cards present, Hermes must run.
