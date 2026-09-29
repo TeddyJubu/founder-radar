@@ -129,3 +129,15 @@ def test_ch_rate_limit_is_respected(monkeypatch):
 def test_rate_limiter_registers_the_ch_window():
     limiter = RateLimiter()
     assert limiter.window_count(RateLimiter.CH_HOST) == 0
+
+
+def test_documented_advanced_search_404_is_an_empty_window():
+    class NoMatches:
+        def get(self, url, **kwargs):
+            assert url.endswith('/advanced-search/companies')
+            return FakeResponse(None, status=404)
+    adapter = CompaniesHouseAdapter(api_key='fictional-key')
+    ctx = FetchContext(http=NoMatches(), config={}, now=date(2026, 9, 30))
+    assert list(adapter.fetch(ctx)) == []
+    assert adapter.stats['pages'] > 0
+    assert adapter.stats['truncated_pages'] == 0

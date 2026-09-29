@@ -717,3 +717,17 @@ def test_conception_x_returns_only_new_ventures_after_the_first_run(db):
     assert [i.title for i in third] == ["Wearside Optics"]
     assert third[0].structured["bootstrap"] is False
     assert third[0].published_at == RUN_DATE
+
+
+def test_uktn_current_body_wrapper_excludes_surrounding_navigation():
+    text = uktn.ADAPTER.parse_article("<main><nav>Investor menu</nav><div class='js-post-content'><p>The startup raised funding for its new product.</p></div><footer>Other stories</footer></main>")
+    assert text == "The startup raised funding for its new product."
+
+
+def test_cambridge_public_feed_requires_article_fetch():
+    feed = "<rss><channel><item><guid>1</guid><link>https://www.enterprise.cam.ac.uk/news/startup/</link><title>New Cambridge spinout</title><pubDate>Tue, 29 Sep 2026 09:00:00 GMT</pubDate><description>Short excerpt</description></item></channel></rss>"
+    item = cambridge_enterprise.ADAPTER.parse(feed)[0]
+    assert item.source_url.endswith('/news/startup/')
+    assert item.structured['full_text_in_feed'] is False
+    assert item.structured['is_university_spinout'] is True
+    assert cambridge_enterprise.ENDPOINT.endswith('/feed/')

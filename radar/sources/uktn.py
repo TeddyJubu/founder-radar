@@ -34,6 +34,7 @@ INDEX = f"{BASE}/"
 MAX_ARTICLE_FETCHES = 30
 
 ARTICLE_SELECTORS = (
+    "div.js-post-content",
     "article .entry-content",
     "div.article-content",
     "div.post-content",
