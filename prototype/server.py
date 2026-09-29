@@ -173,6 +173,7 @@ def _today_block_reason(
     *,
     today: date,
     config_hash: str | None = None,
+    check_qa: bool = True,
 ) -> str | None:
     """First freshness / venture-signal reason a company cannot occupy Today.
 
@@ -188,59 +189,14 @@ def _today_block_reason(
     not a Today card. Stale watchlist rows scored before city→region existed
     would otherwise keep an Oxford spinout on Finance Yorkshire until rescore.
     """
-    from radar.config.models import STAGES, canon_enum
-    from radar.score.gates import apply_freshness_gates, evaluate_vehicle_gates
-
-    freshness = apply_freshness_gates(row, config, today=today)
-    if not freshness.passed:
-        return freshness.reason or "freshness_gate"
-    # Lasting verdicts must not reappear the *next* morning. Same-calendar-day
-    # verdicts stay on daily_review so Review Again (which only clears that
-    # table) can restore the queue without erasing Kept / not for me.
-    # Compare the ISO date prefix — morning sheet sync used to refresh
-    # updated_at and break date()-based checks.
-    try:
-        day = today.isoformat() if hasattr(today, "isoformat") else str(today)
-        decided = conn.execute(
-            "SELECT 1 FROM user_field WHERE company_id = ? AND field = 'verdict' "
-            "AND TRIM(COALESCE(value, '')) != '' "
-            "AND substr(updated_at, 1, 10) < ? LIMIT 1",
-            (_row_company_id(row), day),
-        ).fetchone()
-        if decided:
-            return "already_decided"
-    except Exception:
-        pass
-    flags = list(freshness.flags)
-    age_unknown = (not _row_value(row, "incorporated_on")) or "age_unknown" in flags
-    stage = canon_enum(_row_value(row, "stage"), STAGES)
-
-    if _is_registry_route(row["discovery_route"]):
-        if age_unknown:
-            return "age_unknown"
-        leftover = [flag for flag in flags if flag != "age_unknown"]
-        if leftover:
-            return leftover[0]
-        if not _has_registry_venture_signal(conn, _row_company_id(row)):
-            return "registry_without_venture_signal"
-    else:
-        leftover = [flag for flag in flags if flag != "age_unknown"]
-        if leftover:
-            return leftover[0]
-        if age_unknown and (stage is None or STAGES.index(stage) > STAGES.index("seed")):
-            return "maturity_unknown"
-
-    vehicle_key = _row_value(row, "vehicle_key") or _winning_vehicle_key(
-        conn, _row_company_id(row), config_hash=config_hash,
+    from radar.selection import deterministic_block_reason
+    reason = deterministic_block_reason(
+        conn, row, config, today=today, config_hash=config_hash,
     )
-    vehicle = _vehicle_by_key(config, vehicle_key)
-    if vehicle is not None and vehicle.geo_rule == "HARD" and vehicle.geo_values:
-        verdict = evaluate_vehicle_gates(row, vehicle, config)
-        if not verdict.passed and (verdict.reason or "").startswith("geography"):
-            return "geography_mismatch"
-        if "geography" in (verdict.unverified_rules or ()):
-            return "geography_unverified"
-
+    if reason:
+        return reason
+    if not check_qa:
+        return None
     from radar.qa.today import qa_state
 
     # Same rule as the Sheet, the digest and the ping (radar.qa.today.is_withheld):
@@ -628,6 +584,7 @@ def _eligible_today_company_ids(
     *,
     today: date,
     config_hash: str | None,
+    include_pending: bool = False,
 ) -> set[str]:
     """Companies that can actually appear on Today, before daily decisions.
 
@@ -635,28 +592,35 @@ def _eligible_today_company_ids(
     the completed state can distinguish "nothing surfaced" from "everything
     surfaced has been reviewed".
     """
-    sql = """SELECT c.id AS company_id, c.discovery_route, c.incorporated_on,
-                    c.country_iso2, c.hq_region, c.hq_postcode,
-                    c.companies_house_no, c.hq_city, c.total_funding_gbp,
-                    c.stage, c.on_vc_portfolio
-               FROM company c
-               JOIN score s ON s.company_id = c.id
-              WHERE s.tier IN (?, ?)
-                AND c.merged_into IS NULL"""
-    params: list[Any] = list(REVIEWABLE)
-    if config_hash:
-        sql += " AND s.config_hash = ?"
-        params.append(config_hash)
-    sql += " GROUP BY c.id"
+    hash_sql = "WHERE s.config_hash = ?" if config_hash else ""
+    sql = f"""WITH latest AS (
+        SELECT s.*, ROW_NUMBER() OVER (PARTITION BY company_id, fund_key
+          ORDER BY scored_at DESC, id DESC) rank FROM score s {hash_sql})
+        SELECT c.id AS company_id, c.discovery_route, c.incorporated_on,
+               c.country_iso2, c.hq_region, c.hq_postcode,
+               c.companies_house_no, c.hq_city, c.total_funding_gbp,
+               c.stage, c.on_vc_portfolio
+          FROM company c JOIN latest s ON s.company_id = c.id
+         WHERE s.rank = 1 AND s.tier IN (?, ?) AND s.reject_reason IS NULL
+           AND c.merged_into IS NULL GROUP BY c.id"""
+    params = [config_hash, *REVIEWABLE] if config_hash else list(REVIEWABLE)
+    from radar.selection import recommend_today_rows
     source_ids = _http_source_company_ids(conn)
     eligible: set[str] = set()
-    for row in conn.execute(sql, params):
+    # Use the same recommended vehicle as QA and the rendered card.
+    count_rows = list(conn.execute(sql, params))
+    for row in recommend_today_rows(conn, count_rows, config, config_hash=config_hash):
         if row["company_id"] not in source_ids:
             continue
         if _today_block_reason(
             conn, row, config, today=today, config_hash=config_hash,
+            check_qa=not include_pending,
         ):
             continue
+        if include_pending:
+            from radar.qa.today import qa_state
+            if qa_state(conn, row["company_id"]) == "reject":
+                continue
         eligible.add(row["company_id"])
     return eligible
 
@@ -1386,7 +1350,9 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
                  WHERE score_rank = 1 AND tier != 'reject'
                  ORDER BY fund_fit_pct DESC"""
 
-    passing: list[sqlite3.Row] = []
+    from radar.selection import recommend_today_rows
+    rows = recommend_today_rows(conn, rows, config, config_hash=config_hash)
+    passing: list[dict] = []
     for r in rows:
         if _today_block_reason(
             conn, r, config, today=today, config_hash=config_hash,
@@ -1394,12 +1360,8 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             continue
         passing.append(r)
 
-    passing.sort(key=lambda r: (
-        0 if _is_track_a_route(r["discovery_route"]) else 1,
-        -(r["priority"] or 0),
-        -(r["coverage"] or 0),
-        r["canonical_name"] or "",
-    ))
+    from radar.selection import rank_today_rows
+    passing = rank_today_rows(conn, passing, config_hash=config_hash)
 
     out = []
     for r in passing[: max(0, int(limit))]:
@@ -1443,7 +1405,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
         # home of the article URL, and the reason the card had no link to
         # anything: 20 of 20 companies on the queue have zero signal rows.
         sources = [dict(s) for s in conn.execute(
-            """SELECT source_key, source_url, first_seen
+            """SELECT source_key, source_url, external_id, first_seen
                  FROM company_source WHERE company_id = ?
                 ORDER BY first_seen DESC""",
             (r["company_id"],)) if _is_http_url(s["source_url"])]
@@ -1487,6 +1449,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "ch_number": r["companies_house_no"],
             "source_url": source["source_url"],
             "source_key": source["source_key"],
+            "source_external_id": source["external_id"],
             "age_phrase": phrase,
             "age_exact": exact,
             "ch_verified": ch_verified,
@@ -1508,6 +1471,8 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
             "also_fits": also,
             "fund_scores": fund_scores,
             "verdict": verdicts.get(r["company_id"]),
+            "recommendation_reason": r.get("recommendation_reason"),
+            "recommendation_warning": r.get("recommendation_warning"),
         })
 
     if config_hash:
@@ -1531,14 +1496,27 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
         config_hash=config_hash,
     )
 
+    all_unreviewed = _eligible_today_company_ids(
+        conn, config, today=today, config_hash=config_hash, include_pending=True,
+    )
+    daily_ids = {r["company_id"] for r in conn.execute(
+        "SELECT company_id FROM daily_review WHERE review_date = ?", (review_date,))}
+    all_unreviewed -= daily_ids
+    ready = eligible_ids - daily_ids
+    awaiting = all_unreviewed - ready
+
     return {
         "date": today.isoformat(),
         "companies": out,
+        "ready_company_ids": sorted(ready),
         "totals": {
             "reviewable": len(out),
             "total_reviewable": len(eligible_ids),
             "reviewed_today": len(reviewed_ids),
-            "remaining": max(0, len(eligible_ids) - len(reviewed_ids)),
+            "remaining": len(ready),
+            "ready_to_review": len(ready),
+            "awaiting_final_check": len(awaiting),
+            "remaining_total": len(all_unreviewed),
             "shortlist": counts.get("shortlist", 0),
             "watchlist": counts.get("watchlist", 0),
             "rejected": counts.get("reject", 0),

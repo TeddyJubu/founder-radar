@@ -172,6 +172,8 @@ class TodayCard:
     on_vc_portfolio: bool = False
     sector: str | None = None
     explanation: str | None = None
+    recommendation_reason: str | None = None
+    recommendation_warning: str | None = None
 
     def blob(self) -> str:
         """Stable serialisation — the cache key and the prompt body."""
@@ -195,6 +197,8 @@ class TodayCard:
             "on_vc_portfolio": self.on_vc_portfolio,
             "sector": self.sector,
             "explanation": self.explanation,
+            "recommendation_reason": self.recommendation_reason,
+            "recommendation_warning": self.recommendation_warning,
         }
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -833,6 +837,7 @@ def load_today_cards(
         SELECT c.id AS company_id, c.canonical_name, c.hq_city, c.hq_region,
                c.stage, c.one_liner, c.incorporated_on, c.discovery_route,
                c.website_url, c.on_vc_portfolio, c.sector, c.merged_into,
+               c.country_iso2, c.hq_postcode, c.companies_house_no, c.total_funding_gbp,
                s.fund_key, s.vehicle_key, s.tier, s.priority, s.explanation
           FROM latest s
           JOIN company c ON c.id = s.company_id
@@ -842,8 +847,16 @@ def load_today_cards(
         """,
         (*REVIEWABLE, *hash_params, *company_params, *decision_params, *TRACK_A),
     )
+    from radar.selection import rank_today_rows, deterministic_block_reason, recommend_today_rows
+    cfg = cfg or _config_for(db, None)
+    rows = recommend_today_rows(db, rows, cfg, config_hash=config_hash)
     cards: list[TodayCard] = []
+    eligible_rows = []
     for row in rows:
+        if company_id is None and deterministic_block_reason(
+            db, row, cfg or _config_for(db, None), today=date.today(), config_hash=config_hash,
+        ):
+            continue
         source_key, source_url = _http_source(db, row["company_id"])
         if not source_url:
             continue
@@ -873,15 +886,20 @@ def load_today_cards(
             on_vc_portfolio=bool(_row_get(row, "on_vc_portfolio") or 0),
             sector=_row_get(row, "sector"),
             explanation=_row_get(row, "explanation"),
+            recommendation_reason=_row_get(row, "recommendation_reason"),
+            recommendation_warning=_row_get(row, "recommendation_warning"),
         )
         if company_id is None:
             cached = cached_check(db, card)
             if cached is not None and cached.verdict == "reject":
                 continue
         cards.append(card)
-        if len(cards) >= max(1, int(limit)):
-            break
-    return cards
+        eligible_rows.append(row)
+    if company_id is not None:
+        return cards[:max(1, int(limit))]
+    by_id = {card.company_id: card for card in cards}
+    ranked = rank_today_rows(db, eligible_rows, config_hash=config_hash)
+    return [by_id[row["company_id"]] for row in ranked[:max(1, int(limit))]]
 
 
 # ----------------------------------------------------------------- runner
@@ -1047,8 +1065,6 @@ def run_today_qa(
         report.warnings.append(f"today QA skipped: {report.aborted}")
         log.warning("today QA could not load cards: %s", exc)
         return report
-    cards = candidates[: max(1, int(limit))]
-    report.uncovered = len(candidates) - len(cards)
 
     active: TodayChecker | None = None
     if use_hermes:
@@ -1062,6 +1078,17 @@ def run_today_qa(
 
     rules_only = active is None and rules_only_mode(use_hermes=use_hermes)
     is_hermes = bool(active is not None and getattr(active, "name", "") == "hermes")
+    # Completed current approvals remain in the report, but never spend the
+    # budget intended for unfinished checks. check_one still visits them so
+    # provenance validation can veto an expired or newly dead source link.
+    completed, unfinished = [], []
+    for card in candidates:
+        cached = cached_check(db, card)
+        target = completed if (cached and cached.verdict == "pass"
+                               and _reusable(cached, rules_only=rules_only)) else unfinished
+        target.append(card)
+    cards = completed + unfinished[:max(1, int(limit))]
+    report.uncovered = max(0, len(unfinished) - max(1, int(limit)))
     report.cards = len(cards)
     report.rules_only = rules_only
     if cards and active is None:

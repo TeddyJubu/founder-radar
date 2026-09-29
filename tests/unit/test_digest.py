@@ -423,7 +423,10 @@ def test_digest_cap_is_read_from_settings(db):
 
 def test_unknown_incorporation_date_does_not_break_the_median(db):
     seed_run(db, shortlisted=1)
-    cid = seed_company(db, "Ageless", incorporated_on=None)
+    cid = seed_company(db, "Ageless", incorporated_on=None, stage="pre_seed")
+    # Unknown incorporation is allowed for a known early-stage signal company;
+    # a registry-only shell with unknown age cannot earn a Today approval.
+    db.execute("UPDATE company SET discovery_route='news' WHERE id=?", (cid,))
     seed_score(db, cid, priority=88.0)
     text = render_digest(db, on_date=DAY)
     assert "age unknown" in text
