@@ -297,8 +297,13 @@ class Config(BaseModel):
         """Stable hash over everything that can change a score.
 
         `errors` is excluded: a transient sheet typo must not silently
-        re-partition the score table.
+        re-partition the score table. Source notes are operational health
+        output, not score inputs; a routine health update must not invalidate
+        scores and completed QA. Source identity, track and enablement remain.
         """
-        payload = self.model_dump(mode="json", exclude={"errors"})
+        payload = self.model_dump(
+            mode="json",
+            exclude={"errors": True, "sources": {"__all__": {"note"}}},
+        )
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
