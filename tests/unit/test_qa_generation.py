@@ -144,6 +144,67 @@ def test_rescore_does_not_remove_a_cached_rejection_veto(db):
         name = 'hermes'
         def review(self, checked):
             raise AssertionError('Cached rejection must stay a veto')
-    report = run_today_qa(db, cfg, checker=Checker())
-    assert report.cached == 1 and report.rejected == 1
+    from radar.qa.today import check_one
+    result = check_one(db, card, checker=Checker())
+    assert result.verdict == 'reject'
     assert qa_state(db, cid) == 'reject'
+
+
+def test_decided_cards_do_not_consume_the_qa_limit_but_remain_available_by_id(db):
+    from datetime import date
+    ids = seed_companies(db, count=25, shortlist=25)
+    today = date.today().isoformat()
+    for cid in ids[:12]:
+        db.execute("INSERT INTO user_field(company_id,field,value,updated_at) VALUES (?,?,?,?)",
+                   (cid, 'verdict', 'worth contacting', '2020-01-01T00:00:00Z'))
+    for cid in ids[12:24]:
+        db.execute("INSERT INTO daily_review(company_id,review_date,verdict,reviewed_at) VALUES (?,?,?,?)",
+                   (cid, today, 'unsure', today+'T00:00:00Z'))
+    cfg = default_config()
+    assert [card.company_id for card in load_today_cards(db, cfg)] == [ids[24]]
+    decided_card = load_today_cards(db, cfg, company_id=ids[0])[0]
+    record_check(db, decided_card, TodayCheckResult(verdict='pass', checker='rules'))
+    assert qa_state(db, ids[0]) == 'pass'
+
+    class Checker:
+        name = 'hermes'
+        calls = []
+        def review(self, card):
+            self.calls.append(card.company_id)
+            return TodayCheckResult(verdict='pass', checker='hermes')
+    checker = Checker()
+    report = run_today_qa(db, cfg, checker=checker)
+    assert checker.calls == [ids[24]]
+    assert report.cards == report.passed == 1 and report.uncovered == 0
+    assert qa_state(db, ids[24]) == 'pass'
+
+
+def test_review_again_can_recheck_a_same_day_verdict_after_marker_is_cleared(db):
+    from datetime import date
+    cid = seed_companies(db, count=1, shortlist=1)[0]
+    today = date.today().isoformat()
+    db.execute("INSERT INTO user_field(company_id,field,value,updated_at) VALUES (?,?,?,?)",
+               (cid, 'verdict', 'unsure', today+'T00:00:00Z'))
+    assert [card.company_id for card in load_today_cards(db, default_config())] == [cid]
+
+
+def test_exact_cached_rejects_do_not_consume_qa_slots_and_changed_cards_return(db):
+    ids = seed_companies(db, count=25, shortlist=25)
+    cfg = default_config()
+    for cid in ids[:24]:
+        card = load_today_cards(db, cfg, company_id=cid)[0]
+        record_check(db, card, TodayCheckResult(verdict='reject', checker='hermes'))
+    class Checker:
+        name = 'hermes'
+        calls = []
+        def review(self, card):
+            self.calls.append(card.company_id)
+            return TodayCheckResult(verdict='pass', checker='hermes')
+    checker = Checker()
+    report = run_today_qa(db, cfg, checker=checker)
+    assert checker.calls == [ids[24]]
+    assert report.cards == report.passed == 1
+    assert qa_state(db, ids[0]) == 'reject'
+    assert load_today_cards(db, cfg, company_id=ids[0])[0].company_id == ids[0]
+    db.execute("UPDATE company SET one_liner='New evidence warrants a fresh review' WHERE id=?", (ids[0],))
+    assert [card.company_id for card in load_today_cards(db, cfg)] == [ids[0], ids[24]]

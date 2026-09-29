@@ -234,7 +234,8 @@ def test_every_reader_shows_the_current_vehicle(db, config, bulk):
     kept = build_kept(db.conn)["worth contacting"]
     assert [k["vehicle"] for k in kept] == [current_name]
 
-    cards = load_today_cards(db, config)
+    # A Kept company leaves the QA queue; explicit lookup still verifies its route.
+    cards = load_today_cards(db, config, company_id=cid)
     assert [c.vehicle_key for c in cards] == [current]
 
 

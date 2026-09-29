@@ -46,6 +46,7 @@ import shutil
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -790,13 +791,29 @@ def load_today_cards(
     Shortlist, Track A watchlist, and registry watchlist rows that already
     have a venture signal (SH01 / grant / press / a non-CH source). Registry
     shells without a venture signal are skipped so we do not spend a Hermes
-    call on a card `_today_block_reason` would already hide.
+    call on a card `_today_block_reason` would already hide. Reviewed companies
+    and exact-snapshot cached rejects do not consume the QA limit. Explicit
+    company lookups keep those records available for approval and history.
     """
     config_hash = _active_config_hash(db)
     hash_sql = "AND s.config_hash = ?" if config_hash else ""
     hash_params: tuple[Any, ...] = (config_hash,) if config_hash else ()
     company_sql = "AND s.company_id = ?" if company_id is not None else ""
     company_params = (company_id,) if company_id is not None else ()
+    # Queue QA shares Today review decisions. Explicit identity lookups bypass
+    # these filters so Kept and historical/current approval checks still work.
+    decision_sql = ""
+    decision_params: tuple[Any, ...] = ()
+    if company_id is None:
+        day = date.today().isoformat()
+        decision_sql = """AND NOT EXISTS (
+            SELECT 1 FROM user_field u WHERE u.company_id = s.company_id
+              AND u.field = 'verdict' AND TRIM(COALESCE(u.value, '')) != ''
+              AND substr(u.updated_at, 1, 10) < ?)
+            AND NOT EXISTS (
+            SELECT 1 FROM daily_review dr WHERE dr.company_id = s.company_id
+              AND dr.review_date = ?)"""
+        decision_params = (day, day)
     track_sql = ",".join("?" * len(TRACK_A))
     rows = _query(
         db,
@@ -811,6 +828,7 @@ def load_today_cards(
            WHERE s.tier IN (?, ?)
              {hash_sql}
              {company_sql}
+             {decision_sql}
         )
         SELECT c.id AS company_id, c.canonical_name, c.hq_city, c.hq_region,
                c.stage, c.one_liner, c.incorporated_on, c.discovery_route,
@@ -822,7 +840,7 @@ def load_today_cards(
          ORDER BY CASE WHEN c.discovery_route IN ({track_sql}) THEN 0 ELSE 1 END,
                   s.priority DESC, c.canonical_name
         """,
-        (*REVIEWABLE, *hash_params, *company_params, *TRACK_A),
+        (*REVIEWABLE, *hash_params, *company_params, *decision_params, *TRACK_A),
     )
     cards: list[TodayCard] = []
     for row in rows:
@@ -835,7 +853,7 @@ def load_today_cards(
         ):
             continue
         geo_rule, geo_values = _vehicle_geo(cfg, _row_get(row, "vehicle_key"))
-        cards.append(TodayCard(
+        card = TodayCard(
             company_id=row["company_id"],
             name=row["canonical_name"],
             city=_row_get(row, "hq_city"),
@@ -855,7 +873,12 @@ def load_today_cards(
             on_vc_portfolio=bool(_row_get(row, "on_vc_portfolio") or 0),
             sector=_row_get(row, "sector"),
             explanation=_row_get(row, "explanation"),
-        ))
+        )
+        if company_id is None:
+            cached = cached_check(db, card)
+            if cached is not None and cached.verdict == "reject":
+                continue
+        cards.append(card)
         if len(cards) >= max(1, int(limit)):
             break
     return cards
