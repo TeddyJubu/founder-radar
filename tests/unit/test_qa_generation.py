@@ -42,3 +42,66 @@ def test_unchanged_rules_pass_is_reusable_and_changed_card_is_rechecked(db):
     checked = run_today_qa(db, cfg, use_hermes=False)
     assert checked.cached == 0 and checked.passed == 1
     assert qa_state(db, cid) == "pass"
+
+
+def _snapshot_fixture(db):
+    cid = seed_companies(db, count=1, shortlist=1)[0]
+    db.execute("UPDATE score SET scored_at='2026-08-03T06:00:00Z' WHERE company_id=?", (cid,))
+    db.execute("""INSERT INTO score_snapshot
+       (company_id,fund_key,snapshot_date,vehicle_key,config_hash,fund_fit_pct,
+        coverage,discovery_edge,priority,tier,scored_at)
+       SELECT company_id,fund_key,'2026-08-03',vehicle_key,config_hash,fund_fit_pct,
+        coverage,discovery_edge,priority,tier,scored_at FROM score WHERE company_id=?""", (cid,))
+    db.execute("DELETE FROM today_check WHERE company_id=?", (cid,))
+    return cid
+
+
+def test_approved_monday_snapshot_survives_a_later_missing_current_score(db):
+    from datetime import date
+    from radar.render.digest import _shortlist
+    cid = _snapshot_fixture(db)
+    card = load_today_cards(db, default_config())[0]
+    record_check(db, card, TodayCheckResult(verdict='pass', checker='rules'),
+                 checked_at='2026-08-03T06:00:00Z')
+    db.execute("DELETE FROM score WHERE company_id=?", (cid,))
+    assert qa_state(db, cid) == 'incomplete'
+    rows = _shortlist(db, date(2026,8,3), date(2026,8,3))
+    assert [row['company_id'] for row in rows] == [cid]
+
+
+def test_unapproved_historical_snapshot_stays_hidden(db):
+    from datetime import date
+    from radar.render.digest import _shortlist
+    cid = _snapshot_fixture(db)
+    # A later unrelated card approval is not proof this snapshot passed QA.
+    db.execute("UPDATE company SET one_liner='Changed company facts' WHERE id=?", (cid,))
+    db.execute("UPDATE score SET scored_at='2026-08-05T06:00:00Z' WHERE company_id=?", (cid,))
+    card = load_today_cards(db, default_config())[0]
+    record_check(db, card, TodayCheckResult(verdict='pass', checker='rules'),
+                 checked_at='2026-08-05T06:00:00Z')
+    assert _shortlist(db, date(2026,8,3), date(2026,8,3)) == []
+
+
+def test_latest_reject_vetoes_an_approved_historical_snapshot(db):
+    from datetime import date
+    from radar.render.digest import _shortlist
+    cid = _snapshot_fixture(db)
+    card = load_today_cards(db, default_config())[0]
+    record_check(db, card, TodayCheckResult(verdict='pass', checker='rules'),
+                 checked_at='2026-08-03T06:00:00Z')
+    db.execute("UPDATE company SET one_liner='IPO filing' WHERE id=?", (cid,))
+    new = load_today_cards(db, default_config())[0]
+    record_check(db, new, TodayCheckResult(verdict='reject', checker='rules'),
+                 checked_at='2026-08-05T06:00:00Z')
+    assert _shortlist(db, date(2026,8,3), date(2026,8,3)) == []
+
+
+def test_unreleased_snapshot_table_gains_approval_column_without_trusting_old_rows(db):
+    cid = _snapshot_fixture(db)
+    db.execute('ALTER TABLE score_snapshot DROP COLUMN approved_snapshot_hash')
+    db.execute("DELETE FROM _meta WHERE key='migration:006_snapshot_qa_approval.sql'")
+    db.migrate()
+    assert db.scalar('SELECT approved_snapshot_hash FROM score_snapshot WHERE company_id=?', (cid,)) is None
+    from datetime import date
+    from radar.render.digest import _shortlist
+    assert _shortlist(db, date(2026,8,3), date(2026,8,3)) == []

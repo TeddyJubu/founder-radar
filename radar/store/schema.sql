@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS score_snapshot (
   priority       REAL NOT NULL,
   tier           TEXT NOT NULL,
   components     TEXT,            -- JSON [[key, label, sub_score, weight, evidence], ...]
+  approved_snapshot_hash TEXT,    -- exact Today card with a completed QA pass
   scored_at      TEXT NOT NULL,
   PRIMARY KEY (company_id, fund_key, snapshot_date)
 );

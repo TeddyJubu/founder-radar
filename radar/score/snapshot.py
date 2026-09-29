@@ -143,3 +143,29 @@ def replace_day(db: Any, day: str, rows: Sequence[tuple]) -> None:
             db.executemany(_INSERT, rows)
 
     _guarded(db, work)
+
+
+def approve_current(db: Any, card: Any, checked_at: str) -> None:
+    """Approve only frozen rows matching the exact currently scored route.
+
+    Called after a real completed check of the current card, never when scoring
+    merely creates a snapshot. Rescoring replaces the snapshot and clears proof.
+    """
+    try:
+        db.execute(
+            """UPDATE score_snapshot SET approved_snapshot_hash = ?
+               WHERE company_id = ? AND fund_key = ? AND vehicle_key IS ?
+                 AND EXISTS (
+                   SELECT 1 FROM score s
+                    WHERE s.company_id = score_snapshot.company_id
+                      AND s.fund_key = score_snapshot.fund_key
+                      AND s.vehicle_key IS score_snapshot.vehicle_key
+                      AND s.config_hash = score_snapshot.config_hash
+                      AND s.scored_at = score_snapshot.scored_at
+                      AND s.scored_at <= ? AND s.tier = 'shortlist')""",
+            (card.snapshot_hash(), card.company_id, card.fund_key,
+             card.vehicle_key, checked_at))
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc) and "no such column" not in str(exc):
+            raise
+        log.warning("snapshot QA approval unavailable; historical rows withheld")

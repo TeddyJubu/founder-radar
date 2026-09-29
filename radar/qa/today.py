@@ -537,6 +537,13 @@ def record_check(
         ),
     )
 
+    if _state_of(result.verdict, result.checker) == "pass":
+        current = load_today_cards(db, _config_for(db, None),
+                                   company_id=card.company_id, limit=1)
+        if current and current[0].snapshot_hash() == card.snapshot_hash():
+            from radar.score.snapshot import approve_current
+            approve_current(db, card, checked_at or now_iso())
+
 
 def cached_check(db: Any, card: TodayCard) -> TodayCheckResult | None:
     try:
@@ -617,6 +624,16 @@ def qa_state(db: Any, company_id: str) -> str | None:
         if changed and changed["stamp"] and changed["stamp"] > row["checked_at"]:
             return "incomplete"
     return state
+
+
+def historical_pass(db: Any, company_id: str, approved_hash: str | None) -> bool:
+    """Proof for this frozen score, while retaining the latest rejection veto."""
+    if not approved_hash or is_rejected(db, company_id):
+        return False
+    row = _one(db, "SELECT verdict, checker FROM today_check "
+               "WHERE company_id = ? AND snapshot_hash = ?",
+               (company_id, approved_hash))
+    return bool(row and _state_of(row["verdict"], row["checker"]) == "pass")
 
 
 def is_withheld(db: Any, company_id: str) -> bool:

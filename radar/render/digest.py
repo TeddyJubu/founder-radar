@@ -402,7 +402,7 @@ _ENTRY_SQL = """
 
 def _shortlist(db, start: date, end: date) -> list[dict]:
     """One row per company — its best-scoring fund wins the digest slot."""
-    from radar.qa.today import is_withheld
+    from radar.qa.today import historical_pass, is_withheld
 
     seen: set[str] = set()
     out: list[dict] = []
@@ -410,11 +410,15 @@ def _shortlist(db, start: date, end: date) -> list[dict]:
     params = (SHORTLIST_TIER, start.isoformat(), end.isoformat())
     rows = []
     if "score_snapshot" in db.tables():
+        snapshot_columns = {r["name"] for r in db.query("PRAGMA table_info(score_snapshot)")}
+        approval_sql = "s.approved_snapshot_hash" if "approved_snapshot_hash" in snapshot_columns else "NULL"
         historical_sql = _ENTRY_SQL.replace("s.id              AS score_id", "NULL              AS score_id")
         historical_sql = historical_sql.replace("s.explanation     AS explanation", "NULL              AS explanation")
         historical_sql = historical_sql.replace("s.flags           AS flags", "NULL              AS flags")
         historical_sql = historical_sql.replace("FROM score s", "FROM score_snapshot s")
         historical_sql = historical_sql.replace("s.scored_at       AS scored_at,", "s.scored_at       AS scored_at, s.components AS snapshot_components,")
+        historical_sql = historical_sql.replace("s.components AS snapshot_components,",
+            f"s.components AS snapshot_components, {approval_sql} AS approved_snapshot_hash,")
         rows = [dict(row) for row in db.query(historical_sql, params)]
     # A legacy date without snapshots can still use its untouched current rows.
     snapshot_days = {str(row["scored_at"])[:10] for row in rows}
@@ -427,7 +431,10 @@ def _shortlist(db, start: date, end: date) -> list[dict]:
 
         if row["company_id"] in seen:
             continue
-        if is_withheld(db, row["company_id"]):    # rejected, or QA never completed
+        if "snapshot_components" in row:
+            if not historical_pass(db, row["company_id"], row.get("approved_snapshot_hash")):
+                continue
+        elif is_withheld(db, row["company_id"]):
             continue
         seen.add(row["company_id"])
         out.append(dict(row))
