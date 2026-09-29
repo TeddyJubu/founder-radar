@@ -482,3 +482,20 @@ def render(cfg, sh, ws):                       # sh = Spreadsheet, ws = Workshee
 | ⑦ Render | Rows stay `synced = 0`; next run upserts idempotently | ✅ |
 
 **There is no failure mode in this pipeline that stops the daily run.** That is a design requirement, not an aspiration, and the chaos tests in `09-test-plan.md` prove it.
+
+### Audit safety checks (September 2026)
+
+A dry run previews an in-memory copy of the database; fetch history, config,
+companies and scores cannot change the saved database. It still reads sources,
+but it does not publish or save review decisions.
+
+Article evidence must contain the named company or refer to it in the same
+sentence. Funding amounts and stages must appear in their supporting quote;
+founder quotes must name the person. Unrelated verbatim quotes are insufficient.
+These are conservative text checks, not a proof of every claim's meaning.
+Unsupported fields remain unknown and are marked for review.
+
+Source fetching compares HTML structure fingerprints with their saved baseline.
+Each VC portfolio site has its own baseline; failures are reported as degraded
+while successful sites remain usable. Pages and responses requesting noindex
+are excluded before extraction.

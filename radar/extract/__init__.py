@@ -152,6 +152,11 @@ def extract_html(
 ) -> Extraction:
     ctx = ctx or ExtractContext()
 
+    from selectolax.parser import HTMLParser
+    from radar.sources._common import meta_noindex
+    if meta_noindex(HTMLParser(html)):
+        return blank(prefilter_reason="noindex", extraction_method="prefilter")
+
     # ---- ① the free cascade ------------------------------------------------
     pre = prefilter(url, title, html)
     if not pre.ok:

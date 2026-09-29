@@ -551,7 +551,7 @@ def test_pipeline_routes_portfolio_listings_through_the_denylist(db, monkeypatch
     monkeypatch.setattr("radar.pipeline.enrich_stage", lambda *a, **k: {})
     # No network, no sheet, no Telegram.
     result = run_pipeline(db, config=default_config(), http=object(),
-                          gateway=None, use_llm=False, dry_run=True)
+                          gateway=None, use_llm=False, dry_run=False)
 
     assert result.status in ("ok", "partial")
     assert db.one("SELECT on_vc_portfolio FROM company WHERE id = ?",
@@ -624,7 +624,7 @@ def test_same_run_discovery_is_flagged_before_scoring(db, monkeypatch):
     )
 
     result = run_pipeline(db, config=default_config(), http=object(),
-                          gateway=None, use_llm=False, dry_run=True)
+                          gateway=None, use_llm=False, dry_run=False)
 
     assert result.status in ("ok", "partial")
     row = db.one("SELECT id, on_vc_portfolio, canonical_name FROM company "

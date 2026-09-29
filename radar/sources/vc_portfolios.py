@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from radar.fetch.layout import LayoutChanged
+from radar.fetch.layout import LayoutChanged, check_fingerprint
 from radar.sources._common import (
     absolute_url,
     attr_of,
@@ -108,10 +108,16 @@ class VcPortfoliosAdapter:
                 if not resp.ok:
                     failures.append(f"{site.slug}: HTTP {resp.status}")
                     continue
-                items.extend(self.parse(resp.text, site=site))
+                parsed = self.parse(resp.text, site=site)
+                if ctx.db is not None:
+                    check_fingerprint(ctx.db, f"{self.key}:{site.slug}", self.last_fingerprint)
+                items.extend(parsed)
             except Exception as exc:                     # noqa: BLE001
                 # One VC's site being down is not this source failing.
                 failures.append(f"{site.slug}: {exc}")
+        # Each site has its own structure; never compare whichever site
+        # happened to be fetched last with a different site's fingerprint.
+        self.last_fingerprint = None
         self.last_failures = failures
         if not items:
             raise LayoutChanged(

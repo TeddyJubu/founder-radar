@@ -1191,7 +1191,19 @@ def enrich_stage(db: Db, cfg: Any, http: Any, *, api_key: str | None = None,
 # -------------------------------------------------------------------- the run
 
 
-def run_pipeline(
+def run_pipeline(db: Db, **kwargs) -> RunResult:
+    """Preview on an in-memory snapshot, including fetch and config writes."""
+    if not kwargs.get("dry_run", False):
+        return _run_pipeline(db, **kwargs)
+    preview = Db(":memory:")
+    try:
+        db.conn.backup(preview.conn)
+        return _run_pipeline(preview, **kwargs)
+    finally:
+        preview.close()
+
+
+def _run_pipeline(
     db: Db,
     *,
     fund_key: str | None = None,
@@ -1210,7 +1222,7 @@ def run_pipeline(
     """The daily run: fetch → extract → resolve → enrich → score → render.
 
     Every stage is individually wrapped so no single failure ends the run.
-    `dry_run` skips the sheet write and the run-log row. `gateway=None` skips
+    `dry_run` runs against a disposable database snapshot and skips publishing. `gateway=None` skips
     the sheet entirely (tests, `--dry-run`); `http=None` builds a real client.
     """
     from radar.config.loader import load_runtime_config

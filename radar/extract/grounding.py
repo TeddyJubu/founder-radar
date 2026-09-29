@@ -5,8 +5,10 @@ After parsing, assert every evidence quote appears verbatim in the source text
 the fields that quote was supporting and log it. This costs ~30 output tokens
 and catches a large fraction of extraction errors with no AI involved.
 
-`test_no_hallucinations` requires a rate of exactly 0, which this module makes
-true by construction: an ungrounded quote never survives into the record.
+Verbatim text is necessary, but alone does not prove a claim. Additional
+checks bind names, amounts and stages to their own supporting passage.
+Paraphrased descriptions still require human review; these checks do not prove
+arbitrary prose is true.
 """
 
 from __future__ import annotations
@@ -75,6 +77,46 @@ QUOTE_BINDINGS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _mentions(value: str | None, passage: str) -> bool:
+    if not value:
+        return False
+    needle = re.sub(r"\W+", " ", normalise_ws(value)).strip().casefold()
+    haystack = re.sub(r"\W+", " ", normalise_ws(passage)).strip().casefold()
+    return bool(needle) and f" {needle} " in f" {haystack} "
+
+
+def _supports(quote_field: str, data: dict, quote: str, source_text: str) -> bool:
+    """Conservative lexical checks; absence of proof is left unknown."""
+    if quote_field == "evidence_quote_company":
+        return _mentions(data.get("company_name"), quote)
+    # Short extracted spans may omit the subject. Only expand to their own
+    # sentence, never borrow the company name from elsewhere in the article.
+    source = normalise_ws(source_text)
+    needle = normalise_ws(quote)
+    passages = [sentence for sentence in re.split(r"(?<=[.!?])\s+", source)
+                if needle in sentence]
+    if not any(_mentions(data.get("company_name"), passage) for passage in passages):
+        return False
+    if quote_field == "evidence_quote_amount":
+        from radar.extract.heuristic import MONEY, _parse_money
+        money = [_parse_money(match) for match in MONEY.finditer(quote)]
+        for field, currency in (("amount_raised_gbp", "GBP"), ("grant_amount_gbp", "GBP"),
+                                ("amount_original", data.get("amount_currency"))):
+            value = data.get(field)
+            if value is not None and not any(c == currency and abs(v-value) <= max(0.01, abs(value)*1e-8) for v,c in money):
+                return False
+        return True
+    if quote_field == "evidence_quote_stage":
+        aliases = {"pre_seed": ("pre seed", "pre-seed"), "series_a": ("series a",),
+                   "series_b_plus": ("series b", "series c", "series d"),
+                   "seed": ("seed",), "idea": ("idea",), "growth": ("growth",)}
+        return any(_mentions(alias, quote) for alias in aliases.get(data.get("stage"), ()))
+    if quote_field == "evidence_quote_spinout":
+        return (bool(re.search(r"spin[ -]?(?:out|off)", quote, re.I))
+                and (not data.get("university_name") or _mentions(data["university_name"], quote)))
+    return False
+
+
 @dataclass
 class GroundingReport:
     extraction: Extraction
@@ -105,7 +147,7 @@ def ground(extraction: Extraction, source_text: str, *, source_url: str | None =
 
         if quote:
             checked += 1
-            if appears_verbatim(quote, source_text):
+            if appears_verbatim(quote, source_text) and _supports(quote_field, data, quote, source_text):
                 continue
             failed += 1
             log.warning(
@@ -128,7 +170,7 @@ def ground(extraction: Extraction, source_text: str, *, source_url: str | None =
         quote = founder.get("evidence_quote")
         if quote:
             checked += 1
-            if appears_verbatim(quote, source_text):
+            if appears_verbatim(quote, source_text) and _mentions(founder.get("name"), quote):
                 kept_founders.append(founder)
                 continue
             failed += 1

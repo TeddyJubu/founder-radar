@@ -142,6 +142,13 @@ class HttpClient:
                 self._backoff(attempt, r.headers.get("Retry-After"))
                 continue
 
+            from radar.sources._common import header_noindex, meta_noindex
+            if header_noindex(r.headers):
+                raise RobotsDenied(f"X-Robots-Tag noindex: {r.url}")
+            if "html" in r.headers.get("content-type", "").lower():
+                from selectolax.parser import HTMLParser
+                if meta_noindex(HTMLParser(r.text)):
+                    raise RobotsDenied(f"HTML meta noindex: {r.url}")
             return Response(str(r.url), r.status_code, r.text, dict(r.headers),
                             from_cache=r.status_code == 304)
 
