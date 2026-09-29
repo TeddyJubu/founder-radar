@@ -82,3 +82,8 @@
 		format console
 	}
 }
+
+# Hermes WebUI for Hermex (phone / browser). Password auth lives in the
+# app (HERMES_WEBUI_PASSWORD) — do not add Caddy basic_auth here.
+# Fragment is written by ops on the box; import is a no-op until present.
+import /etc/caddy/hermes-webui.caddy

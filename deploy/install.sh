@@ -375,6 +375,9 @@ https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
     apt-get update -qq && apt-get install -y -qq caddy
   fi
   install -m 644 "$HERE/Caddyfile" /etc/caddy/Caddyfile
+  if [ -f "$HERE/hermes-webui.caddy" ]; then
+    install -m 644 "$HERE/hermes-webui.caddy" /etc/caddy/hermes-webui.caddy
+  fi
   # Teaching guide static build (Vite base `/guide/`). Optional: tree may be
   # absent until someone runs `cd guide && npm run build` and syncs dist/.
   if [ -d "$ROOT/guide/dist" ]; then

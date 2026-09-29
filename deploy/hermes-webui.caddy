@@ -1,0 +1,18 @@
+# Hermes WebUI for Hermex (phone / browser client).
+# Password auth is inside the app (HERMES_WEBUI_PASSWORD on the box).
+# Do NOT add Caddy basic_auth here — Hermex uses the webui password field.
+webui.srv1821489.hstgr.cloud {
+	encode gzip
+	reverse_proxy 127.0.0.1:8788
+	header {
+		Cache-Control "no-store"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	log {
+		output file /var/log/caddy/hermes-webui.log
+		format console
+	}
+}
