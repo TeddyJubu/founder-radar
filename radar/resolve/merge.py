@@ -5,7 +5,10 @@ The rules (05-pipeline §4.3):
 1. `winner.first_seen = min(a, b)` — preserved, never lost
 2. `winner.last_seen  = max(a, b)`
 3. re-point every `observation`, `identifier`, `signal`, `founder`,
-   `company_source` and `user_field` row to the winner
+   `company_source`, `user_field`, `daily_review` and `today_check` row to the
+   winner. The last three hold decisions (a verdict, a same-day review marker,
+   a Today QA veto): when both companies made the same decision the NEWEST one
+   survives, so a company rejected today cannot come back because it was merged.
 4. `loser.merged_into = winner.id` — a tombstone, never a delete
 5. insert a `merge_event` with the rule, the score and the exact evidence
 6. the loser's name survives as an `identifier(kind='alias')`
@@ -22,6 +25,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Iterable, Mapping, Sequence
 
 from radar.store.db import new_id, now_iso
@@ -38,7 +42,19 @@ MOVABLE: tuple[tuple[str, tuple[str, ...], tuple[str, ...] | None], ...] = (
     ("company_source", ("company_id", "source_key", "external_id"),
      ("source_key", "external_id")),
     ("user_field", ("company_id", "field"), ("field",)),
+    ("daily_review", ("company_id", "review_date"), ("review_date",)),
+    ("today_check", ("company_id", "snapshot_hash"), ("snapshot_hash",)),
 )
+
+# Tables that hold a person's or a checker's DECISION, and the column that says
+# when it was made. When the loser and the winner both hold the same decision
+# (same field / review day / snapshot) the newer one survives instead of the
+# winner's automatically winning (H-08).
+DECISION_TIME: dict[str, str] = {
+    "user_field": "updated_at",
+    "daily_review": "reviewed_at",
+    "today_check": "checked_at",
+}
 
 # Filled on the winner only where the winner is NULL: a merge adds knowledge,
 # it never overwrites it. `total_funding_gbp` is in here precisely because NULL
@@ -236,6 +252,34 @@ def _row_dict(row) -> dict[str, Any]:
     return {k: row[k] for k in row.keys()}
 
 
+def _instant(value: Any) -> datetime | None:
+    """A stored decision time as a timezone-aware instant.
+
+    The stores disagree on format: the Today UI stamps local wall-clock time
+    (`2026-09-30T10:10:00`), the sheet sync and the QA stamp UTC with a `Z`.
+    As strings the two do not order correctly, so a naive stamp is read as
+    local time, which is what wrote it.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if text[-1:] in ("Z", "z"):
+        text = text[:-1] + "+00:00"
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return moment.astimezone() if moment.tzinfo is None else moment
+
+
+def _decided_later(challenger: Any, incumbent: Any) -> bool:
+    """True only when `challenger` is strictly newer. A tie keeps the incumbent."""
+    a, b = _instant(challenger), _instant(incumbent)
+    if a is not None and b is not None:
+        return a > b
+    return str(challenger or "") > str(incumbent or "")
+
+
 def merge_companies(db, winner_id: str, loser_id: str, *, rule: str,
                     score: float | None = None,
                     evidence: Mapping[str, Any] | None = None,
@@ -304,15 +348,27 @@ def _move_rows(db, winner_id: str, loser_id: str, ev: dict[str, Any]) -> None:
         for row in rows:
             data = _row_dict(row)
             collides = False
+            rival = None
             if unique_cols:
                 where = " AND ".join(f"{c}=?" for c in unique_cols)
-                hit = db.one(
-                    f"SELECT 1 FROM {table} WHERE company_id=? AND {where}",
+                rival = db.one(
+                    f"SELECT * FROM {table} WHERE company_id=? AND {where}",
                     [winner_id, *[data[c] for c in unique_cols]],
                 )
-                collides = hit is not None
+                collides = rival is not None
             pk_where = " AND ".join(f"{c}=?" for c in pk_cols)
             pk_values = [data[c] for c in pk_cols]
+            if collides and table in DECISION_TIME:
+                when = DECISION_TIME[table]
+                if _decided_later(data[when], rival[when]):
+                    # The loser's decision is the newer one: the winner's row
+                    # goes (recorded, so unmerge can restore it) and the
+                    # loser's takes its place through the ordinary move below.
+                    rival_data = _row_dict(rival)
+                    db.execute(f"DELETE FROM {table} WHERE {pk_where}",
+                               [rival_data[c] for c in pk_cols])
+                    ev["deleted"].append({"table": table, "row": rival_data})
+                    collides = False
             if collides:
                 db.execute(f"DELETE FROM {table} WHERE {pk_where}", pk_values)
                 ev["deleted"].append({"table": table, "row": data})

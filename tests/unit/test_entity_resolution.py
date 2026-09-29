@@ -202,3 +202,159 @@ def test_duplicate_audit_returns_zero_rows(db):
                          "AND norm_key = ? AND id != 'planted'", (live["norm_key"],))
     merge_companies(db, survivor, "planted", rule="test", score=99.0)
     assert duplicate_audit(db) == []
+
+
+# ------------------------- H-08: review and QA decisions must survive a merge
+
+DAY = "2026-09-30"
+DECISION_TABLES = ("user_field", "daily_review", "today_check")
+
+
+def _pair(db):
+    a = upsert_record(db, Record(name="Acme Robotics"), source_key="t",
+                      source_url="https://a", external_id="a")
+    b = upsert_record(db, Record(name="Beta Analytics"), source_key="t",
+                      source_url="https://b", external_id="b")
+    return a.company_id, b.company_id
+
+
+def _verdict(db, cid, verdict, at, field="verdict"):
+    db.execute("INSERT INTO user_field(company_id, field, value, updated_at) "
+               "VALUES (?,?,?,?)", (cid, field, verdict, at))
+
+
+def _review(db, cid, verdict, at, day=DAY):
+    db.execute("INSERT INTO daily_review(company_id, review_date, verdict, reviewed_at) "
+               "VALUES (?,?,?,?)", (cid, day, verdict, at))
+
+
+def _qa(db, cid, verdict, at, snapshot="snap"):
+    db.execute(
+        "INSERT INTO today_check(company_id, snapshot_hash, verdict, reason, summary, "
+        "checker, prompt_version, raw_text, checked_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        (cid, f"{cid}:{snapshot}", verdict,
+         "already_backed" if verdict == "reject" else None, "", "hermes", "t", None, at))
+
+
+def _decisions(db) -> dict[str, list[dict]]:
+    return {
+        table: sorted((dict(r) for r in db.query(f"SELECT * FROM {table}")),
+                      key=lambda r: repr(sorted(r.items())))
+        for table in DECISION_TABLES
+    }
+
+
+def test_merge_moves_todays_review_and_qa_reject_to_the_winner(db):
+    """A company rejected today, then merged into another, must stay rejected:
+    the winner used to inherit no review marker and no QA veto."""
+    from radar.qa.today import is_rejected
+
+    a, b = _pair(db)
+    _verdict(db, b, "not for me", "2026-09-30T10:00:00Z")
+    _review(db, b, "not for me", "2026-09-30T10:00:00Z")
+    _qa(db, b, "reject", "2026-09-30T09:00:00Z")
+    assert not is_rejected(db, a)
+
+    merge_companies(db, a, b, rule="test", score=96.0)
+
+    for table in DECISION_TABLES:
+        assert db.scalar(f"SELECT COUNT(*) FROM {table} WHERE company_id = ?", (b,)) == 0, \
+            f"{table} rows were left on the merged-away company"
+    review = db.one("SELECT verdict FROM daily_review WHERE company_id = ? AND review_date = ?",
+                    (a, DAY))
+    assert review is not None and review["verdict"] == "not for me"
+    assert is_rejected(db, a), "the QA reject was lost in the merge"
+    assert db.scalar("SELECT value FROM user_field WHERE company_id = ? AND field = 'verdict'",
+                     (a,)) == "not for me"
+
+
+@pytest.mark.parametrize("loser_is_newer", [True, False])
+def test_merge_keeps_the_newest_decision_when_both_sides_decided(db, loser_is_newer):
+    """Same day, same field: the newest decision wins, whichever side made it."""
+    a, b = _pair(db)
+    early, late = "2026-09-30T09:00:00Z", "2026-09-30T11:00:00Z"
+    winner_at, loser_at = (early, late) if loser_is_newer else (late, early)
+    _verdict(db, a, "unsure", winner_at)
+    _verdict(db, b, "not for me", loser_at)
+    _verdict(db, a, "call back Monday", winner_at, field="notes")
+    _verdict(db, b, "duplicate of Acme", loser_at, field="notes")
+    _review(db, a, "unsure", winner_at)
+    _review(db, b, "not for me", loser_at)
+
+    merge_companies(db, a, b, rule="test", score=96.0)
+
+    want = "not for me" if loser_is_newer else "unsure"
+    assert db.scalar("SELECT value FROM user_field WHERE company_id = ? AND field = 'verdict'",
+                     (a,)) == want
+    assert db.scalar("SELECT value FROM user_field WHERE company_id = ? AND field = 'notes'",
+                     (a,)) == ("duplicate of Acme" if loser_is_newer else "call back Monday")
+    rows = db.query("SELECT verdict FROM daily_review WHERE company_id = ? AND review_date = ?",
+                    (a, DAY))
+    assert [r["verdict"] for r in rows] == [want]
+    assert db.scalar("SELECT COUNT(*) FROM user_field WHERE company_id = ?", (b,)) == 0
+
+
+@pytest.mark.parametrize("loser_reject_is_newer,rejected", [(True, True), (False, False)])
+def test_merge_latest_qa_check_decides_across_both_histories(db, loser_reject_is_newer, rejected):
+    from radar.qa.today import is_rejected
+
+    a, b = _pair(db)
+    if loser_reject_is_newer:
+        _qa(db, a, "pass", "2026-09-30T08:00:00Z")
+        _qa(db, b, "reject", "2026-09-30T09:00:00Z")
+    else:
+        _qa(db, b, "reject", "2026-09-30T08:00:00Z")
+        _qa(db, a, "pass", "2026-09-30T09:00:00Z")
+
+    merge_companies(db, a, b, rule="test", score=96.0)
+
+    assert is_rejected(db, a) is rejected
+    assert db.scalar("SELECT COUNT(*) FROM today_check WHERE company_id = ?", (a,)) == 2
+
+
+def test_merge_compares_mixed_timestamp_formats_as_instants(db, monkeypatch):
+    """The web UI stamps local wall-clock time, the sheet sync stamps UTC with a
+    `Z`. Compared as strings, 10:10 (BST) beats 09:30Z although it is 09:10Z."""
+    import time
+
+    monkeypatch.setenv("TZ", "Europe/London")
+    time.tzset()
+    try:
+        a, b = _pair(db)
+        _verdict(db, a, "worth contacting", "2026-09-30T09:30:00Z")   # later instant
+        _verdict(db, b, "not for me", "2026-09-30T10:10:00")           # 09:10Z
+        merge_companies(db, a, b, rule="test", score=96.0)
+        assert db.scalar(
+            "SELECT value FROM user_field WHERE company_id = ? AND field = 'verdict'",
+            (a,)) == "worth contacting"
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+def test_unmerge_restores_reviews_qa_checks_and_verdicts_exactly(db):
+    a, b = _pair(db)
+    # collisions where each side is newer, plus rows that simply move
+    _verdict(db, a, "unsure", "2026-09-30T09:00:00Z")
+    _verdict(db, b, "not for me", "2026-09-30T11:00:00Z")
+    _verdict(db, a, "winner note", "2026-09-30T12:00:00Z", field="notes")
+    _verdict(db, b, "loser note", "2026-09-30T08:00:00Z", field="notes")
+    _verdict(db, b, "yes", "2026-09-30T08:00:00Z", field="contacted")
+    _review(db, a, "unsure", "2026-09-30T09:00:00Z")
+    _review(db, b, "not for me", "2026-09-30T11:00:00Z")
+    _review(db, b, "unsure", "2026-09-29T11:00:00Z", day="2026-09-29")
+    _qa(db, a, "pass", "2026-09-30T08:00:00Z", snapshot="one")
+    _qa(db, b, "reject", "2026-09-30T09:00:00Z", snapshot="two")
+    _qa(db, b, "pass", "2026-09-29T09:00:00Z", snapshot="three")
+    before = _decisions(db)
+
+    event = merge_companies(db, a, b, rule="test", score=96.0)
+    merged = _decisions(db)
+    assert merged != before
+    assert all(row["company_id"] == a
+               for table in DECISION_TABLES for row in merged[table]), \
+        "some decision rows were left on the loser"
+
+    unmerge(db, event)
+
+    assert _decisions(db) == before

@@ -19,17 +19,20 @@ The orchestrator wires `backfill(db, http, config, days=90)` into
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
 from radar.enrich import ch_filings, ch_officers, postcode
 from radar.enrich.ch_filings import (
     SH01,
+    SHARE_ISSUE_WINDOW_MONTHS,
     ShareIssue,
     fetch_filing_history,
+    fetch_filing_history_checked,
     find_share_issues,
     has_share_issue,
     qualifying_share_issues,
@@ -81,10 +84,25 @@ log = logging.getLogger(__name__)
 SOURCE_KEY = "companies_house"
 SOURCE_TYPE = "registry"
 
-#: `_meta` marker so a re-run does not re-spend pass-1 requests on a company we
-#: already checked. Pass 1 can complete while pass 2 never starts, and
-#: `enriched_at` alone cannot express that.
+#: `_meta` marker: when the register last ANSWERED a filing-history request for
+#: this company (a 200, or a 404). A failed request never writes it. Pass 1 can
+#: complete while pass 2 never starts, and `enriched_at` alone cannot express
+#: that. The value is a timestamp because a young company is polled again once
+#: `FILINGS_RECHECK_DAYS` have passed (H-05): an SH01 filed next month must still
+#: be found even though the company already left the enrichment queue.
 FILINGS_CHECKED_PREFIX = "ch_filings_checked:"
+#: `_meta` marker: when a filing-history request last FAILED (5xx, 429,
+#: transport error, unparseable body). A retryable failure, kept apart from a
+#: successful check so a bad day at Companies House is retried rather than
+#: recorded as "no SH01". Cleared by the next successful check.
+FILINGS_RETRY_PREFIX = "ch_filings_retry:"
+#: A young company with no SH01 yet is polled again after this many days. The
+#: age bound is `SHARE_ISSUE_WINDOW_MONTHS`: an SH01 beyond it does not count.
+FILINGS_RECHECK_DAYS = 7
+#: A failed request is not retried before this many hours have passed.
+FILINGS_RETRY_HOURS = 12
+#: This many failures in a row end filing-history polling for the run.
+FILINGS_MAX_CONSECUTIVE_FAILURES = 5
 #: Pass 3 can also be deferred when the request budget ends after officers/PSC.
 #: Keep that state separate from `enriched_at`, so repeat-founder evidence is
 #: not silently lost when a company was only partially hydrated.
@@ -159,6 +177,8 @@ class BackfillResult:
     signals_new: int = 0
     founders: int = 0
     share_issues: int = 0
+    filing_rechecks: int = 0
+    filing_failures: int = 0
     ages_hydrated: int = 0
     enriched: int = 0
     queued: int = 0
@@ -356,12 +376,40 @@ def record_incorporation_signal(db: Any, company_id: str, item: Any) -> bool:
 # ------------------------------------------------------------------ enrich
 
 
+def _utc_stamp(moment: datetime) -> str:
+    """Same shape as `now_iso()`, so stored markers compare as strings."""
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _months_before(today: date, months: int) -> date:
+    index = today.year * 12 + (today.month - 1) - months
+    year, month = divmod(index, 12)
+    month += 1
+    return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
+
+
 def _filings_checked(db: Any, company_id: str) -> bool:
     return db.get_meta(FILINGS_CHECKED_PREFIX + company_id) is not None
 
 
+def _filings_retry_due(db: Any, company_id: str) -> bool:
+    """False while a failed request is still inside its retry interval."""
+    failed_at = db.get_meta(FILINGS_RETRY_PREFIX + company_id)
+    if failed_at is None:
+        return True
+    cutoff = _utc_stamp(datetime.now(timezone.utc) - timedelta(hours=FILINGS_RETRY_HOURS))
+    return failed_at <= cutoff
+
+
 def _mark_filings_checked(db: Any, company_id: str) -> None:
+    """The register answered. Also clears any earlier retryable failure."""
     db.set_meta(FILINGS_CHECKED_PREFIX + company_id, now_iso())
+    db.execute("DELETE FROM _meta WHERE key = ?", (FILINGS_RETRY_PREFIX + company_id,))
+
+
+def _mark_filings_failed(db: Any, company_id: str) -> None:
+    """The register did not answer. Not a check: the company stays due."""
+    db.set_meta(FILINGS_RETRY_PREFIX + company_id, now_iso())
 
 
 def _mark_appointments_complete(db: Any, company_id: str) -> None:
@@ -542,6 +590,84 @@ def enrichment_queue(db: Any, limit: int | None = None) -> list[dict]:
     return [dict(r) for r in db.query(sql, params)]
 
 
+def filing_recheck_queue(db: Any, limit: int | None = None) -> list[dict]:
+    """Companies whose filing history is due for another look (H-05).
+
+    Three groups, all with no SH01 recorded yet and all bounded by the age
+    window (an SH01 more than `SHARE_ISSUE_WINDOW_MONTHS` after incorporation
+    does not count, so polling past it buys nothing):
+
+    * a young company last confirmed more than `FILINGS_RECHECK_DAYS` ago;
+    * a company whose last request failed, once `FILINGS_RETRY_HOURS` passed;
+    * an enriched company with no marker at all (nothing ever recorded).
+
+    A company with an unknown incorporation date is only retried until one
+    request succeeds; it cannot be re-polled on a schedule it has no age for.
+    Never-confirmed rows come first, then the longest-unchecked, so a small
+    budget still rotates through everyone. Companies still waiting in
+    `enrichment_queue` are handled there.
+    """
+    moment = datetime.now(timezone.utc)
+    age_cutoff = _months_before(moment.date(), SHARE_ISSUE_WINDOW_MONTHS).isoformat()
+    recheck_cutoff = _utc_stamp(moment - timedelta(days=FILINGS_RECHECK_DAYS))
+    retry_cutoff = _utc_stamp(moment - timedelta(hours=FILINGS_RETRY_HOURS))
+    sql = """
+        SELECT c.id, c.companies_house_no, c.canonical_name, c.incorporated_on
+        FROM company c
+        LEFT JOIN _meta ok  ON ok.key  = ? || c.id
+        LEFT JOIN _meta bad ON bad.key = ? || c.id
+        WHERE c.companies_house_no IS NOT NULL
+          AND TRIM(c.companies_house_no) != ''
+          AND c.merged_into IS NULL
+          AND COALESCE(c.has_share_issue, 0) = 0
+          AND (
+                (ok.value IS NULL
+                 AND (c.incorporated_on IS NULL OR c.incorporated_on >= ?)
+                 AND ((bad.value IS NOT NULL AND bad.value <= ?)
+                      OR (bad.value IS NULL AND c.enriched_at IS NOT NULL)))
+                OR
+                (ok.value IS NOT NULL AND ok.value <= ?
+                 AND c.incorporated_on IS NOT NULL AND c.incorporated_on >= ?
+                 AND (bad.value IS NULL OR bad.value <= ?))
+              )
+        ORDER BY ok.value IS NOT NULL, COALESCE(ok.value, bad.value),
+                 c.incorporated_on DESC, c.id
+    """
+    params: tuple[Any, ...] = (
+        FILINGS_CHECKED_PREFIX, FILINGS_RETRY_PREFIX,
+        age_cutoff, retry_cutoff,
+        recheck_cutoff, age_cutoff, retry_cutoff,
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    return [dict(r) for r in db.query(sql, params)]
+
+
+def _check_filings(db: Any, http: Any, row: Mapping[str, Any], *, api_key: str,
+                   base_url: str, result: BackfillResult):
+    """One filing-history request for one company; records what it learned.
+
+    A successful answer is stored as a check (with any SH01 signal); a failed
+    request is stored as a retryable failure and never as a check.
+    """
+    result.enrich_requests += 1
+    fetch = fetch_filing_history_checked(
+        http, row["companies_house_no"], api_key=api_key, base_url=base_url,
+    )
+    if not fetch.ok:
+        _mark_filings_failed(db, row["id"])
+        result.filing_failures += 1
+        return fetch
+    _mark_filings_checked(db, row["id"])
+    issues = (qualifying_share_issues(fetch.payload, row["incorporated_on"])
+              if fetch.payload else [])
+    if issues:
+        record_share_issues(db, row["id"], row["companies_house_no"],
+                            row["canonical_name"], issues)
+        result.share_issues += 1
+    return fetch
+
+
 def enrich_companies(
     db: Any,
     http: Any,
@@ -586,26 +712,47 @@ def enrich_companies(
     # rows arrive every day. Already-checked rows cost no requests and are
     # always carried into pass 2 immediately.
     pass1_limit = max(1, budget.limit // 3)
+    # A quarter of pass 1 is kept for re-polling young companies that already
+    # left the queue, so a steady stream of new incorporations cannot starve a
+    # later SH01 (H-05). Whatever the first checks leave unused goes to them.
+    recheck_reserve = pass1_limit // 4 if filing_recheck_queue(db, 1) else 0
+    first_check_limit = pass1_limit - recheck_reserve
     pass1_spent = 0
+    failure_streak = 0
+    filings_halted = False
     for row in queue:
-        if _filings_checked(db, row["id"]):
+        if (_filings_checked(db, row["id"]) or filings_halted
+                or not _filings_retry_due(db, row["id"])):
+            # Checked already, or failed too recently to ask again, or the
+            # register is refusing us this run. Hydration does not depend on
+            # filings; a company still owed a check is picked up by the re-poll.
             pass1_ok.append(row)
             continue
-        if pass1_spent >= pass1_limit:
+        if pass1_spent >= first_check_limit:
             break
         if not budget.spend(1):
             break
         pass1_spent += 1
-        result.enrich_requests += 1
-        raw = fetch_filing_history(http, row["companies_house_no"],
-                                   api_key=api_key, base_url=base_url)
-        _mark_filings_checked(db, row["id"])
-        issues = qualifying_share_issues(raw, row["incorporated_on"]) if raw else []
-        if issues:
-            record_share_issues(db, row["id"], row["companies_house_no"],
-                                row["canonical_name"], issues)
-            result.share_issues += 1
+        fetch = _check_filings(db, http, row, api_key=api_key,
+                               base_url=base_url, result=result)
+        failure_streak = 0 if fetch.ok else failure_streak + 1
+        filings_halted = (fetch.rate_limited
+                          or failure_streak >= FILINGS_MAX_CONSECUTIVE_FAILURES)
         pass1_ok.append(row)
+
+    # ---- pass 1b: re-poll filing history for young companies with no SH01 yet
+    # (a later SH01 is the whole point), inside the same pass-1 share.
+    if not filings_halted:
+        for row in filing_recheck_queue(db, max(pass1_limit - pass1_spent, 0)):
+            if pass1_spent >= pass1_limit or not budget.spend(1):
+                break
+            pass1_spent += 1
+            result.filing_rechecks += 1
+            fetch = _check_filings(db, http, row, api_key=api_key,
+                                   base_url=base_url, result=result)
+            failure_streak = 0 if fetch.ok else failure_streak + 1
+            if fetch.rate_limited or failure_streak >= FILINGS_MAX_CONSECUTIVE_FAILURES:
+                break
 
     # ---- pass 2: officers + PSC (2 requests each)
     hydrated: list[tuple[dict, list[Founder]]] = []
@@ -807,6 +954,8 @@ __all__ = [
     "ch_officers",
     "enrich_companies",
     "enrichment_queue",
+    "filing_recheck_queue",
+    "fetch_filing_history_checked",
     "fetch_appointments",
     "fetch_filing_history",
     "fetch_officers",

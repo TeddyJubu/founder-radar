@@ -142,6 +142,67 @@ def qualifying_share_issues(
     return out
 
 
+@dataclass(frozen=True, slots=True)
+class FilingFetch:
+    """What one filing-history request achieved.
+
+    `ok` is True only when the register actually answered: a 200 with a JSON
+    object, or a 404 (no such filing history, which is a stable answer). A 5xx,
+    a 429, a transport error or a body that is not JSON is a *retryable
+    failure*: nothing was learned, so the company must not be recorded as
+    checked (H-05).
+    """
+
+    payload: Any = None
+    ok: bool = False
+    status: int | None = None
+
+    @property
+    def rate_limited(self) -> bool:
+        return self.status == 429
+
+
+def fetch_filing_history_checked(
+    http: Any,
+    number: str,
+    *,
+    api_key: str,
+    base_url: str = CH_API_BASE,
+    items_per_page: int = 100,
+) -> FilingFetch:
+    """One request. Category filtering is done client-side.
+
+    ponytail: the API accepts `category=capital`, but a young company's whole
+    filing history fits in one page anyway, and filtering locally means an item
+    with a missing `category` still gets seen.
+    """
+    try:
+        resp = http.get(
+            f"{base_url.rstrip('/')}/company/{number}/filing-history",
+            params={"items_per_page": items_per_page},
+            auth=(api_key, ""),
+            check_robots=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — a transport failure is retryable, not fatal
+        log.warning("companies_house: filing-history request for %s failed (%s)",
+                    number, type(exc).__name__)
+        return FilingFetch(None, False, None)
+    if resp.status == 404:
+        return FilingFetch(None, True, 404)
+    if not resp.ok:
+        log.warning("companies_house: HTTP %s for filing-history of %s", resp.status, number)
+        return FilingFetch(None, False, resp.status)
+    try:
+        payload = resp.json()
+    except ValueError:
+        log.warning("companies_house: unparseable filing-history for %s", number)
+        return FilingFetch(None, False, resp.status)
+    if not isinstance(payload, Mapping):
+        log.warning("companies_house: unexpected filing-history shape for %s", number)
+        return FilingFetch(None, False, resp.status)
+    return FilingFetch(payload, True, resp.status)
+
+
 def fetch_filing_history(
     http: Any,
     number: str,
@@ -150,28 +211,12 @@ def fetch_filing_history(
     base_url: str = CH_API_BASE,
     items_per_page: int = 100,
 ) -> Any:
-    """One request. Category filtering is done client-side.
-
-    ponytail: the API accepts `category=capital`, but a young company's whole
-    filing history fits in one page anyway, and filtering locally means an item
-    with a missing `category` still gets seen.
-    """
-    resp = http.get(
-        f"{base_url.rstrip('/')}/company/{number}/filing-history",
-        params={"items_per_page": items_per_page},
-        auth=(api_key, ""),
-        check_robots=False,
-    )
-    if resp.status == 404:
-        return None
-    if not resp.ok:
-        log.warning("companies_house: HTTP %s for filing-history of %s", resp.status, number)
-        return None
-    try:
-        return resp.json()
-    except ValueError:
-        log.warning("companies_house: unparseable filing-history for %s", number)
-        return None
+    """The parsed response, or None for "no answer". Callers that must tell a
+    missing history from a failed request use `fetch_filing_history_checked`."""
+    return fetch_filing_history_checked(
+        http, number, api_key=api_key, base_url=base_url,
+        items_per_page=items_per_page,
+    ).payload
 
 
 def share_issue_headline(issue: ShareIssue, company_name: str) -> str:

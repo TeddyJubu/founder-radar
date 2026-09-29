@@ -220,3 +220,241 @@ def test_hydrate_missing_ages_marks_a_404_so_it_does_not_retry(db):
         db, http, api_key="k", budget=RequestBudget(limit=4),
     )
     assert second.enrich_requests == 0
+
+
+# ------------------------------- H-05: a later SH01 must still be discovered
+
+
+def _iso_ago(*, days: int = 0, hours: int = 0) -> str:
+    from datetime import datetime, timedelta, timezone
+
+    moment = datetime.now(timezone.utc) - timedelta(days=days, hours=hours)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _age_filing_markers(db, *, days: int = 0, hours: int = 0) -> None:
+    """Move every filing-history marker back in time.
+
+    The enrichment code reads the wall clock, so "a week later" is simulated by
+    making the stored markers a week older rather than by waiting.
+    """
+    stamp = _iso_ago(days=days, hours=hours)
+    db.execute("UPDATE _meta SET value = ? WHERE key LIKE 'ch_filings_%'", (stamp,))
+
+
+class _ScriptedCH:
+    """A Companies House double whose filing-history answer changes between runs."""
+
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+        self.filing_items: list[dict] = []
+        self.filing_status = 200
+
+    def get(self, url, **kw):  # noqa: ARG002
+        self.requests.append(url)
+        if "filing-history" in url:
+            if self.filing_status != 200:
+                return _Resp(None, self.filing_status)
+            return _Resp({"items": list(self.filing_items)})
+        if "persons-with-significant-control" in url:
+            return _Resp({"items": []})
+        if "/appointments" in url:
+            return _Resp({"total_results": 1, "items": []})
+        if "/officers" in url:
+            return _Resp({"items": [{
+                "name": "LOVELACE, Ada",
+                "officer_role": "director",
+                "appointed_on": "2026-01-05",
+                "links": {"officer": {"appointments": "/officers/abc123/appointments"}},
+            }]})
+        return _Resp(PROFILE)
+
+    @property
+    def filing_requests(self) -> int:
+        return sum("filing-history" in u for u in self.requests)
+
+
+def _sh01_item(days_ago: int = 2) -> dict:
+    from datetime import timedelta
+
+    return {
+        "type": "SH01",
+        "category": "capital",
+        "date": (date.today() - timedelta(days=days_ago)).isoformat(),
+        "transaction_id": "MzQ1Njc4OTBhZGlxemtjeA",
+        "description": "capital-allotment-shares",
+    }
+
+
+def _registry_row(db, *, number="15021884", age_months=5, name="Late Filer Ltd"):
+    from tests.factories import registry_company
+
+    company = registry_company(
+        canonical_name=name, norm_key=name.lower().replace(" ", ""),
+        companies_house_no=number, age_months=age_months,
+    )
+    return store_company(db, company)
+
+
+def _run_enrichment(db, http, limit: int = 60):
+    from radar.enrich import enrich_companies
+
+    return enrich_companies(db, http, api_key="k", budget=RequestBudget(limit=limit))
+
+
+def test_sh01_filed_after_the_first_pass_is_discovered_on_a_later_run(db):
+    """H-05: day one there is no SH01, so the company enriches and leaves the
+    queue. A week later it files one. The second run must ask again, record
+    the signal, and let the qualification gate admit the company. The older
+    qualification test inserts the signal by hand and never exercised this."""
+    from radar.config.defaults import default_config
+    from radar.pipeline import score_company
+
+    cfg = default_config()
+    cid = _registry_row(db)
+    ch = _ScriptedCH()
+
+    day_one = _run_enrichment(db, ch)
+    assert day_one.enriched == 1
+    assert ch.filing_requests == 1
+    assert db.scalar("SELECT has_share_issue FROM company WHERE id = ?", (cid,)) == 0
+    assert score_company(db, cid, cfg) == 0          # no qualifier yet
+
+    _age_filing_markers(db, days=8)
+    ch.filing_items = [_sh01_item()]
+    later = _run_enrichment(db, ch)
+
+    assert ch.filing_requests == 2, "the young company was never asked again"
+    assert later.share_issues == 1
+    assert db.scalar("SELECT has_share_issue FROM company WHERE id = ?", (cid,)) == 1
+    assert db.scalar(
+        "SELECT COUNT(*) FROM signal WHERE company_id = ? AND kind = 'share_issue'",
+        (cid,)) == 1
+    assert score_company(db, cid, cfg) > 0           # now admitted to scoring
+    assert db.scalar("SELECT qualified FROM company WHERE id = ?", (cid,)) == 1
+
+
+def test_a_failed_filing_fetch_is_a_retryable_failure_not_a_check(db):
+    """H-05: a 503 used to be stamped "checked" and never retried."""
+    from radar.enrich import FILINGS_CHECKED_PREFIX, FILINGS_RETRY_PREFIX
+
+    cid = _registry_row(db)
+    ch = _ScriptedCH()
+    ch.filing_status = 503
+
+    first = _run_enrichment(db, ch)
+    assert first.enriched == 1, "officers/PSC hydration does not depend on filings"
+    assert db.get_meta(FILINGS_CHECKED_PREFIX + cid) is None
+    assert db.get_meta(FILINGS_RETRY_PREFIX + cid) is not None
+    assert ch.filing_requests == 1
+
+    # Not hammered: an immediate second run leaves the failed company alone.
+    _run_enrichment(db, ch)
+    assert ch.filing_requests == 1
+
+    # Once the retry interval has passed it is asked again, and this time the
+    # register answers.
+    _age_filing_markers(db, hours=48)
+    ch.filing_status = 200
+    ch.filing_items = [_sh01_item()]
+    _run_enrichment(db, ch)
+
+    assert ch.filing_requests == 2
+    assert db.get_meta(FILINGS_CHECKED_PREFIX + cid) is not None
+    assert db.get_meta(FILINGS_RETRY_PREFIX + cid) is None
+    assert db.scalar("SELECT has_share_issue FROM company WHERE id = ?", (cid,)) == 1
+
+
+def test_an_unparseable_filing_response_is_not_recorded_as_a_check(db):
+    from radar.enrich import FILINGS_CHECKED_PREFIX
+
+    class Garbled(_ScriptedCH):
+        def get(self, url, **kw):
+            if "filing-history" in url:
+                self.requests.append(url)
+                return _Resp(None, 200)          # 200 whose body is not JSON
+            return super().get(url, **kw)
+
+    cid = _registry_row(db)
+    _run_enrichment(db, Garbled())
+    assert db.get_meta(FILINGS_CHECKED_PREFIX + cid) is None
+
+
+def test_a_transport_error_on_filings_does_not_abort_enrichment(db):
+    from radar.enrich import FILINGS_CHECKED_PREFIX, FILINGS_RETRY_PREFIX
+
+    class Down(_ScriptedCH):
+        def get(self, url, **kw):
+            if "filing-history" in url:
+                self.requests.append(url)
+                raise ConnectionError("boom")
+            return super().get(url, **kw)
+
+    cid = _registry_row(db)
+    result = _run_enrichment(db, Down())
+    assert result.enriched == 1
+    assert db.get_meta(FILINGS_CHECKED_PREFIX + cid) is None
+    assert db.get_meta(FILINGS_RETRY_PREFIX + cid) is not None
+
+
+def test_filing_recheck_waits_for_the_interval(db):
+    cid = _registry_row(db)
+    ch = _ScriptedCH()
+    _run_enrichment(db, ch)
+    assert ch.filing_requests == 1
+
+    _run_enrichment(db, ch)                                   # same day
+    assert ch.filing_requests == 1
+    _age_filing_markers(db, days=3)                           # inside the interval
+    _run_enrichment(db, ch)
+    assert ch.filing_requests == 1
+    _age_filing_markers(db, days=8)                           # due
+    _run_enrichment(db, ch)
+    assert ch.filing_requests == 2
+    assert db.get_meta("ch_filings_checked:" + cid) is not None
+
+
+def test_filing_recheck_stops_once_the_company_is_outside_the_age_window(db):
+    """An SH01 only counts within 18 months of incorporation, so polling a
+    30-month-old company forever would spend budget for nothing."""
+    _registry_row(db, age_months=30, name="Old Timer Ltd")
+    ch = _ScriptedCH()
+    _run_enrichment(db, ch)
+    assert ch.filing_requests == 1                            # the first look
+    _age_filing_markers(db, days=30)
+    _run_enrichment(db, ch)
+    assert ch.filing_requests == 1
+
+
+def test_filing_recheck_stops_once_an_sh01_has_been_found(db):
+    cid = _registry_row(db)
+    ch = _ScriptedCH()
+    ch.filing_items = [_sh01_item()]
+    _run_enrichment(db, ch)
+    assert db.scalar("SELECT has_share_issue FROM company WHERE id = ?", (cid,)) == 1
+    _age_filing_markers(db, days=30)
+    _run_enrichment(db, ch)
+    assert ch.filing_requests == 1
+
+
+def test_filing_recheck_respects_the_request_budget(db):
+    """The re-poll rides inside the existing budget and pass-1 share; it does
+    not raise either."""
+    from radar.enrich import enrichment_queue
+
+    stamp = now_iso()
+    for index in range(30):
+        cid = _registry_row(db, number=f"{20_000_000 + index}",
+                            name=f"Waiting Co {index} Ltd")
+        db.execute("UPDATE company SET enriched_at = ?, officer_count = 1 WHERE id = ?",
+                   (stamp, cid))
+        db.set_meta("ch_appointments_complete:" + cid, stamp)
+        db.set_meta("ch_filings_checked:" + cid, _iso_ago(days=10))
+    assert enrichment_queue(db) == []                         # nothing else is waiting
+
+    ch = _ScriptedCH()
+    result = _run_enrichment(db, ch, limit=12)
+
+    assert len(ch.requests) <= 12
+    assert result.budget_spent <= 12
+    assert 0 < ch.filing_requests <= 4, "pass 1 keeps its one-third share"
