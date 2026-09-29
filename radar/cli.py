@@ -142,7 +142,8 @@ def run(ctx, fund_key, source_key, since, dry_run, no_llm):
     """The daily run: fetch → extract → resolve → enrich → score → render."""
     result = _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm)
     _emit(result.summary(), ctx.obj["json"])
-    sys.exit(EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
+    sys.exit(EXIT_FATAL if result.status == "failed" else
+             EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
 
 
 @cli.command("search")
@@ -178,6 +179,9 @@ def search(ctx, fund_key, source_key, since, dry_run, no_llm, send_ping, backgro
     db = _db(ctx)
     try:
         result = _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm)
+        if result.status == "failed":
+            click.echo(f"search failed: {result.error}", err=True)
+            sys.exit(EXIT_FATAL)
         ping = render_today_ping(db)
         if send_ping:
             from radar.notify.telegram import send_message
@@ -187,7 +191,8 @@ def search(ctx, fund_key, source_key, since, dry_run, no_llm, send_ping, backgro
             _emit({"run": result.summary(), "ping": ping}, True)
         else:
             click.echo(ping)
-        sys.exit(EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
+        sys.exit(EXIT_FATAL if result.status == "failed" else
+             EXIT_PARTIAL if result.status == "partial" else EXIT_OK)
     finally:
         mark_search_done()
 
@@ -460,7 +465,8 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
     if not skip_today_qa:
         from radar.qa.today import run_today_qa
 
-        cfg, _, warnings = load_runtime_config(db)
+        cfg, gateway, warnings = load_runtime_config(db)
+        before_qa = db.conn.total_changes
         qa = run_today_qa(db, cfg, use_hermes=not no_hermes)
         click.echo(
             f"today QA: {qa.cards} cards · {qa.checked} checked, {qa.passed} pass, "
@@ -469,6 +475,15 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
         )
         for line in [*warnings, *qa.warnings]:
             click.echo(line)
+        if gateway is not None and db.conn.total_changes != before_qa:
+            from radar.render.sheet import sync_sheet
+            try:
+                sync_sheet(db, gateway=gateway)
+            except Exception as exc:
+                click.echo(f"sheet sync warning: {type(exc).__name__}: {exc}", err=True)
+        if qa.incomplete or qa.aborted:
+            click.echo("publish refused: Today QA incomplete", err=True)
+            sys.exit(EXIT_FATAL)
         allow_rules = (os.environ.get("RADAR_ALLOW_RULES_ONLY_PUBLISH") or "").strip().lower() in {
             "1", "true", "yes",
         }
@@ -486,6 +501,9 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
             sys.exit(EXIT_FATAL)
 
     report2 = pre_publish_check(db, use_hermes=False, heal=not no_heal)
+    if int(report2.diagnosis.get("qa_incomplete") or 0):
+        click.echo("publish refused: incomplete Today QA remains", err=True)
+        sys.exit(EXIT_FATAL)
     if not report2.ok:
         click.echo(format_publish_report(report2))
         click.echo("publish refused after Today QA: gate BLOCK", err=True)

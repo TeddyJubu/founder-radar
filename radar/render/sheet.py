@@ -742,9 +742,11 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
     views = _gather(db)
     shortlisted = [v for v in views.values()
                    if v.best is not None and v.best["tier"] == "shortlist"]
-    from radar.qa.today import is_rejected
+    from radar.qa.today import is_withheld
 
-    shortlisted = [v for v in shortlisted if not is_rejected(db, v.row["id"])]
+    # Same rule as the live Today page and the ping: rejected, or QA did not
+    # complete, means the card is not shown.
+    shortlisted = [v for v in shortlisted if not is_withheld(db, v.row["id"])]
     shortlisted.sort(key=lambda v: -v.best["priority"])
     cap = int(getattr(cfg.settings, "daily_digest_max", 10)) if cfg else 10
     shortlisted = shortlisted[:cap]

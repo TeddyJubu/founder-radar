@@ -52,6 +52,8 @@ class RunResult:
     gated_out: int = 0
     shortlisted: int = 0
     llm_calls: int = 0
+    # Cards Today QA could not complete: withheld from Today, the Sheet and the ping.
+    qa_incomplete: int = 0
     error: str | None = None
     run_id: int | None = None
     sources: list[dict] = field(default_factory=list)
@@ -69,6 +71,7 @@ class RunResult:
             "gated_out": self.gated_out,
             "shortlisted": self.shortlisted,
             "llm_calls": self.llm_calls,
+            "qa_incomplete": self.qa_incomplete,
             "error": self.error,
             "run_id": self.run_id,
             "sources": self.sources,
@@ -1329,6 +1332,10 @@ def _run_pipeline(
 
         # Today QA — veto only. Scoring is already written; a reject hides
         # the card from Today / digest / the sheet without touching `score`.
+        # A card whose check did not complete is withheld the same way (it is
+        # recorded `incomplete`, never passed), and the run says so: status
+        # `partial` with a warning, not a clean `ok`.
+        qa_ran = True
         if not dry_run:
             try:
                 from radar.qa.today import run_today_qa
@@ -1337,10 +1344,24 @@ def _run_pipeline(
                     db, cfg, checker=today_checker, use_hermes=use_llm,
                 )
                 result.warnings.extend(qa.warnings)
+                result.qa_incomplete = int(getattr(qa, "incomplete", 0) or 0)
+                if getattr(qa, "aborted", None):
+                    qa_ran = False
+                elif result.qa_incomplete:
+                    result.status = "partial"
+                    result.warnings.append(
+                        f"today QA incomplete: {result.qa_incomplete} of "
+                        f"{getattr(qa, 'cards', 0)} cards withheld from Today, "
+                        "the Sheet and the ping until a check completes")
             except Exception as exc:  # noqa: BLE001 — one stage, not the run
+                qa_ran = False
                 result.warnings.append(
                     f"today QA skipped: {type(exc).__name__}: {exc}")
                 log.warning("today QA failed (%s)", type(exc).__name__)
+            if not qa_ran:
+                result.status = "partial"
+                result.warnings.append(
+                    "Today QA did not run: cards it has not checked are unverified")
 
         gated = db.scalar(
             """SELECT COUNT(DISTINCT company_id) FROM score
@@ -1352,7 +1373,13 @@ def _run_pipeline(
             "SELECT COUNT(*) FROM company WHERE merged_into IS NULL AND "
             "strftime('%Y-%m-%d', created_at) = strftime('%Y-%m-%d', 'now')") or 0)
 
-        if not dry_run and gateway is not None:
+        if not dry_run and gateway is not None and not qa_ran:
+            # Fail closed: unchecked cards must not reach the Sheet. Same
+            # degraded mode as a Sheets outage — a late sheet, no lost data.
+            result.warnings.append(
+                "sheet not written: Today QA did not run, so unchecked cards "
+                "are not pushed")
+        if not dry_run and gateway is not None and qa_ran:
             from radar.render.sheet import sync_sheet
 
             # 02-architecture §7: a Sheets outage is "a late sheet, no lost

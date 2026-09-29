@@ -67,6 +67,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "display_limit": "Beyond today's display limit",
     "registry_without_venture_signal": "Companies House only, no venture signal",
     "hermes_rejected": "Failed the final Hermes company check",
+    "qa_incomplete": "Final Hermes company check did not complete",
 }
 TODAY_DIAGNOSTIC_ORDER = tuple(TODAY_DIAGNOSTIC_LABELS)
 
@@ -238,10 +239,15 @@ def _today_block_reason(
         if "geography" in (verdict.unverified_rules or ()):
             return "geography_unverified"
 
-    from radar.qa.today import is_rejected
+    from radar.qa.today import qa_state
 
-    if is_rejected(conn, _row_company_id(row)):
+    # Same rule as the Sheet, the digest and the ping (radar.qa.today.is_withheld):
+    # a reject, or a check that never completed, keeps the card off Today.
+    state = qa_state(conn, _row_company_id(row))
+    if state == "reject":
         return "hermes_rejected"
+    if state != "pass":
+        return "qa_incomplete"
     return None
 
 

@@ -229,13 +229,13 @@ def test_cached_snapshot_does_not_recall_hermes(db):
     ]
 
 
-def test_hermes_down_does_not_empty_today(db):
+def test_hermes_down_withholds_unchecked_today(db):
     ids = seed_companies(db, count=1, shortlist=1)
     report = run_today_qa(db, default_config(), checker=BoomChecker())
     assert report.rejected == 0
     assert not is_rejected(db, ids[0])
     shown = {row["company_id"] for row in build_today(db.conn)["companies"]}
-    assert ids[0] in shown
+    assert ids[0] not in shown
 
 
 def test_pipeline_invokes_today_qa(db, config, monkeypatch):

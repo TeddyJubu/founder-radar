@@ -87,6 +87,11 @@ def render_today_ping(db) -> str:
 
     report = diagnose_today(db)
     tiers = report.get("tiers") or {}
+    # Count only what Today will show: cards QA rejected, or could not check,
+    # are withheld everywhere, so they are not in the number either.
+    held = report.get("qa_withheld") or {}
+    shortlist_n = max(int(tiers.get("shortlist") or 0) - int(held.get("shortlist") or 0), 0)
+    watchlist_n = max(int(tiers.get("watchlist") or 0) - int(held.get("watchlist") or 0), 0)
     url = review_url()
     lines = [
         "📡 UK Founder Radar",
@@ -98,10 +103,12 @@ def render_today_ping(db) -> str:
     else:
         lines.append("Open the Today page on the review site.")
     lines.append("")
-    lines.append(
-        f"{int(tiers.get('shortlist') or 0)} shortlisted · "
-        f"{int(tiers.get('watchlist') or 0)} watchlist"
-    )
+    lines.append(f"{shortlist_n} shortlisted · {watchlist_n} watchlist")
+    incomplete = int(report.get("qa_incomplete") or 0)
+    if incomplete:
+        lines.append(
+            f"⚠️ {incomplete} held back — their final company check did not complete"
+        )
     return "\n".join(lines)
 
 
@@ -395,14 +402,14 @@ _ENTRY_SQL = """
 
 def _shortlist(db, start: date, end: date) -> list[dict]:
     """One row per company — its best-scoring fund wins the digest slot."""
-    from radar.qa.today import is_rejected
+    from radar.qa.today import is_withheld
 
     seen: set[str] = set()
     out: list[dict] = []
     for row in db.query(_ENTRY_SQL, (SHORTLIST_TIER, start.isoformat(), end.isoformat())):
         if row["company_id"] in seen:
             continue
-        if is_rejected(db, row["company_id"]):
+        if is_withheld(db, row["company_id"]):    # rejected, or QA never completed
             continue
         seen.add(row["company_id"])
         out.append(dict(row))

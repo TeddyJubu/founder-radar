@@ -45,6 +45,9 @@ def seed_company(db, name, *, cid=None, incorporated_on="2026-06-14", city="Newc
          f"https://{domain}" if domain else None, incorporated_on, postcode, region, city,
          sector, stage, funding, "registry", one_liner, stamp, stamp, stamp, stamp),
     )
+    from radar.qa.today import TodayCard, TodayCheckResult, record_check
+    record_check(db, TodayCard(company_id=cid, name=name),
+                 TodayCheckResult(verdict="pass", checker="rules"))
     return cid
 
 

@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -209,6 +210,19 @@ def _collect_issues(db: Any) -> tuple[list[PublishIssue], dict[str, Any]]:
         ))
 
     last = diagnosis.get("last_run") or {}
+    finished = last.get("finished_at")
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(
+            finished.replace("Z", "+00:00"))).total_seconds() / 3600
+    except (ValueError, TypeError, AttributeError):
+        age = None
+    if (last.get("status") not in {"ok", "partial"} or age is None
+            or age < 0 or age > 30
+            or (last.get("status") == "partial" and not last.get("items_fetched"))):
+        detail = (f"latest scan {last.get('status', 'missing')}: "
+                  + (f"{age:.0f}h ago (limit 30h)" if age is not None else "not finished")
+                  + f"; {last.get('error') or ''}; run founder-radar run")
+        issues.append(PublishIssue("no_fresh_scan", detail))
     last_sl = int(last.get("shortlisted") or 0)
     tiers = diagnosis.get("tiers") or {}
     active_sl = int(tiers.get("shortlist") or 0)
@@ -316,6 +330,7 @@ def pre_publish_check(
     blocking = [
         i for i in issues
         if i.code in {
+            "no_fresh_scan",
             "poisoned_fund_criteria",
             "config_hash_drift",
             "shortlist_vanished",

@@ -169,3 +169,22 @@ Never write the plaintext password into the repo, a chat thread, or anywhere
 that is not the server itself — the same rule as the Google service-account
 key (README). Share the new password with team members over a channel that is
 not this repo.
+
+
+### Incomplete morning checks
+
+A failed scan exits with code 2, so the scheduled service does not publish it.
+Publishing requires the latest scan to have finished successfully within 30 hours;
+a partial scan must have fetched at least one item. An old successful scan cannot
+replace a newer failed scan.
+
+Today, the Sheet's Today tab and Telegram counts require a completed company QA
+pass. Never-checked companies, failed checks and passes older than the company's
+latest score stay hidden until checked again. Hermes errors are saved as
+`incomplete`, never as passes. A deliberate `--no-hermes` or `--no-llm` check can
+still record a rules-only pass. Publishing refuses incomplete QA even if the
+rules-only override is enabled or per-card QA was skipped.
+
+Publish-time QA changes refresh the Sheet before the Telegram ping. A Sheet
+outage is reported as a warning; the approved dashboard can still be announced,
+but the Sheet may be behind until the next successful sync.
