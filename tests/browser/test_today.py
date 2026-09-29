@@ -331,8 +331,8 @@ def test_b8_b9_progress_count(today, api):
     assert progress.inner_text() == f"{remaining} ready to review"
     _review_each_card(today, n, "3")
     assert today.locator(tid("done-state")).count() == 1
-    # Demo shortlist fits in one page, so finishing the queue clears the count.
-    assert progress.inner_text() == ""
+    # Finishing the ready queue leaves an explicit zero backlog.
+    assert progress.inner_text() == "0 ready to review"
     assert remaining == n
 
 
