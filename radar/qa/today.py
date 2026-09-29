@@ -552,7 +552,7 @@ def cached_check(db: Any, card: TodayCard) -> TodayCheckResult | None:
     try:
         row = _one(
             db,
-            "SELECT verdict, reason, summary, checker, raw_text "
+            "SELECT verdict, reason, summary, checker, raw_text, checked_at "
             "FROM today_check WHERE company_id = ? AND snapshot_hash = ?",
             (card.company_id, card.snapshot_hash()),
         )
@@ -560,6 +560,13 @@ def cached_check(db: Any, card: TodayCard) -> TodayCheckResult | None:
         return None
     if row is None:
         return None
+    if _state_of(row["verdict"], row["checker"]) == "pass":
+        latest = _one(db, "SELECT MAX(scored_at) AS stamp FROM score WHERE company_id = ?",
+                      (card.company_id,))
+        # A rescore creates a new generation even when the card text is unchanged.
+        # Reusing its old pass would skip Hermes and pretend new QA completed.
+        if latest and latest["stamp"] and latest["stamp"] > row["checked_at"]:
+            return None
     return TodayCheckResult(
         verdict=row["verdict"], reason=row["reason"], summary=row["summary"] or "",
         checker=row["checker"] or "hermes", raw_text=row["raw_text"],

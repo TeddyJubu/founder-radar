@@ -105,3 +105,45 @@ def test_unreleased_snapshot_table_gains_approval_column_without_trusting_old_ro
     from datetime import date
     from radar.render.digest import _shortlist
     assert _shortlist(db, date(2026,8,3), date(2026,8,3)) == []
+
+
+def test_later_rescore_with_same_card_hash_requires_a_real_new_check(db):
+    from prototype.server import build_today
+    cid = seed_companies(db, count=1, shortlist=1)[0]
+    cfg = default_config()
+    db.execute("UPDATE score SET scored_at='2020-01-01T00:00:00Z' WHERE company_id=?", (cid,))
+    card = load_today_cards(db, cfg)[0]
+    record_check(db, card, TodayCheckResult(verdict='pass', checker='hermes'),
+                 checked_at='2020-01-01T00:00:00Z')
+    db.execute("UPDATE score SET scored_at='2020-01-02T00:00:00Z' WHERE company_id=?", (cid,))
+    assert load_today_cards(db, cfg)[0].snapshot_hash() == card.snapshot_hash()
+    assert qa_state(db, cid) == 'incomplete'
+
+    class Checker:
+        name = 'hermes'
+        calls = 0
+        def review(self, checked):
+            self.calls += 1
+            return TodayCheckResult(verdict='pass', checker='hermes')
+
+    checker = Checker()
+    report = run_today_qa(db, cfg, checker=checker)
+    assert checker.calls == 1
+    assert report.cached == 0 and report.passed == 1
+    assert qa_state(db, cid) == 'pass'
+    assert [row['company_id'] for row in build_today(db.conn)['companies']] == [cid]
+
+
+def test_rescore_does_not_remove_a_cached_rejection_veto(db):
+    cid = seed_companies(db, count=1, shortlist=1)[0]
+    cfg = default_config()
+    card = load_today_cards(db, cfg)[0]
+    record_check(db, card, TodayCheckResult(verdict='reject', checker='hermes'),
+                 checked_at='2020-01-01T00:00:00Z')
+    class Checker:
+        name = 'hermes'
+        def review(self, checked):
+            raise AssertionError('Cached rejection must stay a veto')
+    report = run_today_qa(db, cfg, checker=Checker())
+    assert report.cached == 1 and report.rejected == 1
+    assert qa_state(db, cid) == 'reject'
