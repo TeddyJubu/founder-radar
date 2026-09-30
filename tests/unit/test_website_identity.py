@@ -316,3 +316,22 @@ def test_unattempted_company_precedes_old_failed_retry_with_small_budget(db):
     db.execute('UPDATE company SET last_seen=? WHERE id=?',('2099-01-01',first))
     result=verify(db,HTTP([page('No legal identity')]),limit=1)
     assert result['outcomes'][0]['company_id']==second
+
+
+def test_role_context_before_name_is_third_party_evidence(db):
+    cid=company(db)
+    assert verify(db,HTTP([page('Our client called Acme Ltd is registered in England and Wales. Company number 12345678.'),profile()]))['verified']==0
+    assert db.one('SELECT companies_house_no FROM company WHERE id=?',(cid,))[0] is None
+
+
+def test_historical_collection_filters_unreadable_routes_before_limit(db):
+    from radar.enrich.website_identity import collect_source_links
+    cid=create_company(db,Record(name='Acme Ltd'),source_key='businesscloud',source_url='https://publisher.org/story',external_id='1')
+    grant=create_company(db,Record(name='New grant company'),source_key='innovate_uk',source_url='https://www.ukri.org/publication',external_id='grant')
+    db.execute('UPDATE company SET last_seen=? WHERE id=?',('2099-01-01',grant))
+    html='<div class="post-content"><a href="'+SITE+'">Acme Ltd</a>'+('Evidence '*40)+'</div>'
+    http=HTTP([Response('https://publisher.org/story',200,html,{})])
+    result=collect_source_links(db,http,budget=RequestBudget(1),limit=1)
+    assert result['companies_linked']==1 and http.calls[0][0]=='https://publisher.org/story'
+    assert db.one('SELECT 1 FROM observation WHERE company_id=?',(cid,))
+    assert not db.one('SELECT 1 FROM observation WHERE company_id=?',(grant,))

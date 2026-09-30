@@ -97,7 +97,8 @@ def _identity_statement(statement, name, legal_name):
     owns = False
     for n in names:
         match = re.search(r'(?<!\w)' + literal(n) + r'(?!\w)\s*,?\s*(?:is\s+)?(?:a\s+company\s+)?registered\s+in\b', statement, re.I)
-        if match and not re.search(r'\b(?:client|customer|provider|example)\s*:?\s*$', statement[:match.start()], re.I):
+        prefix = re.split(r'[.!?;]', statement[:match.start()])[-1] if match else ''
+        if match and not re.search(r'\b(?:client|customer|provider|example)\b', prefix, re.I):
             owns = True
     if not owns:
         return False
@@ -116,12 +117,13 @@ def collect_source_links(db, http, *, budget, limit=20, company_ids=()):
     still comes from the stored named-company record and exact anchor label.
     """
     from radar.sources._article import article_links, SELECTORS
-    params = []
+    params = list(SELECTORS)
     where = ''
     if company_ids:
         where = ' AND c.id IN (' + ','.join('?' for _ in company_ids) + ')'
         params.extend(company_ids)
-    rows = db.query('SELECT c.id,c.canonical_name FROM company c WHERE c.companies_house_no IS NULL AND c.merged_into IS NULL' + where + ' ORDER BY c.last_seen DESC,c.id LIMIT ?', (*params, limit))
+    eligible_sources = ' AND EXISTS (SELECT 1 FROM company_source s WHERE s.company_id=c.id AND s.source_key IN (' + ','.join('?' for _ in SELECTORS) + '))'
+    rows = db.query('SELECT c.id,c.canonical_name FROM company c WHERE c.companies_house_no IS NULL AND c.merged_into IS NULL' + eligible_sources + where + ' ORDER BY c.last_seen DESC,c.id LIMIT ?', (*params, limit))
     result = dict(articles_read=0, companies_linked=0, unavailable=0)
     for row in rows:
         linked = False
