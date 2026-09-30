@@ -240,6 +240,7 @@ def test_every_source_declares_the_track_the_ledger_gives_it():
         "sheffield": "A",
         "founders_factory": "A",
         "techstars_london": "A",
+        "techscaler_catalyst": "A",
     }
     assert set(REGISTRY) == set(ledger), "the registry and the ledger disagree"
     for key, expected in ledger.items():
