@@ -118,6 +118,7 @@ class HttpClient:
         timeout: float | None = None,
         max_retries: int | None = None,
         follow_redirects: bool | None = None,
+        max_bytes: int | None = None,
     ) -> Response:
         host = urlsplit(url).netloc
 
@@ -134,9 +135,23 @@ class HttpClient:
             self.limiter.acquire(host, sleep=self._sleep)
             try:
                 self.request_count += 1
-                r = self._client.get(url, params=params, headers=dict(headers or {}), auth=auth,
-                                     timeout=self.timeout if timeout is None else timeout,
-                                     follow_redirects=self._client.follow_redirects if follow_redirects is None else follow_redirects)
+                options = dict(params=params, headers=dict(headers or {}), auth=auth,
+                               timeout=self.timeout if timeout is None else timeout,
+                               follow_redirects=self._client.follow_redirects if follow_redirects is None else follow_redirects)
+                if max_bytes is None:
+                    r = self._client.get(url, **options)
+                else:
+                    if max_bytes <= 0:
+                        raise ValueError('max_bytes must be positive')
+                    with self._client.stream('GET', url, **options) as streamed:
+                        chunks, size = [], 0
+                        for chunk in streamed.iter_bytes(chunk_size=16_384):
+                            size += len(chunk)
+                            if size > max_bytes:
+                                raise ValueError('response exceeds byte limit')
+                            chunks.append(chunk)
+                        r = httpx.Response(streamed.status_code, headers=streamed.headers,
+                                           content=b''.join(chunks), request=streamed.request)
             except httpx.HTTPError as exc:      # transport failure
                 last_exc = exc
                 if attempt == retries:

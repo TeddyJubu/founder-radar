@@ -30,6 +30,26 @@ def article_text(payload, source_key):
     raise ValueError('no substantive article content in reviewed wrappers')
 
 
+def article_links(payload, source_key, base_url):
+    """Retain labelled links only from the same reviewed article wrappers."""
+    doc = html_doc(payload, source_key)
+    for selector in SELECTORS.get(source_key, DEFAULT_SELECTORS):
+        nodes = doc.css(selector)
+        if len(clean_text(' '.join(n.text(separator=' ', strip=True) for n in nodes))) < 200:
+            continue
+        links = []
+        for node in nodes:
+            for anchor in node.css('a[href]'):
+                label = clean_text(anchor.text(separator=' ', strip=True))
+                url = urljoin(base_url, anchor.attributes['href'])
+                if label and urlsplit(url).scheme in ('http', 'https'):
+                    evidence = {'label': label, 'url': url}
+                    if evidence not in links:
+                        links.append(evidence)
+        return links[:100]
+    return []
+
+
 def hydrate_articles(items, ctx, *, kind, limit=MAX_ARTICLES):
     if kind not in ('news', 'spinout'):
         return items, []
@@ -81,7 +101,8 @@ def hydrate_articles(items, ctx, *, kind, limit=MAX_ARTICLES):
                 raise ValueError('article requests noindex')
             text = article_text(resp.text, item.source_key)
             structured.update(full_text_in_feed=True, needs_article_fetch=False,
-                              article_body_hydrated=True)
+                              article_body_hydrated=True,
+                              company_link_evidence=article_links(resp.text, item.source_key, current))
             out.append(replace(item, body_text=text, structured=structured))
         except Exception as exc:  # isolate one article; preserve the healthy feed
             failures.append(f'{item.external_id}: {type(exc).__name__}: {exc}; excerpt withheld')

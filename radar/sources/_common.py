@@ -302,6 +302,14 @@ def rss_entries(payload: str | bytes, source_key: str) -> list[dict]:
                 full = value
         summary = entry.get("summary") or entry.get("description") or ""
         body_html = full or summary
+        links = []
+        if full:
+            doc = html_doc(full, source_key)
+            for anchor in doc.css('a[href]'):
+                label = clean_text(anchor.text(separator=' ', strip=True))
+                url = urljoin(link, anchor.attributes['href'])
+                if label and urlsplit(url).scheme in ('http', 'https'):
+                    links.append({'label': label, 'url': url})
 
         out.append({
             "id": entry.get("id") or entry.get("guid") or link,
@@ -311,6 +319,7 @@ def rss_entries(payload: str | bytes, source_key: str) -> list[dict]:
                                or entry.get("updated")),
             "body": strip_html(body_html),
             "has_full_text": bool(full),
+            "company_link_evidence": links[:100],
             "tags": [t.get("term", "") for t in entry.get("tags", []) or []],
         })
     return out
