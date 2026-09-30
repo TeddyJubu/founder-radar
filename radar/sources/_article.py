@@ -15,6 +15,8 @@ SELECTORS = {
     'bdaily_regional': ('div.Artivent__content',),
     'startups_magazine': ('div.post-content.entry-content',),
     'cambridge_enterprise': ('main section.block--text div.prose',),
+    'ucl_ventures': ('main .sidebar-content-page__left-content .basic-content__column',),
+    'sheffield': ('main .block-field-blocknodenews-articlebody',),
     'uktn': ('div.js-post-content', 'article .entry-content', 'div.article-content', 'div.post-content'),
 }
 DEFAULT_SELECTORS = ('article .entry-content', 'div.article-content', 'div.post-content')
