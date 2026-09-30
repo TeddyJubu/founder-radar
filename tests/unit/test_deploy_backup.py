@@ -474,6 +474,16 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
     assert str(root / "data") in recorded
     assert str(home / ".hermes") in recorded
 
+    assert str(home / ".hermes" / "installs") in recorded
+    for path in ("backups", "state", "sessions", "memories", "shared",
+                 "state.db", "state.db-wal", "state.db-shm"):
+        assert str(home / ".hermes" / path) in recorded
+    installed_tools = str(home / ".hermes" / "tools")
+    assert "-R -P -m u:radar:r-X " + installed_tools in recorded
+    assert "u:radar:rwx " + installed_tools not in recorded
+    assert "-m u:radar:r-- " + str(home / ".hermes" / ".env") in recorded
+    assert "u:radar:rwx " + str(home / ".hermes" / ".env") not in recorded
+
 
 @pytest.mark.parametrize('state', ['activating', 'active', 'reloading', 'deactivating', 'unknown'])
 def test_updater_does_not_fetch_or_install_while_oneshot_scan_is_busy(tmp_path, state):
@@ -501,15 +511,6 @@ def test_updater_does_not_fetch_or_install_while_oneshot_scan_is_busy(tmp_path, 
     assert result.returncode == (1 if state == 'unknown' else 0), result.stderr
     assert not marker.exists(), 'a busy or unreadable scan must stop before fetching code'
     assert ('postponing update' if state == 'unknown' else 'daily scan is running') in result.stdout
-    assert str(home / ".hermes" / "installs") in recorded
-    for path in ("backups", "state", "sessions", "memories", "shared",
-                 "state.db", "state.db-wal", "state.db-shm"):
-        assert str(home / ".hermes" / path) in recorded
-    installed_tools = str(home / ".hermes" / "tools")
-    assert "-R -P -m u:radar:r-X " + installed_tools in recorded
-    assert "u:radar:rwx " + installed_tools not in recorded
-    assert "-m u:radar:r-- " + str(home / ".hermes" / ".env") in recorded
-    assert "u:radar:rwx " + str(home / ".hermes" / ".env") not in recorded
 
 
 def test_install_migrates_before_starting_any_service_or_timer():
