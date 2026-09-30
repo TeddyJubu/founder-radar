@@ -40,7 +40,7 @@ def test_actual_named_current_cohort_only_and_unknown_facts():
         assert item.title == item.structured['company_name']
         assert item.source_url == URL
         assert item.published_at == date(2026, 9, 29)
-        assert item.kind_hint == 'cohort'
+        assert item.kind_hint == 'accelerator_cohort'
         assert item.structured['program'] == 'Techscaler Catalyst'
         assert item.structured['company_link_evidence'] == []
         assert not {'sector', 'stage', 'company_number', 'hq_region', 'country', 'total_prior_funding_gbp'} & item.structured.keys()
@@ -52,6 +52,20 @@ def test_exact_company_anchor_inside_section_only():
     items = TechscalerCatalystAdapter().parse(article, URL)
     assert items[0].structured['company_link_evidence'] == [{'label': 'Better Surgery', 'url': 'https://better.example'}]
     assert all(not i.structured['company_link_evidence'] for i in items[1:])
+
+
+def test_actual_cohort_item_records_canonical_signal_without_guessed_geography(db, config):
+    from radar.pipeline import resolve_item
+    item = TechscalerCatalystAdapter().parse(ARTICLE, URL)[0]
+    cid = resolve_item(db, item, cfg=config)
+    company = db.one('SELECT discovery_route, country_iso2, hq_region, companies_house_no FROM company WHERE id=?', (cid,))
+    assert company['discovery_route'] == 'accelerator'
+    assert company['country_iso2'] is None
+    assert company['hq_region'] is None
+    assert company['companies_house_no'] is None
+    signal = db.one('SELECT kind, source_url FROM signal WHERE company_id=?', (cid,))
+    assert signal['kind'] == 'accelerator_cohort'
+    assert signal['source_url'] == URL
 
 
 def test_fetch_since_and_registration():
