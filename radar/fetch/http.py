@@ -150,7 +150,12 @@ class HttpClient:
                             if size > max_bytes:
                                 raise ValueError('response exceeds byte limit')
                             chunks.append(chunk)
-                        r = httpx.Response(streamed.status_code, headers=streamed.headers,
+                        # iter_bytes already decodes gzip/deflate. Reconstructing
+                        # with Content-Encoding would decode the plain body again.
+                        decoded_headers = dict(streamed.headers)
+                        decoded_headers.pop('content-encoding', None)
+                        decoded_headers.pop('content-length', None)
+                        r = httpx.Response(streamed.status_code, headers=decoded_headers,
                                            content=b''.join(chunks), request=streamed.request)
             except httpx.HTTPError as exc:      # transport failure
                 last_exc = exc
