@@ -94,10 +94,19 @@ fi
 
 # Do not pip-install over a live daily scan.
 if [ "$DRY" != "1" ] && command -v systemctl >/dev/null 2>&1; then
-  if systemctl is-active --quiet founder-radar.service; then
-    say "daily scan is running — will try again next cycle"
-    exit 0
+  # Type=oneshot stays "activating" throughout both ExecStart commands.
+  # is-active returns nonzero for that state even with a live scan/publisher.
+  if ! scan_state="$(systemctl show --property=ActiveState --value founder-radar.service 2>/dev/null)"; then
+    say "cannot read daily scan state — postponing update"
+    exit 1
   fi
+  case "$scan_state" in
+    active|activating|reloading|deactivating)
+      say "daily scan is running ($scan_state) — will try again next cycle"
+      exit 0 ;;
+    inactive|failed) ;;
+    *) say "unknown daily scan state — postponing update"; exit 1 ;;
+  esac
 fi
 
 # Never inherit a caller cwd of /root: pip as the service user then tries to
