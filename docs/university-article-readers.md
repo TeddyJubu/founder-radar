@@ -14,7 +14,7 @@ pages:
   the news-article body block inside main content.
 - [Edinburgh Innovations](https://edinburgh-innovations.ed.ac.uk/news/student-startup-solarsub-raises-1-3m-for-solar-panel-technology):
   the four article prose blocks within the reviewed article container. This
-  page has no main element; the selector uses its captured parent hierarchy to
+  page has no main element; the selector uses its named contentBlock container to
   exclude the navigation and footer. Article-owned related links are retained.
 
 Only those named containers supply article text and labelled company links.
@@ -32,3 +32,5 @@ unrecognised layouts and footer-only lookalikes, alongside the existing article
 hydration and source safety tests. Captured main-content DOM fixtures preserve
 the actual nesting and classes; their text and links are replaced with fictional
 data. These fixtures separately verify body-only text and link extraction.
+Edinburgh also has a regression that removes styling classes from the captured
+page: the named article container still yields the same body-owned links.

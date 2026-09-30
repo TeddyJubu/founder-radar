@@ -1,5 +1,6 @@
 import pytest
 from pathlib import Path
+from selectolax.parser import HTMLParser
 
 from radar.sources._article import article_links, article_text
 
@@ -52,3 +53,21 @@ def test_body_selector_is_scoped_to_main_content(key):
     payload = '<footer><div class="sidebar-content-page__left-content"><div class="basic-content__column block-field-blocknodenews-articlebody">' + ('Footer Company ' * 30) + '</div></div></footer>'
     with pytest.raises(ValueError, match='no substantive article'):
         article_text(payload, key)
+
+
+def test_edinburgh_named_article_container_survives_style_changes():
+    path = Path(__file__).parents[1] / 'fixtures' / 'sources' / 'edinburgh_article_captured_structure.html'
+    doc = HTMLParser(path.read_text())
+    for node in doc.css('[class]'):
+        node.attrs['class'] = 'prose' if 'prose' in (node.attributes.get('class') or '').split() else ''
+    body = article_text(doc.html, 'edinburgh_innovations')
+    assert 'ARTICLE_BODY_EVIDENCE' in body
+    assert 'OUTSIDE_ARTICLE_DECOY' not in body
+    assert len(article_links(doc.html, 'edinburgh_innovations', 'https://example.test')) == 3
+
+
+def test_edinburgh_footer_prose_is_not_an_article_container():
+    payload = '<body><div class="flex-1"><footer><div class="prose text-blue-dark text-base mb-20">' + ('Footer Company material. ' * 30) + '</div></footer></div></body>'
+    with pytest.raises(ValueError, match='no substantive article'):
+        article_text(payload, 'edinburgh_innovations')
+    assert article_links(payload, 'edinburgh_innovations', 'https://example.test') == []
