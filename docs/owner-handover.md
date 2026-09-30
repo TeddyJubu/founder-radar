@@ -152,7 +152,7 @@ There is no single password for every surface. Store the owner’s access detail
 |---|---|---|
 | Review login | `RADAR_WEB_USER`, `RADAR_WEB_PASS_HASH` in `/opt/founder-radar/.env` | Generate a new hash interactively with `caddy hash-password`; update the hash privately, then `sudo systemctl restart caddy`. The installer’s Caddy template reads `.env` through the service’s EnvironmentFile; restart rereads it. Check that installed arrangement locally if the server was customised |
 | Hermex/WebUI password | `HERMES_WEBUI_PASSWORD` in the installed WebUI service/configuration | Inspect that service locally to identify its environment file; change the app password there and restart `hermes-webui.service`. This password is separate from Today |
-| Hermes AI login/provider | Operator’s `/home/aryan/.hermes/` configuration and auth files | As the operator, first confirm the installed launcher works; then use that version’s help/setup to renew the configured provider’s login or key. Its exact provider-specific login subcommand is not verified here |
+| Hermes AI login/provider | Operator’s `/home/aryan/.hermes/` configuration and auth files | Use the verified owner SSH recovery steps below. The installed provider is `openai-codex`; keep its sign-in private |
 | Extraction AI | `LLM_PROVIDER` / `LLM_API_KEY` in Radar `.env` | Renew with that provider; replace privately. It is separate from Hermes’s QA login |
 | Companies House | `COMPANIES_HOUSE_API_KEY` in Radar `.env` | Create/renew in the owner’s Companies House developer account; replace privately |
 | Google Sheet | `GOOGLE_SA_JSON` and `SHEET_ID`; normally `/opt/founder-radar/secrets/google-sa.json` | Rotate the service-account key in Google Cloud; give its account Editor access to the intended Sheet. Delete the superseded key after testing |
@@ -162,6 +162,60 @@ There is no single password for every surface. Store the owner’s access detail
 If a Hermes terminal command fails before opening (for example, a missing Python package), diagnose the installed launcher and its environment through SSH; do not build a second installation or run an unverified bare maintenance command. The owner launcher and Radar QA runner were verified after repairing shared folder permissions. Scheduled scans now retain access to the protected permission-repair helper.
 
 Restart a long-running consumer after its environment changes. The CLI wrapper rereads its files on each invocation. Recheck with `doctor`, the relevant surface, and an explicitly authorised delivery test if messaging changed. Do not run a Hermes installer/update as `radar` against the operator-owned Hermes tree. Radar’s QA sets `HERMES_DISABLE_LAZY_INSTALLS=1` so it will not self-update that installation; updating Hermes itself is an operator task.
+
+### If Hermes chat cannot help: owner SSH recovery
+
+These routes were checked against installed Hermes **v0.21.5+4534.g666f313 (2026.9.24)**. Recheck help after a future upgrade. Run them as **aryan**, not `root` or `radar`.
+
+1. Connect using your own authorised SSH key:
+
+   ```sh
+   ssh aryan@srv1821489.hstgr.cloud
+   whoami
+   ```
+
+   `whoami` must say `aryan`. A private `ssh aryan` shortcut on another person's laptop may log in as root; it is not your access setup. Use this exact installed launcher rather than relying on PATH:
+
+   ```sh
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes --version
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes --help
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes doctor
+   ```
+
+   `doctor` checks setup and dependencies. It is not proof that every account can connect. Do not add `--fix` without reviewing the proposed repair.
+
+2. If the configured Codex AI login has expired, first try refreshing it:
+
+   ```sh
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes auth refresh openai-codex
+   ```
+
+   This changes stored authentication. If several credentials exist, the command needs the intended credential label or index as its final argument; follow `auth refresh --help` and do not guess.
+
+3. If refreshing fails, renew sign-in interactively:
+
+   ```sh
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes auth add openai-codex --no-browser
+   ```
+
+   Follow the device-code instructions in your private terminal. Open the displayed official sign-in page in your own trusted browser and use the account you control. The server does not need to open a browser. Never send the temporary code, login URL, password or tokens to chat, screenshots or a public guide. Do not use `--api-key` to put a secret into shell history. For provider/model selection, use `hermes setup model` through the same absolute launcher. Do not reset all configuration or log out working accounts first. Test Hermes conversation and Radar final QA after recovery; renew extraction AI credentials separately if that connection failed.
+
+4. To inspect Hermes maintenance without installing anything:
+
+   ```sh
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes update --check
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes update --plan
+   ```
+
+   Review the version change, compatibility and which services will restart. For the exact supported options, use `update --help` and `setup --help`.
+
+5. Only after choosing a maintenance window and confirming an independently verified, protected recovery backup, a planned update can use:
+
+   ```sh
+   /home/aryan/.hermes/hermes-agent/venv/bin/hermes update --backup
+   ```
+
+   This **changes code/dependencies and may restart services**. On this installed version, `--backup` requests a quick state snapshot plus a ZIP of Hermes home under its `backups/` folder. That backup is best-effort: an error does not necessarily stop the update. It is not a complete VPS backup, an off-server copy, or evidence a backup already exists. Verify recovery copies before updating and confirm the new backup outcome afterwards. Do not add `--yes`, `--no-backup` or force flags to bypass review. Afterward test chat, Hermex, the scheduled scan and Radar final QA; ask for help with a redacted error if anything fails.
 
 ## 9. When something fails
 
