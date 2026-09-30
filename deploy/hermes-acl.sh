@@ -147,6 +147,14 @@ do
   acl_tree "$path" "$APP_USER"
 done
 
+# PM discovers the installed browser/Chromium through tools/facts.json. Hermes
+# can chmod that record to 0600, clearing radar's ACL mask and making existing
+# tools look absent while lazy installs are disabled. Keep installed bytes
+# operator-owned: radar needs read access and directory/binary execution, never
+# write access. X leaves non-executable records read-only; acl_tree uses -P and
+# refuses a symlink root, so no planted link is followed.
+acl_tree "$H/tools" "$APP_USER" "r-X"
+
 # Today QA uses the operator provider configuration; it only needs to read
 # this file, unlike runtime backup/session trees.
 acl_user "$H/.env" "$APP_USER" "r--"
