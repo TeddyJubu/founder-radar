@@ -152,7 +152,7 @@ def verify_missing_crns(db, http, *, api_key, budget, limit=20, base_url=CH_API_
     if not api_key or budget.exhausted:
         return result
     where = ' AND id IN (' + ','.join('?' for _ in company_ids) + ')' if company_ids else ''
-    rows = db.query("SELECT * FROM company WHERE companies_house_no IS NULL AND merged_into IS NULL AND EXISTS (SELECT 1 FROM observation o WHERE o.company_id=company.id AND o.field=?)" + where + " ORDER BY last_seen DESC,id", (LINK_FIELD, *company_ids))
+    rows = db.query("SELECT * FROM company WHERE companies_house_no IS NULL AND merged_into IS NULL AND EXISTS (SELECT 1 FROM observation o WHERE o.company_id=company.id AND o.field=?)" + where + " ORDER BY COALESCE((SELECT value FROM _meta m WHERE m.key=? || company.id),'') ASC,last_seen DESC,id", (LINK_FIELD, *company_ids, RETRY_PREFIX))
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     for row in rows:
         if result['attempted'] >= limit or budget.exhausted:

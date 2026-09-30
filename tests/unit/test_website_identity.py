@@ -305,3 +305,14 @@ def test_real_client_checks_robots_for_each_same_domain_redirect(db,monkeypatch)
 def test_role_word_elsewhere_does_not_hide_own_legal_identity(db):
     company(db)
     assert verify(db,HTTP([page(STATEMENT+' Our payment provider handles subscriptions.'),profile()]))['verified']==1
+
+
+def test_unattempted_company_precedes_old_failed_retry_with_small_budget(db):
+    first=company(db,name='Acme Ltd')
+    verify(db,HTTP([page('No legal identity')]),limit=1)
+    db.execute('UPDATE _meta SET value=? WHERE key=?',('2020-01-01T00:00:00+00:00',RETRY_PREFIX+first))
+    second=company(db,name='Other Ltd')
+    # Make the failed company more recently discovered; retry fairness still wins.
+    db.execute('UPDATE company SET last_seen=? WHERE id=?',('2099-01-01',first))
+    result=verify(db,HTTP([page('No legal identity')]),limit=1)
+    assert result['outcomes'][0]['company_id']==second
