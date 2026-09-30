@@ -109,6 +109,19 @@ REGIONAL_GEOS = frozenset({
     "yorkshire", "north_east", "north_england", "sunderland",
 })
 
+
+def _soft_regional_focus(card: Any) -> bool:
+    return (str(card.geo_rule or '').strip().upper() == 'SOFT'
+            and bool({g.strip().lower() for g in card.geo_values if g} & REGIONAL_GEOS))
+
+
+SOFT_REGION_NOTE = (
+    "This vehicle's regional geography rule is SOFT: a preference used by "
+    "scoring, not a hard eligibility restriction. Being outside that preferred "
+    "region alone is not a geography_mismatch veto. Other startup, identity, "
+    "backing and eligibility checks still apply. Do not change scores or invent geography."
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PROMPT_PATH = (
     _REPO_ROOT / "hermes" / "skills" / "founder-radar"
@@ -214,6 +227,10 @@ class TodayCard:
             "recommendation_reason": self.recommendation_reason,
             "recommendation_warning": self.recommendation_warning,
         }
+        if _soft_regional_focus(self):
+            # Only affected cards change their approval snapshot. Other cached
+            # checks receive exactly their existing payload and instructions.
+            payload['geography_policy'] = SOFT_REGION_NOTE
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
     def snapshot_hash(self) -> str:
@@ -287,6 +304,7 @@ def build_user_prompt(card: TodayCard) -> str:
         "Any project_description describes the funded project, possibly a consortium; "
         "it does not prove this participant's product, sector, stage or headquarters. "
         "You may still veto a wrong entity or seek further evidence when ambiguous.\n"
+        f"{SOFT_REGION_NOTE + chr(10) if _soft_regional_focus(card) else ''}"
         f"<today_card>\n{card.blob()}\n</today_card>"
     )
 
@@ -384,7 +402,7 @@ def rules_precheck(card: TodayCard) -> TodayCheckResult | None:
         )
     city = (card.city or "").strip().lower()
     geos = {g.strip().lower() for g in card.geo_values if g}
-    if city in GOLDEN_CITIES and geos & REGIONAL_GEOS:
+    if city in GOLDEN_CITIES and geos & REGIONAL_GEOS and not _soft_regional_focus(card):
         return TodayCheckResult(
             verdict="reject", reason="geography_mismatch", checker="rules",
             summary=(
