@@ -21,11 +21,13 @@ shape of work `openpyxl` does in read-only mode, in about forty lines. The
 whole file is streamed because the sheet is ordered by competition, not by
 date, so the recent awards are scattered through it.
 
-Two deliberate omissions:
+Project context is preserved without company-level inference:
 
-* **`Public Description`** is never read. The structured columns already say
-  who won what, where and when, so there is nothing for stage ③ to infer and no
-  reason to spend a model call on 100 rows a month.
+* **`Public Description`** is retained as bounded `project_description` for
+  the named-row QA receipt only. It describes an R&D project, sometimes a
+  consortium, and does not prove a participant's product, sector, stage or HQ.
+  No new extraction/model/scoring step is introduced.
+
 * **`company_number`** is set from the CRN so enrichment can attach
   incorporation age. `pipeline._route_of` follows `kind_hint` (`grant_award`
   → grant), not the presence of a CRN, so this stays Track A. `crn` is kept
@@ -128,7 +130,8 @@ class InnovateUkAdapter:
         filename = urlsplit(url).path.rsplit("/", 1)[-1].lower()
         return "2016" in filename and "present" in filename
 
-    def parse(self, payload: bytes | str, *, since: date | None = None, source_url: str = PUBLICATION) -> list[RawItem]:
+    def parse(self, payload: bytes | str, *, since: date | None = None, source_url: str = PUBLICATION,
+              target_identities: set[tuple[str, str]] | None = None) -> list[RawItem]:
         blob = payload.encode("utf-8", "replace") if isinstance(payload, str) else payload
         try:
             book = zipfile.ZipFile(io.BytesIO(blob))
@@ -158,6 +161,10 @@ class InnovateUkAdapter:
             company = value("Participant Name")
             if not company or not _is_sme(value("Enterprise Size")):
                 continue
+            if target_identities is not None:
+                from radar.resolve.normalise import norm_ch_number
+                if (norm_key(company), norm_ch_number(value("CRN"))) not in target_identities:
+                    continue
             if "withdraw" in value("Participant Withdrawn From Project").lower():
                 continue
             awarded = _excel_date(value("Project Start Date"))
@@ -186,6 +193,7 @@ class InnovateUkAdapter:
                     "competition": value("Competition Title") or None,
                     "postal_code": value("Postcode") or None,
                     "enterprise_size": value("Enterprise Size") or None,
+                    "project_description": (value("Public Description").encode("utf-8")[:800].decode("utf-8", "ignore") or None),
                     "date_confidence": "exact",
                     # 06-scoring §3 — the reason this source exists.
                     "qualifiers": ["grant"],

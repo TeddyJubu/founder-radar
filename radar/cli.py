@@ -574,6 +574,43 @@ def today(ctx):
     _emit(render_today_ping(_db(ctx)), ctx.obj["json"])
 
 
+@cli.command("refresh-source-evidence")
+@click.option("--company-id", multiple=True, help="Existing company ID; repeat to target specific cards")
+@click.option("--apply", is_flag=True, help="Store exactly matched row receipts; default is preview only")
+@click.pass_context
+def refresh_source_evidence(ctx, company_id, apply):
+    """Read the current official Innovate UK workbook once for selected cards.
+
+    Preview does not write. Apply adds source evidence observations only;
+    company facts, scores and review decisions stay unchanged. New evidence
+    invalidates an old card approval, so run today-qa before publishing.
+    """
+    from radar.fetch.http import HttpClient
+    from radar.qa.evidence import refresh_innovate_receipts
+    from radar.qa.today import load_today_cards
+
+    if apply:
+        db = _db(ctx)
+    else:
+        import sqlite3
+        db = Db(':memory:')
+        source = sqlite3.connect(Path(ctx.obj['db_path']).resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            source.backup(db.conn)
+        finally:
+            source.close()
+    ids = list(company_id) or [c.company_id for c in load_today_cards(db, limit=500)
+                              if c.source_key == "innovate_uk"]
+    if not apply:
+        db.conn.execute("PRAGMA query_only = ON")
+    try:
+        with HttpClient(timeout=30, max_retries=1) as http:
+            result = refresh_innovate_receipts(db, http, ids, apply=apply)
+        _emit(result, ctx.obj["json"])
+    finally:
+        db.close()
+
+
 @cli.command("today-qa")
 @click.option("--no-hermes", is_flag=True,
               help="Rules only — skip the Hermes subagent")

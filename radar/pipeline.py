@@ -975,6 +975,9 @@ def _record_signal(db: Any, company_id: str, item: Any, name: str,
          item.source_key, item.source_url, now_iso()),
     )
 
+    from radar.qa.evidence import record_source_receipt
+    record_source_receipt(db, company_id, item)
+
     if kind in PRESS_KINDS:
         _refresh_press_count(db, company_id)
 
