@@ -6,7 +6,8 @@ from radar.sources._article import article_links, article_text
 
 @pytest.mark.parametrize('key,fixture,link_count', [
     ('ucl_ventures', 'ucl_article_captured_structure.html', 2),
-    ('sheffield', 'sheffield_article_captured_structure.html', 4),
+    # Six body anchors are retained; their fictional labels/URLs are unique.
+    ('sheffield', 'sheffield_article_captured_structure.html', 6),
 ])
 def test_captured_official_article_structure(key, fixture, link_count):
     payload = (Path(__file__).parents[1] / 'fixtures' / 'sources' / fixture).read_text()
