@@ -17,6 +17,7 @@ SELECTORS = {
     'cambridge_enterprise': ('main section.block--text div.prose',),
     'ucl_ventures': ('main .sidebar-content-page__left-content .basic-content__column',),
     'sheffield': ('main .block-field-blocknodenews-articlebody',),
+    'edinburgh_innovations': ('body > div.flex-1 > div.relative > div > div > div.prose.text-blue-dark.text-base.mb-20',),
     'uktn': ('div.js-post-content', 'article .entry-content', 'div.article-content', 'div.post-content'),
 }
 DEFAULT_SELECTORS = ('article .entry-content', 'div.article-content', 'div.post-content')
