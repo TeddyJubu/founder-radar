@@ -473,6 +473,7 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
     assert str(root / "venv") not in recorded
     assert str(root / "data") in recorded
     assert str(home / ".hermes") in recorded
+
     assert str(home / ".hermes" / "installs") in recorded
     for path in ("backups", "state", "sessions", "memories", "shared",
                  "state.db", "state.db-wal", "state.db-shm"):
@@ -482,6 +483,34 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
     assert "u:radar:rwx " + installed_tools not in recorded
     assert "-m u:radar:r-- " + str(home / ".hermes" / ".env") in recorded
     assert "u:radar:rwx " + str(home / ".hermes" / ".env") not in recorded
+
+
+@pytest.mark.parametrize('state', ['activating', 'active', 'reloading', 'deactivating', 'unknown'])
+def test_updater_does_not_fetch_or_install_while_oneshot_scan_is_busy(tmp_path, state):
+    tools = tmp_path / 'bin'
+    tools.mkdir()
+    app = tmp_path / 'app'
+    (app / '.git').mkdir(parents=True)
+    marker = tmp_path / 'git-called'
+    # The real oneshot unit is "activating" while its Python process runs.
+    # The old is-active query would return 3 and incorrectly allow the update.
+    bodies = {
+        'systemctl': 'if [ "$1" = show ]; then echo "$TEST_SCAN_STATE"; exit 0; fi; exit 3',
+        'git': 'touch "$TEST_GIT_MARKER"; exit 90',
+    }
+    for name, body in bodies.items():
+        path = tools / name
+        path.write_text('#!/bin/sh\n' + body + '\n')
+        path.chmod(0o755)
+    env = dict(os.environ, PATH=str(tools) + ':' + os.environ['PATH'],
+               ROOT=str(tmp_path), APP_DIR=str(app), RADAR_UPDATE_ALLOW_NONROOT='1',
+               RADAR_UPDATE_DRY_RUN='0', RADAR_UPDATE_LOCK=str(tmp_path / 'update.lock'),
+               RADAR_UPDATE_LOG=str(tmp_path / 'update.log'), TEST_SCAN_STATE=state,
+               TEST_GIT_MARKER=str(marker))
+    result = subprocess.run(['bash', str(UPDATE_SCRIPT)], env=env, capture_output=True, text=True)
+    assert result.returncode == (1 if state == 'unknown' else 0), result.stderr
+    assert not marker.exists(), 'a busy or unreadable scan must stop before fetching code'
+    assert ('postponing update' if state == 'unknown' else 'daily scan is running') in result.stdout
 
 
 def test_install_migrates_before_starting_any_service_or_timer():
