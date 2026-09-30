@@ -14,7 +14,7 @@ The index parser considers dated introductions whose titles begin `Introducing` 
 
 ## Activation and verification
 
-The registry key is `techscaler_catalyst`, Track **A**, accelerator, weekly. New default configurations include its Sources row enabled. Existing production Sheets are durable user configuration and are not changed by this commit: the owner must add the exact key with Track `A` and Enabled `TRUE` to the Sources tab, then load/validate settings through the normal workflow. An existing false toggle remains the owner's choice.
+The registry key is `techscaler_catalyst`, Track **A**, accelerator, weekly. The normal configuration loader appends missing default source keys, so this key becomes enabled when an existing Sheet omits it. An existing explicit false toggle stays false. A normal Sheet sync exposes the new row with Track `A`, where the owner can set Enabled `FALSE` to turn it off. Check the loaded settings and visible row rather than assuming the toggle. The code commit itself does not write to the live Sheet.
 
 Use `founder-radar sources --test techscaler_catalyst` for a bounded source check. Then run the supported scan/resolve workflow and completed Today QA before publication. This feed increases genuine discovery inputs; it cannot guarantee all listed ventures resolve, qualify for a fund or produce a balanced Today quota. It is Scottish programme discovery, not a replacement for independently evidenced North East/Yorkshire eligibility.
 
