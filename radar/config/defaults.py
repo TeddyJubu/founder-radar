@@ -496,6 +496,8 @@ LISTS: dict[str, Any] = {
 # ------------------------------------------------------------------ sources
 
 DEFAULT_SOURCES = [
+    SourceConfig(key="techscaler_catalyst", track="A",
+                 note="Official named Catalyst cohorts; identity, HQ and funding require separate evidence"),
     SourceConfig(key="companies_house", track="B", note="The register sweep — Track B"),
     SourceConfig(key="northern_accelerator", track="A"),
     SourceConfig(key="cambridge_enterprise", track="A"),

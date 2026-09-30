@@ -58,6 +58,7 @@ Legend — **Access:** `API` · `JSON` (WordPress/CMS endpoint) · `RSS` · `HTM
 | Carbon13 | A | RSS+JSON | `carbonthirteen.com/feed/` | Climate → Northstar |
 | Founders Factory | A / — | HTML | `foundersfactory.com/articles/` | **"Investing in X" posts are denylist.** Other articles stay as news. |
 | Techstars London | A | HTML | `techstars.com/newsroom` | Cohort announcements |
+| Techscaler Catalyst | A | HTML | `techscaler.co.uk/resources` | Dated named cohort introductions; preserve unknown identity, HQ and funding; [activation audit](../source-audit-techscaler-catalyst.md) |
 | Venture Further (Manchester) | A | HTML | `entrepreneurship.manchester.ac.uk/venture-further/` | Annual burst, ~11 winners |
 | Converge (Scotland) | A | RSS | `convergechallenge.com/updates/` | |
 | Antler UK | A | BROWSER | `antler.co/portfolio` | ⚠️ robots.txt **disallows** `/new-portfolio-companies/`. Only the `/portfolio` root is permitted. Crawl-delay 10. |

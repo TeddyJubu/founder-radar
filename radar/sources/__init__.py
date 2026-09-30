@@ -61,6 +61,7 @@ TIER_1_SOURCES: tuple[str, ...] = tuple(SOURCE_MODULES)
 #: freshness: none of these is on the critical path, and each one failing is a
 #: row on the Sources tab rather than a problem.
 TIER_2_MODULES: dict[str, str] = {
+    "techscaler_catalyst": "radar.sources.techscaler_catalyst",
     "startups_magazine": "radar.sources.startups_magazine",
     "bdaily_regional": "radar.sources.bdaily_regional",
     "edinburgh_innovations": "radar.sources.edinburgh_innovations",
