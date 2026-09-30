@@ -64,6 +64,7 @@ class BusinessCloudAdapter:
                 # the flag exists so a feed that quietly drops to excerpts
                 # degrades to an extra fetch instead of to empty extractions.
                 "full_text_in_feed": full,
+                "company_link_evidence": entry.get('company_link_evidence', []),
                 "tags": entry["tags"],
             },
             kind_hint="funding_round" if _looks_like_funding(entry) else "news_mention",

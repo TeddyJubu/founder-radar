@@ -914,6 +914,9 @@ def resolve_item(db: Db, item: Any, cfg: Any, *, seen_at: str | None = None) -> 
         fields=fields,
     )
 
+    from radar.enrich.website_identity import retain_company_links
+    retain_company_links(db, resolution.company_id, name, structured.get('company_link_evidence') or [],
+                         source_key=item.source_key, source_url=item.source_url)
     _record_signal(db, resolution.company_id, item, name, fields)
     return resolution.company_id
 
@@ -1207,8 +1210,11 @@ def enrich_stage(db: Db, cfg: Any, http: Any, *, api_key: str | None = None,
         return {"enriched": 0, "queued": 0, "budget_limit": budget_limit, "skipped": "no api key"}
     from radar.enrich import RequestBudget
 
+    from radar.enrich.website_identity import verify_missing_crns
+    budget = RequestBudget(budget_limit)
+    verification = verify_missing_crns(db, http, api_key=key, budget=budget)
     result = enrich_companies(
-        db, http, api_key=key, budget=RequestBudget(budget_limit),
+        db, http, api_key=key, budget=budget,
         base_url=CH_API_BASE,
     )
     return {
@@ -1218,6 +1224,7 @@ def enrich_stage(db: Db, cfg: Any, http: Any, *, api_key: str | None = None,
         "budget_spent": result.budget_spent,
         "share_issues": result.share_issues,
         "ages_hydrated": result.ages_hydrated,
+        "website_verification": verification,
     }
 
 

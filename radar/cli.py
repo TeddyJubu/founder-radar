@@ -130,6 +130,50 @@ def _run_pipeline_from_cli(ctx, fund_key, source_key, since, dry_run, no_llm):
         raise click.BadParameter(str(exc), param_hint="--fund") from exc
 
 
+@cli.command('verify-identities')
+@click.option('--limit', type=click.IntRange(1, 20), default=20, show_default=True)
+@click.option('--request-budget', type=click.IntRange(0, 100), default=60, show_default=True)
+@click.option('--company', 'company_ids', multiple=True, help='Restrict to these existing company IDs')
+@click.option('--collect-links', is_flag=True, help='Reread existing cited news articles for exact company links')
+@click.option('--apply', is_flag=True, help='Persist verified identity/evidence; default previews in memory')
+@click.pass_context
+def verify_identities(ctx, limit, request_budget, company_ids, collect_links, apply):
+    """Verify missing CRNs against named company sites and Companies House.
+
+    Does not change verdicts, merge companies, rescore or publish.
+    Preview makes bounded read-only HTTP requests but no live database writes.
+    """
+    import sqlite3
+    from radar.enrich import RequestBudget
+    from radar.enrich.website_identity import collect_source_links, verify_missing_crns
+    from radar.pipeline import _make_http
+    from radar.sources.companies_house import api_key_from_env
+
+    key = api_key_from_env()
+    if not key:
+        raise click.ClickException('no Companies House API key; no requests made')
+    if apply:
+        db = _db(ctx)
+    else:
+        db = Db(':memory:')
+        source = sqlite3.connect(Path(ctx.obj['db_path']).resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            source.backup(db.conn)
+        finally:
+            source.close()
+    http = _make_http()
+    budget = RequestBudget(request_budget)
+    try:
+        collected = collect_source_links(db, http, budget=budget, limit=limit, company_ids=company_ids) if collect_links else {}
+        result = verify_missing_crns(db, http, api_key=key, budget=budget, limit=limit, company_ids=company_ids)
+        _emit({'applied': apply, 'links': collected, 'verification': result,
+               'budget_spent': budget.spent, 'budget_limit': budget.limit,
+               'companies': [dict(r) for r in db.query('SELECT id,canonical_name,companies_house_no,incorporated_on,country_iso2 FROM company WHERE id IN (' + ','.join('?' for _ in company_ids) + ')', company_ids)] if company_ids else []}, ctx.obj['json'])
+    finally:
+        http.close()
+        db.close()
+
+
 @cli.command()
 @click.option("--fund", "fund_key", default=None, help="Scope the run to one fund")
 @click.option("--source", "source_key", default=None, help="Run one adapter in isolation")

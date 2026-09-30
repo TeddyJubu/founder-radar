@@ -171,6 +171,8 @@ class UktnAdapter:
         except Exception:                                # noqa: BLE001
             return item
         structured = dict(item.structured or {})
+        from radar.sources._article import article_links
+        structured['company_link_evidence'] = article_links(resp.text, self.key, item.source_url)
         structured["needs_article_fetch"] = False
         return RawItem(
             source_key=item.source_key,
