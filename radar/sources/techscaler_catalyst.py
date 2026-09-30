@@ -112,7 +112,7 @@ class TechscalerCatalystAdapter:
         self.last_fingerprint = selector_fingerprint(['h1', '.blog-post-header_date-wrapper', '.text-rich-text.w-richtext>Meet the cohort:..Up next'])
         return [RawItem(source_key=self.key, source_url=source_url,
                         external_id=f'{source_url}#{name.casefold()}', published_at=published,
-                        title=name, body_text=f'{name} is listed in {cohort_title}.', kind_hint='cohort',
+                        title=name, body_text=f'{name} is listed in {cohort_title}.', kind_hint='accelerator_cohort',
                         structured={'company_name': name, 'program': 'Techscaler Catalyst',
                                     'cohort': cohort_title, 'date_confidence': 'exact',
                                     'company_link_evidence': links.get(name.casefold(), []),
