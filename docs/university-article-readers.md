@@ -25,4 +25,6 @@ country, maturity, backing, scoring and final-review checks still apply.
 Validation: both inspected live articles now yield substantive body text and
 article links. Offline regressions cover exclusion of navigation/sidebar links,
 unrecognised layouts and footer-only lookalikes, alongside the existing article
-hydration and source safety tests.
+hydration and source safety tests. Captured main-content DOM fixtures preserve
+the actual nesting and classes; their text and links are replaced with fictional
+data. These fixtures separately verify body-only text and link extraction.

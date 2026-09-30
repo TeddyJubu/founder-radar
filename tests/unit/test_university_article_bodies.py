@@ -1,6 +1,22 @@
 import pytest
+from pathlib import Path
 
 from radar.sources._article import article_links, article_text
+
+
+@pytest.mark.parametrize('key,fixture,link_count', [
+    ('ucl_ventures', 'ucl_article_captured_structure.html', 2),
+    ('sheffield', 'sheffield_article_captured_structure.html', 4),
+])
+def test_captured_official_article_structure(key, fixture, link_count):
+    payload = (Path(__file__).parents[1] / 'fixtures' / 'sources' / fixture).read_text()
+    body = article_text(payload, key)
+    assert 'ARTICLE_BODY_EVIDENCE' in body
+    assert 'OUTSIDE_ARTICLE_DECOY' not in body
+    links = article_links(payload, key, 'https://example.test/news')
+    assert len(links) == link_count
+    assert all('ARTICLE_BODY_EVIDENCE' in link['label'] for link in links)
+    assert all(link['url'].startswith('https://example.test/fixture-company-') for link in links)
 
 
 @pytest.mark.parametrize('key,body_class', [
