@@ -1,0 +1,95 @@
+1
+00:00:00,994 --> 00:00:06,196
+UK Founder Radar finds young UK startups each morning and tells you which fund to send them to.
+
+2
+00:00:06,201 --> 00:00:12,670
+It starts from the UK company register — a legal birthday — so a 90-day-old company cannot look six years old.
+
+3
+00:00:12,672 --> 00:00:18,939
+Old lists come from fund websites. Those companies already raised. You cannot introduce a fund to a company it already owns.
+
+4
+00:00:18,943 --> 00:00:24,545
+Your morning job is short: one company at a time. Press 1 to keep, 2 if you are unsure, or 3 to pass.
+
+5
+00:00:24,548 --> 00:00:30,675
+Open Today when you are ready. That is the real morning list — not a practice deck.
+
+6
+00:00:30,677 --> 00:00:36,538
+This is Today. First up: SC EDINBURGH ROBOTICS LTD. One company at a time — read the card, then decide.
+
+7
+00:00:36,541 --> 00:00:42,604
+The blue box is queue diagnostics: why other scored companies are not on Today. Counts only — not a second list.
+
+8
+00:00:42,606 --> 00:00:48,269
+The top line is the company, city, and how long ago it was incorporated. Unknown stays unknown.
+
+9
+00:00:48,274 --> 00:00:54,137
+Match is fund fit for the Send-to fund. Fresh is how new it still looks to them.
+
+10
+00:00:54,140 --> 00:01:00,204
+Send to is the suggested fund and vehicle — including the cheque range. That is who you would email.
+
+11
+00:01:00,207 --> 00:01:05,817
+The four bars are four separate fund scores. They do not add up to 100%. The tallest bar is not always the route.
+
+12
+00:01:05,818 --> 00:01:13,120
+Open the full score if you want the evidence, not just the headline.
+
+13
+00:01:13,123 --> 00:01:21,441
+This one is worth an email. Press Worth contacting — key 1. It is saved to Kept straight away.
+
+14
+00:01:21,442 --> 00:01:29,367
+Next: METZERO LIMITED. Same morning pass. Look at Match, Fresh, and who it is sent to.
+
+15
+00:01:29,370 --> 00:01:38,491
+This card also fits another fund. If you want to come back later, press Unsure — key 2. Unsure is still Kept.
+
+16
+00:01:38,492 --> 00:01:44,816
+Last today: 00445790 LEGACY HOLDINGS LIMITED. If it is not for you, press Not for me — key 3.
+
+17
+00:01:44,818 --> 00:01:51,727
+Rejects are stored for tuning, but they never appear on Kept and they do not come back on Today.
+
+18
+00:01:51,730 --> 00:01:58,489
+That is the morning list done. The done screen points you to Kept — the durable place for your picks.
+
+19
+00:01:58,500 --> 00:02:05,966
+Kept lists Worth contacting and Unsure only. The company you passed is not here.
+
+20
+00:02:05,968 --> 00:02:12,125
+Open Dashboard when you want dates: first seen, incorporation, signals, and the day you decided.
+
+21
+00:02:12,137 --> 00:02:23,063
+The calendar is history, not a second inbox. A quiet day is a real answer, not a missing one.
+
+22
+00:02:23,068 --> 00:02:29,592
+Help explains how the sheet, this website, and Telegram share one notebook.
+
+23
+00:02:29,594 --> 00:02:38,191
+Decisions only count when they are saved here or through the CLI. A chat-only “no” does not update Today or Kept.
+
+24
+00:02:38,206 --> 00:02:45,612
+That is the loop: Today, decide with 1 / 2 / 3, then Kept. Use it each morning — the list gets pickier with your answers.
