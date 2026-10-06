@@ -266,13 +266,23 @@ def submit_job(
     return job, False
 
 
+def _is_partial_search(job: Job, result: RunResult) -> bool:
+    # Python also exits 1 on an uncaught exception, so exit 1 alone is not a
+    # partial scan: require the CLI's own JSON summary to say "partial".
+    if job.command != "search" or result.exit_code != 1:
+        return False
+    parsed = _try_parse_json(result.stdout)
+    run = parsed.get("run") if isinstance(parsed, dict) else None
+    return isinstance(run, dict) and run.get("status") == "partial"
+
+
 def _apply_result(job: Job, result: RunResult) -> None:
     job.updated_at = time.time()
     job.exit_code = result.exit_code
     job.stdout = result.stdout
     job.stderr = result.stderr
     job.status = "done" if result.exit_code == 0 else (
-        "partial" if job.command == "search" and result.exit_code == 1 else "failed"
+        "partial" if _is_partial_search(job, result) else "failed"
     )
     job.error = None
     if result.exit_code != 0:

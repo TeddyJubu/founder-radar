@@ -64,7 +64,9 @@ def complete_run(monkeypatch, *, code=0, stdout='{"run":{"run_id":"mock-run-1"}}
 
 @pytest.mark.parametrize(("code", "expected"), [(0, "done"), (1, "partial"), (2, "failed"), (124, "failed"), (127, "failed")])
 def test_search_exit_status_and_parsed_result(monkeypatch, code, expected):
-    calls = complete_run(monkeypatch, code=code)
+    run_status = {0: "ok", 1: "partial"}.get(code, "failed")
+    calls = complete_run(monkeypatch, code=code,
+                         stdout=f'{{"run":{{"run_id":"mock-run-1","status":"{run_status}"}}}}')
     status, accepted = request("/v1/jobs/search", {"no_llm": True}, key="scan:one")
     assert status == 202
     job = wait_job(accepted["job_id"])
@@ -73,6 +75,18 @@ def test_search_exit_status_and_parsed_result(monkeypatch, code, expected):
     assert job["result"]["run"]["run_id"] == "mock-run-1"
     assert len(calls) == 1
     assert "--no-llm" in calls[0][0] and "--send" not in calls[0][0]
+
+
+@pytest.mark.parametrize("stdout", ["", "Traceback (most recent call last):\n  ...\nOSError: boom",
+                                    '{"run":{"run_id":"mock-run-1","status":"ok"}}'])
+def test_search_exit_1_without_partial_summary_is_failed(monkeypatch, stdout):
+    # An uncaught exception also exits 1; it must not be reported as partial.
+    complete_run(monkeypatch, code=1, stdout=stdout)
+    status, accepted = request("/v1/jobs/search", {"no_llm": True}, key="scan:crash")
+    assert status == 202
+    job = wait_job(accepted["job_id"])
+    assert job["status"] == "failed"
+    assert job["exit_code"] == 1
 
 
 @pytest.mark.parametrize("path", ["/v1/jobs/search", "/v1/jobs/rescore", "/v1/jobs/publish"])
