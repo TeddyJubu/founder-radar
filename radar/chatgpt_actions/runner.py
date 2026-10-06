@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 from dataclasses import dataclass
 from typing import Any
@@ -142,6 +143,8 @@ def argv_publish_check() -> list[str]:
 
 
 def argv_publish(*, send: bool = False) -> list[str]:
+    if type(send) is not bool:
+        raise AllowlistError("send must be a JSON boolean")
     argv = _base() + ["publish"]
     if send:
         argv.append("--send")
@@ -160,6 +163,8 @@ def argv_search(
     no_llm: bool = False,
 ) -> list[str]:
     """Build search argv. Never adds ``--send`` (publish is the only Telegram path)."""
+    if type(no_llm) is not bool:
+        raise AllowlistError("no_llm must be a JSON boolean")
     argv = _base() + ["search"]
     if fund_key:
         key = fund_key.strip().lower()
@@ -184,6 +189,8 @@ def argv_search(
 
 
 def argv_rescore(*, all_companies: bool = False) -> list[str]:
+    if type(all_companies) is not bool:
+        raise AllowlistError("all_companies must be a JSON boolean")
     argv = _base() + ["rescore"]
     if all_companies:
         argv.append("--all")
@@ -195,6 +202,7 @@ def run_argv(
     *,
     timeout: float | None = 120.0,
     env: dict[str, str] | None = None,
+    pass_fds: tuple[int, ...] = (),
 ) -> RunResult:
     """Run an allowlisted argv synchronously; never invent scores."""
     _guard_subcommand(argv)
@@ -202,31 +210,45 @@ def run_argv(
     if env:
         merged.update(env)
     try:
-        proc = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=merged,
-            stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env=merged, stdin=subprocess.DEVNULL, shell=False, pass_fds=pass_fds,
+            # The CLI can spawn Hermes. A timeout must stop its whole process
+            # group before the API lets another mutation start.
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired as exc:
-        out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
-        err = (exc.stderr or "") if isinstance(exc.stderr, str) else "timeout"
-        return RunResult(argv=list(argv), exit_code=124, stdout=out, stderr=err)
     except OSError as exc:
-        return RunResult(
-            argv=list(argv),
-            exit_code=127,
-            stdout="",
-            stderr=f"failed to exec: {exc}",
-        )
-    return RunResult(
-        argv=list(argv),
-        exit_code=int(proc.returncode),
-        stdout=proc.stdout or "",
-        stderr=proc.stderr or "",
-    )
+        return RunResult(list(argv), 127, "", f"failed to exec: {exc}")
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        cleanup = "timeout; CLI process group killed; review side effects before retrying"
+        try:
+            stdout, stderr = proc.communicate(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            # A deliberately detached descendant can retain an output pipe.
+            # Do not wait forever; the allowlisted CLI must not daemonize.
+            stdout, stderr = _output_text(exc.stdout), _output_text(exc.stderr)
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None:
+                    stream.close()
+            try:
+                proc.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                pass  # A surviving CLI still holds its inherited lease.
+            cleanup += "; cleanup incomplete, operator review required"
+        return RunResult(list(argv), 124, stdout or "", f"{stderr or ''}\n{cleanup}".strip())
+    return RunResult(list(argv), int(proc.returncode), stdout or "", stderr or "")
+
+
+def _output_text(value: str | bytes | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
 
 
 def _try_parse_json(text: str) -> Any | None:
