@@ -24,6 +24,8 @@ Three design notes:
 
 from __future__ import annotations
 
+import html
+import re
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -33,9 +35,9 @@ from radar.sources._common import (
     attr_of,
     guard_nonempty,
     html_doc,
-    node_fingerprint,
     norm_key,
     select_any,
+    selector_fingerprint,
     slug_of,
     text_of,
 )
@@ -62,26 +64,48 @@ class VcSite:
     url: str
     #: Optional site-specific override when the generic list is not enough.
     card_selector: str | None = None
+    #: CSS inside a card that holds only the name (Outward's heading also carries
+    #: an "Exited" badge, which made "Anorak" read as "Anorak Exited").
+    name_selector: str | None = None
+    #: Where the name lives when the card has no text of its own:
+    #: "slug" — the card link's last path segment (logo-only grids);
+    #: "aria_more_about" — `aria-label="More about X"` (B12 site builder);
+    #: "img_alt" — the logo's alt text. Applies only when `card_selector` matched.
+    name_from: str | None = None
 
 
-#: The four named in 04-sources, plus the wider UK set the ledger implies.
+#: The four funds named in 04-sources, plus the wider UK set the ledger implies.
 #: Adding one is a single line — that is the promise this file has to keep.
 #:
-#: Zinc's public portfolio page is JS-rendered and has no crawlable cards, so
-#: Zinc is covered by the inverted `zinc_vc` investment-announcement feed
-#: instead of a row here.
+#: Checked live on 10 Oct 2026; until then only Outward parsed (35 names a day
+#: from ten sites). Sites with no list this adapter may read are left out, each
+#: for a stated reason, rather than failing every week:
+#:
+#: * **Northstar Ventures** — the portfolio grid is filled in by JavaScript, and
+#:   the two machine-readable copies (WordPress REST, sitemap) both send
+#:   `X-Robots-Tag: noindex`, which 04-sources §5 tells us to honour. Northstar
+#:   is one of the client's four funds, so this gap is reported, not hidden.
+#: * **Maven Capital Partners**, **Fuel Ventures** — JavaScript-rendered lists.
+#: * **Ada Ventures** — no portfolio page; investments appear only as articles.
+#: * **Praetura Ventures** and **Par Equity** — merged as PXN Ventures, whose one
+#:   portfolio page lists both books.
+#: * **Zinc** — JS-rendered portfolio; covered by the `zinc_vc` feed instead.
 SITES: tuple[VcSite, ...] = (
-    VcSite("dsw", "DSW Ventures", "https://dsw.vc/portfolio/"),
-    VcSite("northstar", "Northstar Ventures",
-           "https://www.northstarventures.co.uk/portfolio/"),
-    VcSite("outward", "Outward VC", "https://outwardvc.com/portfolio/"),
-    VcSite("anticus", "Anticus Partners", "https://anticuspartners.com/portfolio/"),
-    VcSite("mercia", "Mercia Ventures", "https://www.mercia.co.uk/portfolio/"),
-    VcSite("maven", "Maven Capital Partners", "https://www.mavencp.com/portfolio/"),
-    VcSite("praetura", "Praetura Ventures", "https://praetura.co.uk/portfolio/"),
-    VcSite("par_equity", "Par Equity", "https://www.parequity.com/portfolio"),
-    VcSite("ada_ventures", "Ada Ventures", "https://www.adaventures.com/portfolio"),
-    VcSite("fuel_ventures", "Fuel Ventures", "https://fuel.ventures/portfolio/"),
+    # Logo-only Elementor grid; each card links to /portfolio/<company>/.
+    VcSite("dsw", "DSW Ventures", "https://dsw.vc/portfolio/",
+           card_selector='.elementor-widget-image a[href*="/portfolio/"]', name_from="slug"),
+    # /portfolio/ now redirects here.
+    VcSite("outward", "Outward VC", "https://outwardvc.com/companies/",
+           card_selector=".tile--company", name_selector=".tile__heading .linkline"),
+    # B12 site; logo cards whose link reads "More about <company>".
+    VcSite("anticus", "Anticus Partners", "https://anticuspartners.com/Portfolio",
+           card_selector="li.items-grid__item", name_from="aria_more_about"),
+    # First page of a filtered grid (32 of several hundred); logo-only cards.
+    VcSite("mercia", "Mercia Ventures", "https://www.mercia.co.uk/about-us/portfolio/",
+           card_selector='.posts .list a[href*="/portfolio/"]', name_from="slug"),
+    VcSite("pxn", "PXN Ventures (Par Equity, Praetura Ventures)",
+           "https://www.pxnventures.co.uk/portfolio/",
+           card_selector="a.pv-portfolio-link", name_from="img_alt"),
 )
 
 
@@ -100,10 +124,14 @@ class VcPortfoliosAdapter:
     def fetch(self, ctx: FetchContext) -> Iterable[RawItem]:
         items: list[RawItem] = []
         failures: list[str] = []
+        unchanged: list[str] = []
         for site in self.sites:
             try:
                 resp = ctx.http.get(site.url)
                 if resp.status == 304:
+                    # Unchanged since the last read: its names are already on
+                    # the denylist. Not a failure, and not "nothing parsed".
+                    unchanged.append(site.slug)
                     continue
                 if not resp.ok:
                     failures.append(f"{site.slug}: HTTP {resp.status}")
@@ -119,7 +147,7 @@ class VcPortfoliosAdapter:
         # happened to be fetched last with a different site's fingerprint.
         self.last_fingerprint = None
         self.last_failures = failures
-        if not items:
+        if not items and not unchanged:
             raise LayoutChanged(
                 self.key,
                 f"no portfolio company parsed from any of {len(self.sites)} sites: "
@@ -141,18 +169,32 @@ class VcPortfoliosAdapter:
             document=payload if isinstance(payload, str) else payload.decode("utf-8", "replace"),
         )
         self.last_selector = selector
-        self.last_fingerprint = node_fingerprint(cards)
+        own = bool(site.card_selector) and selector == site.card_selector
+        # Which reading worked, not what the cards contain: logo filenames and
+        # WordPress image ids churn weekly and must not read as a redesign. A
+        # site's own selector giving way to a generic one is the change to catch.
+        self.last_fingerprint = "vc:" + selector_fingerprint(
+            [selector, site.name_selector or site.name_from or "generic"] if own else [selector])
 
         out: list[RawItem] = []
+        seen: set[str] = set()
         for card in cards:
-            name = _name_of(card)
+            name = _site_name(card, site) if own else _name_of(card)
             if not name:
                 continue
             href = attr_of(card, None, "href") or attr_of(card, "a[href]", "href")
+            if href and (href.strip().startswith("#") or _IMAGE_LINK.search(href)):
+                # "#" overlays (PXN) and lightbox image links (Anticus) are not
+                # the company's page; an id built from them would churn.
+                href = None
+            external_id = f"{site.slug}:{slug_of(href or '') or norm_key(name)}"
+            if external_id in seen:
+                continue
+            seen.add(external_id)
             out.append(RawItem(
                 source_key=self.key,
                 source_url=absolute_url(site.url, href) or site.url,
-                external_id=f"{site.slug}:{slug_of(href or '') or norm_key(name)}",
+                external_id=external_id,
                 published_at=None,          # portfolio pages are undated
                 title=name,
                 body_text=None,
@@ -176,6 +218,44 @@ class VcPortfoliosAdapter:
 # apply_denylist` call sites (tests, older docs) keep working. New code should
 # import from `radar.sources.denylist` so shared modules stay source-agnostic.
 from radar.sources.denylist import apply_denylist  # noqa: E402
+
+
+_WP_DUPLICATE = re.compile(r"-\d+$")
+_FORMER_NAME = re.compile(r"-(?:formerly|previously|now)-.*$")
+_MORE_ABOUT = re.compile(r"^\s*more about\s+(.+?)\s*$", re.I)
+_IMAGE_LINK = re.compile(r"\.(?:jpe?g|png|gif|webp|svg|avif)(?:[?#].*)?$", re.I)
+
+
+def _name_from_slug(href: str | None) -> str:
+    """`/portfolio/one-utility-bill/` -> "One Utility Bill"; `2pd-2` -> "2pd".
+
+    Matching is by `norm_key`, which ignores case and spacing, so a slug-derived
+    name meets the registry name. WordPress's `-2` duplicate suffix and a
+    trailing "-formerly-…" are dropped; generic path words are refused.
+    """
+    slug = _FORMER_NAME.sub("", _WP_DUPLICATE.sub("", slug_of(href or "").lower()))
+    words = [w for w in slug.split("-") if w]
+    if not words or slug in {"portfolio", "companies", "page", "investments"}:
+        return ""
+    return " ".join(w if any(c.isdigit() for c in w) else w.capitalize() for w in words)
+
+
+def _site_name(card, site: VcSite) -> str:
+    """The name, read the way this site is known to present it."""
+    if site.name_selector:
+        value = text_of(card, site.name_selector)
+    elif site.name_from == "slug":
+        value = _name_from_slug(attr_of(card, None, "href") or attr_of(card, "a[href]", "href"))
+    elif site.name_from == "aria_more_about":
+        label = attr_of(card, None, "aria-label") or attr_of(card, "[aria-label]", "aria-label") or ""
+        match = _MORE_ABOUT.match(label)
+        value = match.group(1) if match else ""
+    elif site.name_from == "img_alt":
+        value = (attr_of(card, None, "alt") or attr_of(card, "img[alt]", "alt") or "").strip()
+    else:
+        value = _name_of(card)
+    value = " ".join(html.unescape(value or "").split())
+    return value if value and len(value) < 80 else ""
 
 
 def _name_of(card) -> str:

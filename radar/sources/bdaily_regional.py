@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from radar.sources._common import after, rss_entries, selector_fingerprint, unique_by_id
+from radar.sources._common import after, rss_feed, unique_by_id
 from radar.sources.base import FetchContext, RawItem
 
 BASE = "https://bdaily.co.uk"
@@ -53,10 +53,7 @@ class BdailyRegionalAdapter:
         return list(after(unique_by_id(self.parse(resp.text)), ctx.since))
 
     def parse(self, payload: str | bytes) -> list[RawItem]:
-        entries = rss_entries(payload, self.key)
-        self.last_fingerprint = selector_fingerprint(
-            ["rss>channel>item"] + sorted({k for e in entries[:5] for k in e})
-        )
+        entries, self.last_fingerprint = rss_feed(payload, self.key)
         return [self._item(entry) for entry in entries]
 
     def _item(self, entry: dict) -> RawItem:

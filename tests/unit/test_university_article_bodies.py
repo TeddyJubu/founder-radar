@@ -9,6 +9,8 @@ from radar.sources._article import article_links, article_text
     ('ucl_ventures', 'ucl_article_captured_structure.html', 2),
     # Six body anchors are retained; their fictional labels/URLs are unique.
     ('sheffield', 'sheffield_article_captured_structure.html', 6),
+    # The October 2026 sheffield.ac.uk article template (body has no links).
+    ('sheffield', 'sheffield_article_2026_10_structure.html', 0),
     ('edinburgh_innovations', 'edinburgh_article_captured_structure.html', 3),
 ])
 def test_captured_official_article_structure(key, fixture, link_count):
@@ -25,6 +27,7 @@ def test_captured_official_article_structure(key, fixture, link_count):
 @pytest.mark.parametrize('key,body_class', [
     ('ucl_ventures', 'basic-content__column'),
     ('sheffield', 'block-field-blocknodenews-articlebody'),
+    ('sheffield', 'body field-css-target field field-node--body field-type-text-with-summary'),
 ])
 def test_article_body_excludes_navigation_and_sidebar_company_links(key, body_class):
     article = 'Example Instruments develops a new sensing system for factories. ' * 5
@@ -50,7 +53,7 @@ def test_unrecognised_layout_with_long_page_text_stays_withheld(key):
 
 @pytest.mark.parametrize('key', ['ucl_ventures', 'sheffield', 'edinburgh_innovations'])
 def test_body_selector_is_scoped_to_main_content(key):
-    payload = '<footer><div class="sidebar-content-page__left-content"><div class="basic-content__column block-field-blocknodenews-articlebody">' + ('Footer Company ' * 30) + '</div></div></footer>'
+    payload = '<footer><div class="sidebar-content-page__left-content"><div class="basic-content__column block-field-blocknodenews-articlebody field-node--body">' + ('Footer Company ' * 30) + '</div></div></footer>'
     with pytest.raises(ValueError, match='no substantive article'):
         article_text(payload, key)
 

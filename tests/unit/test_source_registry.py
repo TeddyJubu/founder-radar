@@ -280,16 +280,18 @@ def test_cli_exposes_list_test_and_sniff(tmp_path, monkeypatch):
     db_path = str(tmp_path / "radar.db")
 
     assert {p.name for p in cli.commands["sources"].params} == {
-        "list_", "test_key", "sniff_url"}
+        "list_", "test_key", "sniff_url", "accept_key"}
 
     result = runner.invoke(cli, ["--db", db_path, "--json", "sources", "--list"])
     assert result.exit_code == 0, result.output
-    assert seen == {"list_": True, "test_key": None, "sniff_url": None}
+    assert seen == {"list_": True, "test_key": None, "sniff_url": None, "accept_layout": None}
 
     runner.invoke(cli, ["--db", db_path, "sources", "--test", "uktn"])
     assert seen["test_key"] == "uktn"
     runner.invoke(cli, ["--db", db_path, "sources", "--sniff", "https://zinc.vc"])
     assert seen["sniff_url"] == "https://zinc.vc"
+    runner.invoke(cli, ["--db", db_path, "sources", "--accept-layout", "carbon13"])
+    assert seen["accept_layout"] == "carbon13"
 
 
 def test_sources_test_runs_one_adapter_and_reports_what_it_found(db):

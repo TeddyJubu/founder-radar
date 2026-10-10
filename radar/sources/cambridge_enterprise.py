@@ -43,11 +43,11 @@ class CambridgeEnterpriseAdapter:
     def parse(self, payload: str | bytes) -> list[RawItem]:
         body = payload.decode('utf-8', 'replace') if isinstance(payload, bytes) else payload
         if body.lstrip().startswith('<'):
-            from radar.sources._common import rss_entries, selector_fingerprint
-            entries = rss_entries(payload, self.key)
+            from radar.sources._common import rss_feed
+            entries, feed_fingerprint = rss_feed(payload, self.key)
             posts = [dict(id=e['id'],link=e['link'],title=e['title'],date=e['date'],
                           body=e['body'],excerpt='',full_text_in_feed=False) for e in entries]
-            self.last_fingerprint = selector_fingerprint(['rss>channel>item'])
+            self.last_fingerprint = feed_fingerprint
         else:
             posts = wp_posts(payload, self.key)
             self.last_fingerprint = wp_fingerprint(posts)

@@ -16,7 +16,9 @@ SELECTORS = {
     'startups_magazine': ('div.post-content.entry-content',),
     'cambridge_enterprise': ('main section.block--text div.prose',),
     'ucl_ventures': ('main .sidebar-content-page__left-content .basic-content__column',),
-    'sheffield': ('main .block-field-blocknodenews-articlebody',),
+    # sheffield.ac.uk (Oct 2026) renders the body as Drupal's `field--node--body`;
+    # the layout-builder block before it is kept for pages not yet migrated.
+    'sheffield': ('main .field-node--body', 'main .block-field-blocknodenews-articlebody'),
     'edinburgh_innovations': ('div[data-block="contentBlock"] div.prose',),
     'uktn': ('div.js-post-content', 'article .entry-content', 'div.article-content', 'div.post-content'),
 }
