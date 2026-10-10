@@ -1,0 +1,1207 @@
+<!doctype html>
+<!--
+  Control room: what the daily run does, the settings and sources it reads,
+  the prompts behind its AI steps, and a log of every change.
+
+  Talks only to /api/admin/* (see the ADMIN_SPEC contract). Inline script,
+  no build step, no external requests. Every server string goes through esc()
+  before it touches innerHTML; messages use textContent.
+-->
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Control room — UK Founder Radar</title>
+<link rel="stylesheet" href="/tokens.css">
+<style>
+:root {
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+[hidden] { display: none !important; }
+
+body {
+  margin: 0; background: var(--bg); color: var(--label);
+  font: var(--body)/var(--body-lh) var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1080px; margin: 0 auto; min-width: 0;
+  padding: var(--s6) var(--s4) var(--s7);
+}
+@media (min-width: 720px) { .wrap { padding-left: var(--s5); padding-right: var(--s5); } }
+
+/* ───────────────────────────────────────────── header — same as dashboard */
+header.top {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s4);
+  padding-bottom: var(--s5); border-bottom: 0.5px solid var(--separator);
+}
+h1 {
+  font-size: var(--large-title); line-height: var(--large-title-lh);
+  font-weight: 700; letter-spacing: -0.02em; margin: 0;
+}
+.nav { margin-left: auto; display: flex; gap: var(--s4); flex-wrap: wrap; }
+.nav a { color: var(--blue); text-decoration: none; font-size: var(--subhead); }
+.nav a:hover { text-decoration: underline; }
+
+.lede {
+  color: var(--label-2); font-size: var(--subhead); line-height: var(--subhead-lh);
+  margin: var(--s4) 0; max-width: 68ch;
+}
+.lede-sm { color: var(--label-2); font-size: var(--footnote); line-height: var(--footnote-lh); margin: 0 0 var(--s3); max-width: 68ch; }
+.section-title {
+  font-size: var(--title3); line-height: var(--title3-lh); font-weight: 600;
+  margin: var(--s6) 0 var(--s2);
+}
+.section-title:first-child { margin-top: 0; }
+.muted { color: var(--label-3); }
+.empty { color: var(--label-2); padding: var(--s4); margin: 0; }
+code, .mono { font-family: var(--mono); font-size: 0.92em; }
+
+/* ───────────────────────────────────────────── tabs (segmented control) */
+.tabs {
+  display: flex; gap: 2px; padding: 3px; margin: var(--s5) 0 0;
+  background: var(--fill); border-radius: 10px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: 1 0 auto; min-height: 36px; padding: 6px 14px;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--label-2); font: 600 var(--subhead)/1 var(--font);
+  cursor: pointer; white-space: nowrap;
+  transition: background .2s var(--spring), color .2s var(--spring);
+}
+.tab[aria-selected="true"] { background: var(--bg-3); color: var(--label); }
+.panel { padding-top: var(--s2); min-width: 0; }
+
+/* ───────────────────────────────────────────── shared controls */
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.btn {
+  appearance: none; border: 0; min-height: 40px; padding: 0 var(--s4);
+  border-radius: var(--r-control); background: var(--blue-fill); color: #fff;
+  font: 600 var(--subhead)/1 var(--font); cursor: pointer; white-space: nowrap;
+}
+.btn:disabled { opacity: .4; cursor: default; }
+.btn-secondary { background: var(--fill); color: var(--blue); }
+.btn-danger { background: var(--fill); color: var(--red); }
+.linkbtn {
+  background: none; border: 0; padding: 8px 0; margin-right: var(--s4);
+  color: var(--blue); font: 600 var(--subhead)/1.2 var(--font); cursor: pointer; text-align: left;
+}
+.linkbtn:hover { text-decoration: underline; }
+.field {
+  width: 100%; min-height: 40px; padding: 8px 12px; min-width: 0;
+  border-radius: var(--r-control); border: 0.5px solid var(--separator);
+  background: var(--bg-2); color: var(--label);
+  font: 16px/1.4 var(--font);
+}
+.field-label { display: block; font-size: var(--footnote); color: var(--label-2); margin: 0 0 4px; }
+
+.msg {
+  margin: var(--s3) 0 0; padding: 10px var(--s3); border-radius: var(--r-control);
+  font-size: var(--subhead); line-height: var(--subhead-lh);
+  background: var(--fill); color: var(--label-2); overflow-wrap: anywhere;
+}
+.msg.ok { background: color-mix(in srgb, var(--green) 14%, var(--bg-3)); color: var(--label); }
+.msg.err { background: color-mix(in srgb, var(--red) 12%, var(--bg-3)); color: var(--label); box-shadow: inset 3px 0 0 var(--red); }
+
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: var(--caption); line-height: var(--caption-lh); font-weight: 600; white-space: nowrap;
+}
+.p-ai  { background: color-mix(in srgb, var(--purple) 16%, transparent); color: var(--purple); }
+.p-net { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
+.p-det { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.p-off { background: var(--fill); color: var(--label-3); font-weight: 500; }
+
+.tag {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  background: var(--fill); color: var(--label-2); font-size: var(--caption); white-space: nowrap;
+}
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--caption); white-space: nowrap; }
+.b-default { background: var(--fill); color: var(--label-2); }
+.b-edited { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange); font-weight: 600; }
+.tag-changed { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange); }
+
+.status { font-weight: 600; white-space: nowrap; }
+.st-ok { color: var(--green); }
+.st-fail { color: var(--red); }
+.st-warn { color: var(--orange); }
+
+.banner-sheet {
+  padding: var(--s3) var(--s4); border-radius: var(--r-card);
+  font-size: var(--subhead); line-height: var(--subhead-lh); font-weight: 600;
+  border: 0.5px solid var(--separator); margin-bottom: var(--s2);
+}
+.banner-sheet.ok { background: color-mix(in srgb, var(--green) 10%, var(--bg-3)); }
+.banner-sheet.warn { background: color-mix(in srgb, var(--orange) 12%, var(--bg-3)); }
+.banner-sheet .cell-sub { display: block; font-weight: 400; margin-top: 2px; }
+
+.toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3) var(--s4);
+  margin-bottom: var(--s4);
+}
+.toolbar .meta { color: var(--label-2); font-size: var(--footnote); margin-right: auto; min-width: 0; }
+.toolbar-msg { flex: 1 1 100%; margin: 0; }
+
+/* ───────────────────────────────────────────── tables (scroll inside themselves) */
+.table-wrap {
+  overflow-x: auto; -webkit-overflow-scrolling: touch; min-width: 0;
+  background: var(--bg-3); border: 0.5px solid var(--separator); border-radius: var(--r-card);
+}
+table { width: 100%; border-collapse: collapse; font-size: var(--subhead); }
+th {
+  text-align: left; font-size: var(--caption); text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--label-3); font-weight: 600;
+  padding: var(--s3) var(--s3) var(--s2); border-bottom: 0.5px solid var(--separator);
+  white-space: nowrap;
+}
+td { padding: 10px var(--s3); border-bottom: 0.5px solid var(--separator); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+td.wrapcell { min-width: 180px; overflow-wrap: anywhere; }
+td.nowrap, td.time { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--label-2); font-size: var(--footnote); }
+.cell-sub { display: block; color: var(--label-2); font-size: var(--footnote); margin-top: 2px; overflow-wrap: anywhere; }
+.runs-table { min-width: 680px; }
+.src-table { min-width: 460px; }
+.changes-table { min-width: 720px; }
+.sources-table { min-width: 460px; }
+
+/* ───────────────────────────────────────────── flow: pipeline */
+.pipeline { list-style: none; margin: 0; padding: 0; min-width: 0; }
+.stage { position: relative; }
+.stage + .stage { margin-top: 24px; }
+/* connector: a line down from the previous card, with an arrowhead on this one */
+.stage + .stage::before {
+  content: ""; position: absolute; left: 31px; top: -24px;
+  height: 24px; width: 2px; background: var(--separator);
+}
+.stage + .stage::after {
+  content: ""; position: absolute; left: 26px; top: -8px;
+  border: 6px solid transparent; border-bottom: 0; border-top-color: var(--label-3);
+}
+.stage-card {
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+  border-radius: var(--r-card); padding: var(--s4);
+  display: grid; gap: var(--s3); min-width: 0;
+}
+.stage-head { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.num-badge {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--fill); color: var(--blue); font-size: 17px; font-weight: 600;
+}
+.stage-name { margin: 0; font-size: var(--headline); line-height: var(--headline-lh); font-weight: 600; }
+.summary { margin: 2px 0 0; color: var(--label-2); font-size: var(--subhead); line-height: var(--subhead-lh); }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--s2) var(--s4); margin: 0;
+}
+.stat { min-width: 0; }
+.stat dt { font-size: var(--caption); color: var(--label-3); overflow-wrap: anywhere; }
+.stat dd { margin: 0; font-size: var(--headline); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stage-links { display: flex; flex-wrap: wrap; margin-top: -4px; }
+
+/* ───────────────────────────────────────────── flow: summary tiles */
+.tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--s3); margin-top: var(--s3);
+}
+.tile {
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+  border-radius: var(--r-card); padding: var(--s4); min-width: 0;
+}
+.tile h3 {
+  margin: 0 0 var(--s2); font-size: var(--caption); line-height: var(--caption-lh);
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--label-3); font-weight: 600;
+}
+.big { font-size: var(--title2); line-height: var(--title2-lh); font-weight: 600; font-variant-numeric: tabular-nums; }
+.kv { display: grid; gap: 6px; margin: 0; }
+.kv div { display: flex; justify-content: space-between; gap: var(--s2); font-size: var(--subhead); }
+.kv dt { color: var(--label-2); overflow-wrap: anywhere; }
+.kv dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ───────────────────────────────────────────── settings */
+.savebar { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: flex-end; margin-bottom: var(--s2); }
+.savebar .grow { flex: 1 1 220px; min-width: 0; }
+.savebar #settings-count { font-size: var(--footnote); color: var(--label-2); padding-bottom: 10px; }
+
+.settings-list {
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+  border-radius: var(--r-card); overflow: hidden; min-width: 0;
+}
+.setting {
+  position: relative; display: grid; gap: var(--s2) var(--s4);
+  padding: var(--s4); border-bottom: 0.5px solid var(--separator);
+  transition: background .25s var(--spring);
+}
+.setting:last-child { border-bottom: 0; }
+@media (min-width: 720px) {
+  .setting { grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); align-items: center; }
+}
+.setting.is-changed::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--orange);
+}
+.setting.is-hl { background: color-mix(in srgb, var(--blue) 10%, var(--bg-3)); }
+.setting-meta { min-width: 0; }
+.setting-key { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.setting-key code { font-weight: 600; font-size: var(--subhead); overflow-wrap: anywhere; }
+.setting-desc { display: block; margin-top: 4px; font-size: var(--subhead); line-height: var(--subhead-lh); }
+.setting-type { color: var(--label-3); font-size: var(--footnote); margin-top: 2px; }
+.setting-control { min-width: 0; }
+.setting-default { color: var(--label-3); font-size: var(--footnote); margin-top: 4px; overflow-wrap: anywhere; }
+.row-error { grid-column: 1 / -1; margin: 0; color: var(--red); font-size: var(--footnote); font-weight: 600; }
+
+.switch {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 36px;
+  border: 0; background: none; padding: 0; cursor: pointer;
+  color: var(--label-2); font: 600 var(--footnote)/1 var(--font);
+}
+.switch:disabled { opacity: .5; cursor: default; }
+.switch-track {
+  position: relative; width: 44px; height: 26px; border-radius: 999px;
+  background: var(--fill); transition: background .25s var(--spring); flex: none;
+}
+.switch-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px;
+  border-radius: 50%; background: #fff; transition: transform .25s var(--spring);
+}
+.switch[aria-checked="true"] .switch-track { background: var(--green); }
+.switch[aria-checked="true"] .switch-track::after { transform: translateX(18px); }
+.switch[aria-checked="true"] { color: var(--green); }
+
+/* ───────────────────────────────────────────── prompts */
+.prompts { display: grid; gap: var(--s4); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 820px) { .prompts { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); } }
+.prompt-list {
+  list-style: none; margin: 0; padding: 0; min-width: 0;
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+  border-radius: var(--r-card); overflow: hidden;
+}
+.prompt-list li + li { border-top: 0.5px solid var(--separator); }
+.prompt-item {
+  width: 100%; min-height: 56px; padding: 10px var(--s4);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+  border: 0; background: transparent; color: inherit; text-align: left;
+  font: inherit; cursor: pointer;
+}
+.prompt-item[aria-current="true"] { background: color-mix(in srgb, var(--blue) 10%, var(--bg-3)); }
+.pi-main { min-width: 0; }
+.pi-label { display: block; font-weight: 600; font-size: var(--subhead); line-height: var(--subhead-lh); overflow-wrap: anywhere; }
+.pi-meta { display: block; color: var(--label-2); font-size: var(--caption); line-height: var(--caption-lh); }
+
+.editor {
+  background: var(--bg-3); border: 0.5px solid var(--separator);
+  border-radius: var(--r-card); padding: var(--s5) var(--s4); min-width: 0;
+}
+.detail-head h3 { margin: 0; font-size: var(--title3); line-height: var(--title3-lh); font-weight: 600; overflow-wrap: anywhere; }
+.detail-meta { color: var(--label-2); font-size: var(--footnote); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.desc { font-size: var(--subhead); line-height: var(--subhead-lh); color: var(--label); margin: var(--s3) 0 var(--s3); }
+.effect {
+  font-size: var(--subhead); line-height: var(--subhead-lh); color: var(--label-2);
+  padding: var(--s3); border-radius: var(--r-control); background: var(--bg-2); margin-bottom: var(--s3);
+}
+.effect strong { color: var(--label); display: block; margin-bottom: 2px; }
+.warn {
+  font-size: var(--subhead); line-height: var(--subhead-lh); color: var(--label);
+  padding: 10px var(--s3); border-radius: var(--r-control); margin-bottom: var(--s3);
+  background: color-mix(in srgb, var(--orange) 12%, var(--bg-3));
+  box-shadow: inset 3px 0 0 var(--orange);
+}
+.mono-area {
+  display: block; width: 100%; min-height: 360px; max-width: 100%;
+  padding: 12px; border-radius: var(--r-control); border: 0.5px solid var(--separator);
+  background: var(--bg-2); color: var(--label); resize: vertical;
+  font: 13px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.btn-row { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0 0; }
+.note-row { margin-top: var(--s3); }
+.pre {
+  margin: 0; padding: 12px; max-height: 360px; overflow: auto;
+  background: var(--bg-2); border: 0.5px solid var(--separator); border-radius: var(--r-control);
+  font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.block-title { font-size: var(--subhead); font-weight: 600; margin: var(--s5) 0 var(--s2); }
+.history { list-style: none; margin: 0; padding: 0; font-size: var(--footnote); }
+.history li {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px var(--s3);
+  padding: 8px 0; border-bottom: 0.5px solid var(--separator);
+}
+.history li:last-child { border-bottom: 0; }
+.history .hnote { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+
+/* ───────────────────────────────────────────── small screens */
+@media (max-width: 460px) {
+  h1 { font-size: 28px; line-height: 34px; }
+  .tab { padding: 6px 10px; font-size: 15px; }
+  .stage-card, .editor { padding: var(--s3); }
+  .setting { padding: var(--s3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" data-testid="control-room">
+
+  <header class="top">
+    <h1>Control room</h1>
+    <nav class="nav" aria-label="Pages">
+      <a href="/" data-testid="nav-today">Today</a>
+      <a href="/kept" data-testid="nav-kept">Kept</a>
+      <a href="/dashboard" data-testid="nav-dashboard">Dashboard</a>
+    </nav>
+  </header>
+
+  <p class="lede">What the daily run does, the settings and sources it reads, the prompts behind its AI steps, and a log of every change.</p>
+
+  <div class="tabs" role="tablist" aria-label="Control room sections" id="tablist">
+    <button type="button" role="tab" class="tab" id="tab-flow" aria-controls="panel-flow" data-tab="flow" data-testid="tab-flow" aria-selected="false" tabindex="-1">Flow</button>
+    <button type="button" role="tab" class="tab" id="tab-settings" aria-controls="panel-settings" data-tab="settings" data-testid="tab-settings" aria-selected="false" tabindex="-1">Settings</button>
+    <button type="button" role="tab" class="tab" id="tab-prompts" aria-controls="panel-prompts" data-tab="prompts" data-testid="tab-prompts" aria-selected="false" tabindex="-1">Prompts</button>
+    <button type="button" role="tab" class="tab" id="tab-changes" aria-controls="panel-changes" data-tab="changes" data-testid="tab-changes" aria-selected="false" tabindex="-1">Changes</button>
+  </div>
+
+  <!-- ─────────────────────────────────────────────── 1. Flow -->
+  <section class="panel" id="panel-flow" role="tabpanel" aria-labelledby="tab-flow" data-testid="panel-flow" hidden>
+    <h2 class="section-title">The daily flow</h2>
+    <p class="lede-sm">Eight stages, in order. Stage ⑥ is deterministic: no AI, no network.</p>
+
+    <div class="toolbar">
+      <div class="meta" id="flow-meta"></div>
+      <button type="button" class="btn" id="rescore-button" data-testid="rescore-button">Rescore now</button>
+      <p class="msg toolbar-msg" id="flow-msg" role="status" hidden></p>
+    </div>
+
+    <div id="flow-body"><p class="empty">Loading the flow…</p></div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── 2. Settings -->
+  <section class="panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" data-testid="panel-settings" hidden>
+    <div id="sheet-banner" class="banner-sheet" role="status" hidden></div>
+
+    <h2 class="section-title">Settings</h2>
+    <p class="lede-sm">Each row is one setting the pipeline reads. Changed rows are marked, and only those are saved.</p>
+
+    <div class="savebar">
+      <div class="grow">
+        <label class="field-label" for="settings-note">Note (optional)</label>
+        <input id="settings-note" class="field" type="text" maxlength="200" autocomplete="off">
+      </div>
+      <span id="settings-count"></span>
+      <button type="button" class="btn" id="settings-save" data-testid="settings-save" disabled>Save changes</button>
+    </div>
+    <p class="msg" id="settings-msg" role="status" data-testid="settings-msg" hidden></p>
+
+    <div class="settings-list" id="settings-form" data-testid="settings-form">
+      <p class="empty">Loading settings…</p>
+    </div>
+
+    <h2 class="section-title">Sources</h2>
+    <p class="lede-sm">Each switch asks for confirmation before it changes.</p>
+    <div class="table-wrap">
+      <table class="sources-table">
+        <thead><tr><th scope="col">Source</th><th scope="col">Track</th><th scope="col">Note</th><th scope="col">On</th></tr></thead>
+        <tbody id="sources-body"></tbody>
+      </table>
+    </div>
+    <p class="msg" id="sources-msg" role="status" hidden></p>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── 3. Prompts -->
+  <section class="panel" id="panel-prompts" role="tabpanel" aria-labelledby="tab-prompts" data-testid="panel-prompts" hidden>
+    <h2 class="section-title">Prompts</h2>
+    <p class="lede-sm">The instructions behind the AI steps. Extract reads prose; Today QA and the publish check can only veto a card.</p>
+    <p class="msg" id="prompts-msg" role="status" data-testid="prompts-msg" hidden></p>
+
+    <div class="prompts">
+      <ul class="prompt-list" id="prompt-list" aria-label="Prompts"></ul>
+
+      <div class="editor">
+        <p class="empty" id="prompt-empty">Select a prompt to view or edit it.</p>
+
+        <div id="prompt-detail" hidden>
+          <div class="detail-head">
+            <h3 id="pd-label"></h3>
+            <div class="detail-meta">
+              <span id="pd-stage"></span>
+              <span id="pd-version"></span>
+              <span id="pd-badge" class="badge"></span>
+            </div>
+          </div>
+          <p class="desc" id="pd-desc"></p>
+          <div class="effect"><strong>What saving does</strong><span id="pd-effect"></span></div>
+          <div class="warn" data-testid="prompt-warning">Saving changes the prompt version: the next run re-reads articles / re-checks Today cards with the new prompt.</div>
+
+          <label class="field-label" for="prompt-text">Prompt text</label>
+          <textarea id="prompt-text" class="mono-area" data-testid="prompt-text" spellcheck="false"></textarea>
+
+          <div class="note-row">
+            <label class="field-label" for="prompt-note">Note (optional)</label>
+            <input id="prompt-note" class="field" type="text" maxlength="200" autocomplete="off">
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn" id="prompt-save" data-testid="prompt-save" disabled>Save</button>
+            <button type="button" class="btn btn-danger" id="prompt-reset" data-testid="prompt-reset">Reset to default</button>
+            <button type="button" class="btn btn-secondary" id="prompt-preview-btn" data-testid="prompt-preview">Preview</button>
+            <button type="button" class="btn btn-secondary" id="prompt-default-btn" data-testid="prompt-show-default" aria-expanded="false" aria-controls="prompt-default-wrap">Show default</button>
+          </div>
+
+          <div id="prompt-default-wrap" hidden>
+            <h4 class="block-title">Default text (read-only)</h4>
+            <pre class="pre" id="prompt-default"></pre>
+          </div>
+
+          <div id="prompt-preview-wrap" hidden>
+            <h4 class="block-title">Preview</h4>
+            <p class="cell-sub" id="prompt-sample"></p>
+            <pre class="pre" id="prompt-preview" data-testid="prompt-preview-text"></pre>
+          </div>
+
+          <h4 class="block-title">History</h4>
+          <ol class="history" id="prompt-history"></ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── 4. Changes -->
+  <section class="panel" id="panel-changes" role="tabpanel" aria-labelledby="tab-changes" data-testid="panel-changes" hidden>
+    <h2 class="section-title">Changes</h2>
+    <p class="lede-sm">Every setting, source, prompt and rescore, newest first.</p>
+    <div class="toolbar">
+      <div class="meta"></div>
+      <button type="button" class="btn btn-secondary" id="changes-refresh" data-testid="changes-refresh">Refresh</button>
+    </div>
+    <p class="msg" id="changes-msg" role="status" hidden></p>
+    <div class="table-wrap">
+      <table class="changes-table">
+        <thead><tr>
+          <th scope="col">When</th><th scope="col">Kind</th><th scope="col">Key</th>
+          <th scope="col">Old → new</th><th scope="col">Note</th><th scope="col">Sheet</th>
+        </tr></thead>
+        <tbody id="changes-body"><tr><td colspan="6" class="empty">Loading changes…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-radar today-qa` '
+  + '(or ask Hermes to run Today QA); the morning run also does it.';
+(function () {
+  'use strict';
+
+  var TABS = ['flow', 'settings', 'prompts', 'changes'];
+  var STATUS_CLASS = { ok: 'st-ok', success: 'st-ok', failed: 'st-fail', error: 'st-fail' };
+
+  var state = {
+    tab: null,
+    flow: null,
+    settings: null,          // last GET /api/admin/settings
+    rows: new Map(),         // setting key -> { wrap, input, original, err, changedTag }
+    highlight: new Set(),    // setting keys to light up after "Tune settings"
+    highlightFresh: false,   // scroll to the highlight only once, on request
+    prompts: null,           // list from GET /api/admin/prompts
+    promptKey: null,         // selected prompt key
+    prompt: null             // detail from GET /api/admin/prompts/<key>
+  };
+
+  /* ───────────────────────────────────────── helpers */
+
+  var ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  function esc(v) {
+    return (v === null || v === undefined ? '' : String(v)).replace(/[&<>"']/g, function (c) { return ESC[c]; });
+  }
+  function $(id) { return document.getElementById(id); }
+
+  function fmtVal(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    if (typeof v === 'number') return v.toLocaleString('en-GB');
+    if (typeof v === 'boolean') return v ? 'yes' : 'no';
+    return String(v);
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+  function fmtDuration(s) {
+    if (s === null || s === undefined || s === '') return '—';
+    var n = Number(s);
+    if (isNaN(n)) return String(s);
+    if (n < 60) return Math.round(n) + ' s';
+    var m = Math.floor(n / 60), r = Math.round(n % 60);
+    return m + ' min ' + r + ' s';
+  }
+  function fmtMs(ms) {
+    if (ms === null || ms === undefined || ms === '') return '—';
+    var n = Number(ms);
+    if (isNaN(n)) return String(ms);
+    return n < 1000 ? n + ' ms' : (n / 1000).toFixed(1) + ' s';
+  }
+  function short(v, max) {
+    var s = fmtVal(v);
+    return s.length > max ? s.slice(0, max) + '…' : s;
+  }
+  function statusClass(s) {
+    return STATUS_CLASS[String(s || '').toLowerCase()] || 'st-warn';
+  }
+  function cap(s) {
+    return String(s || '').replace(/_/g, ' ').replace(/^./, function (c) { return c.toUpperCase(); });
+  }
+  function pill(on, label, offLabel, cls) {
+    return on ? '<span class="pill ' + cls + '">' + esc(label) + '</span>'
+              : '<span class="pill p-off">' + esc(offLabel) + '</span>';
+  }
+
+  /** Shows a message in a status element. Text only, never HTML. */
+  function notify(el, text, kind) {
+    el.className = 'msg' + (kind ? ' ' + kind : '');
+    el.textContent = text || '';
+    el.hidden = !text;
+  }
+
+  function ApiError(message, status, body) {
+    this.message = message;
+    this.status = status;
+    this.body = body || {};
+  }
+  ApiError.prototype = Object.create(Error.prototype);
+
+  /** fetch wrapper. Writes always send the JSON content type and a JSON body. */
+  async function api(path, opts) {
+    var method = (opts && opts.method) || 'GET';
+    var init = { method: method, headers: {}, cache: 'no-store' };
+    if (method !== 'GET') {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify((opts && opts.body) !== undefined ? opts.body : {});
+    }
+    var res;
+    try {
+      res = await fetch(path, init);
+    } catch (e) {
+      throw new ApiError('Could not reach the server. Check the connection and try again.', 0, {});
+    }
+    var data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) {
+      throw new ApiError((data && data.error) || ('Request failed (HTTP ' + res.status + ').'), res.status, data || {});
+    }
+    return data;
+  }
+
+  /* ───────────────────────────────────────── tabs and hash */
+
+  function tabFromHash() {
+    var h = location.hash.replace('#', '');
+    return TABS.indexOf(h) >= 0 ? h : 'flow';
+  }
+  function setTab(name) {
+    if (location.hash === '#' + name) activate(name);
+    else location.hash = name;   // fires hashchange -> activate
+  }
+  function activate(name) {
+    state.tab = name;
+    TABS.forEach(function (t) {
+      var on = t === name;
+      var tab = $('tab-' + t);
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      tab.tabIndex = on ? 0 : -1;
+      $('panel-' + t).hidden = !on;
+    });
+    if (name === 'flow') loadFlow();
+    else if (name === 'settings') loadSettings(false);
+    else if (name === 'prompts') activatePrompts();
+    else if (name === 'changes') loadChanges();
+  }
+
+  /* ───────────────────────────────────────── 1. Flow */
+
+  async function loadFlow() {
+    var body = $('flow-body');
+    try {
+      state.flow = await api('/api/admin/flow');
+      renderFlow(state.flow);
+    } catch (e) {
+      if (!state.flow) body.innerHTML = '<p class="empty">The flow could not be loaded.</p>';
+      notify($('flow-msg'), e.message, 'err');
+    }
+  }
+
+  function renderFlow(d) {
+    var hash = d.active_config_hash ? String(d.active_config_hash).slice(0, 12) : null;
+    $('flow-meta').innerHTML =
+      'Updated ' + esc(fmtDate(d.generated_at)) +
+      (hash ? ' · config <code>' + esc(hash) + '</code>' : ' · no active config yet');
+
+    var stages = d.stages || [];
+    var stageHtml = stages.map(function (s) {
+      var settings = s.settings || [];
+      var prompts = s.prompts || [];
+      var stats = (s.stats || []).map(function (st) {
+        return '<div class="stat"><dt>' + esc(st.label) + '</dt><dd>' + esc(fmtVal(st.value)) + '</dd></div>';
+      }).join('');
+      var links = '';
+      if (settings.length) {
+        links += '<button type="button" class="linkbtn" data-action="tune" data-stage="' + esc(s.id) + '">Tune settings →</button>';
+      }
+      prompts.forEach(function (k) {
+        links += '<button type="button" class="linkbtn" data-action="prompt" data-key="' + esc(k) + '">Edit prompt →</button>';
+      });
+      return '<li class="stage" data-testid="stage-' + esc(s.id) + '">' +
+        '<div class="stage-card">' +
+          '<div class="stage-head">' +
+            '<span class="num-badge" aria-hidden="true">' + esc(s.num) + '</span>' +
+            '<div><h3 class="stage-name">' + esc(s.name) + '</h3>' +
+            '<p class="summary">' + esc(s.summary) + '</p></div>' +
+          '</div>' +
+          '<div class="pills">' +
+            pill(s.ai, 'AI', 'No AI', 'p-ai') +
+            pill(s.network, 'Network', 'No network', 'p-net') +
+            pill(s.deterministic, 'Deterministic', 'Non-deterministic', 'p-det') +
+          '</div>' +
+          (stats ? '<dl class="stats">' + stats + '</dl>' : '') +
+          (links ? '<div class="stage-links">' + links + '</div>' : '') +
+        '</div>' +
+      '</li>';
+    }).join('');
+
+    var runs = (d.runs || []).map(function (r) {
+      return '<tr>' +
+        '<td class="time">' + esc(fmtDate(r.started_at)) + '</td>' +
+        '<td>' + esc(fmtVal(r.mode)) + '</td>' +
+        '<td><span class="status ' + statusClass(r.status) + '">' + esc(fmtVal(r.status)) + '</span>' +
+          (r.error ? '<span class="cell-sub">' + esc(r.error) + '</span>' : '') + '</td>' +
+        '<td class="num">' + esc(fmtVal(r.items_fetched)) + '</td>' +
+        '<td class="num">' + esc(fmtVal(r.items_extracted)) + '</td>' +
+        '<td class="num">' + esc(fmtVal(r.companies_new)) + '</td>' +
+        '<td class="num">' + esc(fmtVal(r.shortlisted)) + '</td>' +
+        '<td class="num">' + esc(fmtDuration(r.duration_s)) + '</td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="8" class="empty">No runs yet.</td></tr>';
+
+    var sources = (d.latest_run_sources || []).map(function (s) {
+      return '<tr>' +
+        '<td><code>' + esc(s.source_key) + '</code></td>' +
+        '<td><span class="status ' + statusClass(s.status) + '">' + esc(fmtVal(s.status)) + '</span></td>' +
+        '<td class="num">' + esc(fmtVal(s.items)) + '</td>' +
+        '<td class="num">' + esc(fmtMs(s.duration_ms)) + '</td>' +
+        '<td class="wrapcell">' + (s.error ? esc(s.error) : '<span class="muted">—</span>') + '</td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="5" class="empty">No source results in the latest run.</td></tr>';
+
+    var tiers = d.tiers || {};
+    var qa = d.today_qa || {};
+    var tierRows = Object.keys(tiers).map(function (k) {
+      return '<div><dt>' + esc(cap(k)) + '</dt><dd>' + esc(fmtVal(tiers[k])) + '</dd></div>';
+    }).join('');
+    var qaRows = Object.keys(qa).map(function (k) {
+      return '<div><dt>' + esc(cap(k)) + '</dt><dd>' + esc(fmtVal(qa[k])) + '</dd></div>';
+    }).join('');
+    var tiles =
+      tile('Tiers', tierRows ? '<dl class="kv">' + tierRows + '</dl>' : '<p class="cell-sub">No companies scored yet.</p>') +
+      tile('Today QA', qaRows ? '<dl class="kv">' + qaRows + '</dl>' : '<p class="cell-sub">No checks today.</p>') +
+      tile('LLM cache entries', '<div class="big">' + esc(fmtVal(d.llm_cache_entries)) + '</div>') +
+      tile('Quarantined', '<div class="big">' + esc(fmtVal(d.quarantine_count)) + '</div>');
+
+    $('flow-body').innerHTML =
+      (stageHtml
+        ? '<ol class="pipeline" data-testid="pipeline">' + stageHtml + '</ol>'
+        : '<p class="empty">No stages reported.</p>') +
+
+      '<h2 class="section-title">Recent runs</h2>' +
+      '<div class="table-wrap"><table class="runs-table"><thead><tr>' +
+        '<th scope="col">Started</th><th scope="col">Mode</th><th scope="col">Status</th>' +
+        '<th scope="col">Fetched</th><th scope="col">Extracted</th><th scope="col">New</th>' +
+        '<th scope="col">Shortlisted</th><th scope="col">Duration</th>' +
+      '</tr></thead><tbody>' + runs + '</tbody></table></div>' +
+
+      '<h2 class="section-title">Sources in latest run</h2>' +
+      '<div class="table-wrap"><table class="src-table"><thead><tr>' +
+        '<th scope="col">Source</th><th scope="col">Status</th><th scope="col">Items</th>' +
+        '<th scope="col">Duration</th><th scope="col">Error</th>' +
+      '</tr></thead><tbody>' + sources + '</tbody></table></div>' +
+
+      '<h2 class="section-title">Right now</h2>' +
+      '<div class="tiles">' + tiles + '</div>';
+  }
+
+  function tile(title, inner) {
+    return '<div class="tile"><h3>' + esc(title) + '</h3>' + inner + '</div>';
+  }
+
+  async function rescore() {
+    var btn = $('rescore-button');
+    var msg = $('flow-msg');
+    btn.disabled = true;
+    notify(msg, 'Rescoring every company against the current settings…', '');
+    try {
+      var d = await api('/api/admin/rescore', { method: 'POST', body: {} });
+      var r = d.rescore || {};
+      notify(msg, 'Rescored ' + fmtVal(r.scored === undefined ? 0 : r.scored) + ' companies, ' +
+        fmtVal(r.shortlisted === undefined ? 0 : r.shortlisted) + ' shortlisted.' +
+        (r.today_qa_needed ? QA_AGAIN : ''), 'ok');
+      await loadFlow();
+    } catch (e) {
+      notify(msg, e.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /** "Tune settings →": remember which keys to light up, then open Settings. */
+  function tune(stageId) {
+    var stages = (state.flow && state.flow.stages) || [];
+    var st = stages.filter(function (s) { return s.id === stageId; })[0];
+    state.highlight = new Set((st && st.settings) || []);
+    state.highlightFresh = true;
+    setTab('settings');
+  }
+
+  /* ───────────────────────────────────────── 2. Settings */
+
+  async function loadSettings(force) {
+    if (state.settings && !force) { applyHighlight(); return true; }
+    var msg = $('settings-msg');
+    try {
+      var d = await api('/api/admin/settings');
+      state.settings = d;
+      renderSettingsForm(d);
+      renderSources();
+      applyHighlight();
+      return true;
+    } catch (e) {
+      notify(msg, e.message, 'err');
+      return false;
+    }
+  }
+
+  function renderSettingsForm(d) {
+    var banner = $('sheet-banner');
+    banner.hidden = false;
+    banner.className = 'banner-sheet ' + (d.sheet_configured ? 'ok' : 'warn');
+    banner.textContent = d.sheet_configured
+      ? 'Changes are written to the Google Sheet'
+      : 'No Google Sheet configured — changes are saved to the local snapshot';
+    var sub = document.createElement('span');
+    sub.className = 'cell-sub';
+    sub.textContent = 'Config ' + String(d.config_hash || '—').slice(0, 8) + ' from ' + (d.config_source || '—');
+    banner.appendChild(sub);
+
+    var form = $('settings-form');
+    form.innerHTML = '';
+    state.rows = new Map();
+    var list = d.settings || [];
+    if (!list.length) {
+      form.innerHTML = '<p class="empty">No settings reported.</p>';
+    }
+    list.forEach(function (s, i) {
+      var id = 'set-' + i;
+      var cur = s.value === null || s.value === undefined ? '' : String(s.value);
+      var choices = Array.isArray(s.choices) && s.choices.length ? s.choices.map(String) : null;
+      var control;
+      if (choices) {
+        var opts = choices.indexOf(cur) >= 0 ? choices : [cur].concat(choices);
+        control = '<select id="' + id + '" class="field" data-key="' + esc(s.key) + '">' +
+          opts.map(function (o) {
+            return '<option value="' + esc(o) + '"' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>';
+          }).join('') + '</select>';
+      } else {
+        control = '<input id="' + id + '" class="field" type="text" data-key="' + esc(s.key) +
+          '" value="' + esc(cur) + '" autocomplete="off" autocapitalize="off" spellcheck="false">';
+      }
+      var row = document.createElement('div');
+      row.className = 'setting';
+      row.setAttribute('data-testid', 'setting-' + s.key);
+      row.innerHTML =
+        '<div class="setting-meta">' +
+          '<div class="setting-key"><code>' + esc(s.key) + '</code>' +
+            (s.stage ? '<span class="tag">' + esc(s.stage) + '</span>' : '') +
+            '<span class="tag tag-changed" hidden>changed</span></div>' +
+          '<label class="setting-desc" for="' + id + '">' + esc(s.description || '') + '</label>' +
+          '<div class="setting-type">' + esc(s.type || '') + '</div>' +
+        '</div>' +
+        '<div class="setting-control">' + control +
+          '<div class="setting-default">default: ' + esc(s.default === null || s.default === undefined ? '—' : s.default) + '</div>' +
+        '</div>' +
+        '<p class="row-error" role="alert" hidden></p>';
+      form.appendChild(row);
+      state.rows.set(s.key, {
+        wrap: row,
+        input: row.querySelector('[data-key]'),
+        original: cur,
+        err: row.querySelector('.row-error'),
+        changedTag: row.querySelector('.tag-changed')
+      });
+    });
+    updateChanged();
+  }
+
+  function updateChanged() {
+    var n = 0;
+    state.rows.forEach(function (r) {
+      var changed = r.input.value !== r.original;
+      if (changed) n++;
+      r.wrap.classList.toggle('is-changed', changed);
+      r.changedTag.hidden = !changed;
+    });
+    $('settings-save').disabled = n === 0;
+    $('settings-count').textContent = n ? n + ' changed' : '';
+  }
+
+  function onSettingInput(e) {
+    var key = e.target && e.target.getAttribute && e.target.getAttribute('data-key');
+    var r = key && state.rows.get(key);
+    if (r) { r.err.hidden = true; r.err.textContent = ''; }
+    updateChanged();
+  }
+
+  function applyHighlight() {
+    var first = null;
+    state.rows.forEach(function (r, key) {
+      var on = state.highlight.has(key);
+      r.wrap.classList.toggle('is-hl', on);
+      if (on && !first) first = r.wrap;
+    });
+    if (state.highlightFresh && first && first.scrollIntoView) {
+      first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    state.highlightFresh = false;
+  }
+
+  async function saveSettings() {
+    var msg = $('settings-msg');
+    var changes = {};
+    state.rows.forEach(function (r, key) {
+      if (r.input.value !== r.original) changes[key] = r.input.value;
+    });
+    if (!Object.keys(changes).length) {
+      notify(msg, 'Nothing to save — no settings changed.', '');
+      return;
+    }
+    var btn = $('settings-save');
+    btn.disabled = true;
+    var note = $('settings-note').value.trim();
+    try {
+      var d = await api('/api/admin/settings', { method: 'POST', body: { changes: changes, note: note } });
+      var r = d.rescore || {};
+      $('settings-note').value = '';
+      var ok = await loadSettings(true);
+      if (ok) {
+        notify(msg, 'Saved — sheet: ' + fmtVal(d.sheet_sync) + ', rescored ' +
+          fmtVal(r.scored === undefined ? 0 : r.scored) + ' companies, ' +
+          fmtVal(r.shortlisted === undefined ? 0 : r.shortlisted) + ' shortlisted.' +
+          (d.today_qa_needed ? QA_AGAIN : ''), 'ok');
+      }
+    } catch (e) {
+      showSettingsErrors(e, msg);
+      updateChanged();
+    }
+  }
+
+  function showSettingsErrors(e, msg) {
+    state.rows.forEach(function (r) { r.err.hidden = true; r.err.textContent = ''; });
+    var errs = e.body && e.body.errors;
+    if (e.status === 400 && errs) {
+      var first = null, shown = 0, unknown = [];
+      Object.keys(errs).forEach(function (key) {
+        var r = state.rows.get(key);
+        if (r) {
+          r.err.textContent = String(errs[key]);
+          r.err.hidden = false;
+          shown++;
+          if (!first) first = r.wrap;
+        } else {
+          unknown.push(key + ': ' + errs[key]);
+        }
+      });
+      var text = (e.message || 'Invalid settings') + '. Fix the highlighted ' +
+        (shown === 1 ? 'row' : 'rows') + ' and save again.';
+      if (unknown.length) text += ' ' + unknown.join('; ');
+      notify(msg, text, 'err');
+      if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } else {
+      notify(msg, e.message, 'err');
+    }
+  }
+
+  function renderSources() {
+    var list = (state.settings && state.settings.sources) || [];
+    $('sources-body').innerHTML = list.map(function (s) {
+      var t = String(s.track === null || s.track === undefined ? '' : s.track);
+      var track = t ? (/^track/i.test(t) ? t : 'Track ' + t) : '—';
+      return '<tr data-testid="source-' + esc(s.key) + '">' +
+        '<td><code>' + esc(s.key) + '</code></td>' +
+        '<td><span class="tag">' + esc(track) + '</span></td>' +
+        '<td class="wrapcell">' + (s.note ? esc(s.note) : '<span class="muted">—</span>') + '</td>' +
+        '<td><button type="button" class="switch" role="switch" data-action="source" data-key="' + esc(s.key) +
+          '" aria-checked="' + (s.enabled ? 'true' : 'false') + '" aria-label="' + esc(s.key) +
+          '" data-testid="source-toggle-' + esc(s.key) + '">' +
+          '<span class="switch-track" aria-hidden="true"></span>' +
+          '<span>' + (s.enabled ? 'On' : 'Off') + '</span></button></td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="4" class="empty">No sources configured.</td></tr>';
+  }
+
+  async function toggleSource(key) {
+    var list = (state.settings && state.settings.sources) || [];
+    var src = list.filter(function (s) { return s.key === key; })[0];
+    var msg = $('sources-msg');
+    if (!src) return;
+    var next = !src.enabled;
+    if (!window.confirm('Turn source "' + key + '" ' + (next ? 'on' : 'off') + '?')) return;
+    var btn = Array.prototype.filter.call($('sources-body').querySelectorAll('[data-action="source"]'),
+      function (b) { return b.getAttribute('data-key') === key; })[0];
+    if (btn) btn.disabled = true;
+    try {
+      var d = await api('/api/admin/sources', { method: 'POST', body: { key: key, enabled: next, note: '' } });
+      src.enabled = next;
+      renderSources();
+      notify(msg, 'Source "' + key + '" turned ' + (next ? 'on' : 'off') + '. Sheet: ' + fmtVal(d.sheet_sync) + '.' +
+        (d.today_qa_needed ? QA_AGAIN : ''), 'ok');
+    } catch (e) {
+      notify(msg, e.message, 'err');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /* ───────────────────────────────────────── 3. Prompts */
+
+  function promptDirty() {
+    return !!state.prompt && $('prompt-text').value !== String(state.prompt.text || '');
+  }
+
+  async function loadPromptList() {
+    var d = await api('/api/admin/prompts');
+    state.prompts = d.prompts || [];
+    var keys = state.prompts.map(function (p) { return p.key; });
+    if (!state.promptKey || keys.indexOf(state.promptKey) < 0) {
+      state.promptKey = keys.length ? keys[0] : null;
+    }
+    renderPromptList();
+  }
+
+  function renderPromptList() {
+    var list = state.prompts || [];
+    $('prompt-list').innerHTML = list.map(function (p) {
+      var edited = p.source === 'override';
+      return '<li><button type="button" class="prompt-item" data-action="pick" data-key="' + esc(p.key) +
+        '" data-testid="prompt-item-' + esc(p.key) + '" aria-current="' + (p.key === state.promptKey ? 'true' : 'false') + '">' +
+        '<span class="pi-main"><span class="pi-label">' + esc(p.label || p.key) + '</span>' +
+        '<span class="pi-meta">' + esc(p.stage || '') + ' · ' + esc(p.version || '—') + '</span></span>' +
+        '<span class="badge ' + (edited ? 'b-edited' : 'b-default') + '">' + (edited ? 'edited' : 'default') + '</span>' +
+        '</button></li>';
+    }).join('') || '<li class="empty">No prompts registered.</li>';
+  }
+
+  async function activatePrompts() {
+    var msg = $('prompts-msg');
+    try {
+      if (!state.prompts) await loadPromptList();
+      var want = state.promptKey;
+      if (!want) {
+        $('prompt-empty').hidden = false;
+        $('prompt-detail').hidden = true;
+        return;
+      }
+      if (state.prompt && state.prompt.key === want) { renderPromptList(); return; }
+      if (promptDirty() && !window.confirm('Discard your unsaved prompt edits?')) {
+        state.promptKey = state.prompt.key;
+        renderPromptList();
+        return;
+      }
+      await loadPromptDetail(want);
+    } catch (e) {
+      notify(msg, e.message, 'err');
+    }
+  }
+
+  async function loadPromptDetail(key) {
+    var d = await api('/api/admin/prompts/' + encodeURIComponent(key));
+    state.promptKey = key;
+    state.prompt = d;
+    renderPromptDetail(d);
+    renderPromptList();
+  }
+
+  async function refreshPrompt(key) {
+    await loadPromptList();
+    await loadPromptDetail(key);
+  }
+
+  function renderPromptDetail(d) {
+    $('prompt-empty').hidden = true;
+    $('prompt-detail').hidden = false;
+    $('pd-label').textContent = d.label || d.key;
+    $('pd-stage').textContent = d.stage ? 'Stage: ' + d.stage : '';
+    $('pd-version').textContent = 'Version ' + (d.version || '—');
+    var badge = $('pd-badge');
+    var edited = d.source === 'override';
+    badge.textContent = edited ? 'edited' : 'default';
+    badge.className = 'badge ' + (edited ? 'b-edited' : 'b-default');
+    $('pd-desc').textContent = d.description || '';
+    $('pd-effect').textContent = d.effect || '';
+    $('prompt-text').value = d.text || '';
+    $('prompt-note').value = '';
+    $('prompt-save').disabled = true;
+    $('prompt-default').textContent = d.default_text || '';
+    $('prompt-default-wrap').hidden = true;
+    $('prompt-default-btn').textContent = 'Show default';
+    $('prompt-default-btn').setAttribute('aria-expanded', 'false');
+    $('prompt-preview-wrap').hidden = true;
+    renderHistory(d.history || []);
+  }
+
+  function renderHistory(h) {
+    $('prompt-history').innerHTML = h.length ? h.map(function (x) {
+      return '<li><span class="time">' + esc(fmtDate(x.created_at)) + '</span>' +
+        '<span class="hnote">' + esc(x.note || 'No note') + '</span>' +
+        '<span>' + (x.active ? '<span class="badge b-edited">active</span>' : '<span class="muted">inactive</span>') +
+        ' · ' + esc(fmtVal(x.length)) + ' chars</span></li>';
+    }).join('') : '<li class="muted">No saved versions yet.</li>';
+  }
+
+  async function savePrompt() {
+    var msg = $('prompts-msg');
+    var key = state.promptKey;
+    var text = $('prompt-text').value;
+    var note = $('prompt-note').value.trim();
+    if (!text.trim()) {
+      notify(msg, 'Prompt text cannot be empty.', 'err');
+      return;
+    }
+    $('prompt-save').disabled = true;
+    try {
+      var d = await api('/api/admin/prompts', { method: 'POST', body: { key: key, text: text, note: note } });
+      await refreshPrompt(key);
+      notify(msg, 'Saved as version ' + fmtVal(d.version) + '.', 'ok');
+    } catch (e) {
+      notify(msg, e.message, 'err');
+      $('prompt-save').disabled = !promptDirty();
+    }
+  }
+
+  async function resetPrompt() {
+    var msg = $('prompts-msg');
+    var key = state.promptKey;
+    if (!key) return;
+    if (!window.confirm('Reset this prompt to its built-in default? Unsaved edits in the box will be lost.')) return;
+    var note = $('prompt-note').value.trim();
+    try {
+      var d = await api('/api/admin/prompts/reset', { method: 'POST', body: { key: key, note: note } });
+      await refreshPrompt(key);
+      notify(msg, 'Reset to the default, version ' + fmtVal(d.version) + '.', 'ok');
+    } catch (e) {
+      notify(msg, e.message, 'err');
+    }
+  }
+
+  async function previewPrompt() {
+    var msg = $('prompts-msg');
+    var key = state.promptKey;
+    if (!key) return;
+    try {
+      var d = await api('/api/admin/prompts/' + encodeURIComponent(key) + '/preview');
+      var notes = ['Sample: ' + (d.sample || '—')];
+      if (promptDirty()) notes.push('Preview shows the saved text, not your unsaved edits.');
+      $('prompt-sample').textContent = notes.join(' ');
+      $('prompt-preview').textContent = d.preview || '';
+      $('prompt-preview-wrap').hidden = false;
+    } catch (e) {
+      notify(msg, e.message, 'err');
+    }
+  }
+
+  function toggleDefault() {
+    var wrap = $('prompt-default-wrap');
+    var open = wrap.hidden;
+    wrap.hidden = !open;
+    $('prompt-default-btn').textContent = open ? 'Hide default' : 'Show default';
+    $('prompt-default-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  /* ───────────────────────────────────────── 4. Changes */
+
+  async function loadChanges() {
+    var body = $('changes-body');
+    var msg = $('changes-msg');
+    try {
+      var d = await api('/api/admin/changes');
+      var list = d.changes || [];
+      body.innerHTML = list.length ? list.map(function (c) {
+        return '<tr>' +
+          '<td class="time">' + esc(fmtDate(c.at)) + '</td>' +
+          '<td><span class="tag">' + esc(c.kind || '—') + '</span></td>' +
+          '<td><code>' + esc(c.key || '—') + '</code></td>' +
+          '<td class="wrapcell"><span class="mono" title="' + esc(fmtVal(c.old_value)) + '">' + esc(short(c.old_value, 140)) + '</span>' +
+            ' → <span class="mono" title="' + esc(fmtVal(c.new_value)) + '">' + esc(short(c.new_value, 140)) + '</span></td>' +
+          '<td class="wrapcell">' + (c.note ? esc(c.note) : '<span class="muted">—</span>') + '</td>' +
+          '<td class="nowrap">' + esc(c.sheet_sync || '—') + '</td>' +
+        '</tr>';
+      }).join('') : '<tr><td colspan="6" class="empty">No changes recorded yet.</td></tr>';
+      msg.hidden = true;
+    } catch (e) {
+      notify(msg, e.message, 'err');
+      if (!body.children.length || body.textContent.indexOf('Loading') >= 0) {
+        body.innerHTML = '<tr><td colspan="6" class="empty">The change log could not be loaded.</td></tr>';
+      }
+    }
+  }
+
+  /* ───────────────────────────────────────── wiring */
+
+  document.querySelectorAll('[role="tab"]').forEach(function (tab) {
+    tab.addEventListener('click', function () { setTab(tab.getAttribute('data-tab')); });
+  });
+
+  $('tablist').addEventListener('keydown', function (e) {
+    var i = TABS.indexOf(state.tab);
+    var j = -1;
+    if (e.key === 'ArrowRight') j = (i + 1) % TABS.length;
+    else if (e.key === 'ArrowLeft') j = (i - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = TABS.length - 1;
+    if (j < 0) return;
+    e.preventDefault();
+    setTab(TABS[j]);
+    $('tab-' + TABS[j]).focus();
+  });
+
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest ? e.target.closest('[data-action]') : null;
+    if (!el) return;
+    var action = el.getAttribute('data-action');
+    if (action === 'tune') tune(el.getAttribute('data-stage'));
+    else if (action === 'prompt' || action === 'pick') {
+      state.promptKey = el.getAttribute('data-key');
+      setTab('prompts');
+    }
+    else if (action === 'source') toggleSource(el.getAttribute('data-key'));
+  });
+
+  $('rescore-button').addEventListener('click', rescore);
+  $('settings-form').addEventListener('input', onSettingInput);
+  $('settings-form').addEventListener('change', onSettingInput);
+  $('settings-save').addEventListener('click', saveSettings);
+  $('prompt-text').addEventListener('input', function () { $('prompt-save').disabled = !promptDirty(); });
+  $('prompt-save').addEventListener('click', savePrompt);
+  $('prompt-reset').addEventListener('click', resetPrompt);
+  $('prompt-preview-btn').addEventListener('click', previewPrompt);
+  $('prompt-default-btn').addEventListener('click', toggleDefault);
+  $('changes-refresh').addEventListener('click', loadChanges);
+  window.addEventListener('hashchange', function () { activate(tabFromHash()); });
+
+  var start = tabFromHash();
+  if (location.hash !== '#' + start) history.replaceState(null, '', '#' + start);
+  activate(start);
+})();
+</script>
+</body>
+</html>

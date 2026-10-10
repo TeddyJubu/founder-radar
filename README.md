@@ -14,7 +14,9 @@ Full specification: [`docs/prd/`](docs/prd/) — start with
 
 Day-to-day ops (sheet ↔ web UI ↔ Telegram, Kept storage, editing funds and
 sources): [`docs/ops-guide.md`](docs/ops-guide.md). In the Today prototype the
-same guide is at `/help`.
+same guide is at `/help`. The password-protected **Control room** at `/admin` shows
+the daily flow stage by stage, settings and sources, the three AI prompts, and an
+audit log of changes (see the ops guide, section 8; API in [`docs/admin-api.md`](docs/admin-api.md)).
 
 **Teaching guide** (interactive site for students/teachers — architecture,
 morning loop, funds, PDF handout): [`guide/`](guide/) — `cd guide && npm install && npm run dev`.

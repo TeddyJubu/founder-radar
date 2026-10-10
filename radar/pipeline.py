@@ -1171,8 +1171,12 @@ def extract_stage(items: Iterable[Any], cfg: Any, *, use_llm: bool,
     """
     from radar.extract import ExtractContext, extract, extract_all
 
+    from radar.admin.prompts import effective
+
     ctx = ExtractContext.from_settings(cfg.settings, use_llm=use_llm, db=db)
     ctx.llm = llm
+    prompt = effective(db, "extract.system")
+    ctx.system_prompt, ctx.prompt_version = prompt.text, prompt.version
     out: list[Any] = []
     for item in items:
         structured = getattr(item, "structured", None) or {}

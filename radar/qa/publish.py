@@ -133,7 +133,8 @@ def _ensure_hermes_acl() -> None:
         log.warning("hermes-acl refresh failed: %s", exc)
 
 
-def _run_hermes_publish_check(payload: dict[str, Any]) -> tuple[str, str, str]:
+def _run_hermes_publish_check(payload: dict[str, Any], *, brief: str | None = None,
+                              ) -> tuple[str, str, str]:
     """Return (verdict, summary, actions). verdict in {pass, block, skip}."""
     from radar.qa.today import HermesUnavailable, resolve_hermes_binary
 
@@ -142,7 +143,7 @@ def _run_hermes_publish_check(payload: dict[str, Any]) -> tuple[str, str, str]:
         raise HermesUnavailable("hermes binary not on PATH")
     _ensure_hermes_acl()
 
-    brief = _subagent_prompt()
+    brief = brief or _subagent_prompt()
     body = (
         f"{brief}\n\n---\nPUBLISH SNAPSHOT (JSON, counts only):\n"
         f"{json.dumps(payload, sort_keys=True, indent=2)}\n"
@@ -340,8 +341,11 @@ def pre_publish_check(
         }
     ]
 
+    from radar.admin.prompts import effective
+
+    brief = effective(db, "publish.brief")
     hermes_payload = {
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": brief.version,
         "blocking_issues": [
             {"code": i.code, "detail": i.detail} for i in blocking
         ],
@@ -351,7 +355,10 @@ def pre_publish_check(
 
     if use_hermes:
         try:
-            verdict, summary, actions = _run_hermes_publish_check(hermes_payload)
+            # The brief is passed only when edited, so the default call
+            # stays the one-argument seam the tests stub.
+            extra = {"brief": brief.text} if brief.source == "override" else {}
+            verdict, summary, actions = _run_hermes_publish_check(hermes_payload, **extra)
             report.hermes_verdict = verdict
             report.hermes_summary = summary
             report.hermes_actions = actions
