@@ -20,6 +20,9 @@ LOG="${RADAR_UPDATE_LOG:-/var/log/founder-radar-update.log}"
 DRY="${RADAR_UPDATE_DRY_RUN:-0}"
 FORCE="${RADAR_UPDATE_FORCE_RESCORE:-0}"
 ALLOW_NONROOT="${RADAR_UPDATE_ALLOW_NONROOT:-0}"
+#: Written before install.sh, removed only when the whole update succeeded. Root-
+#: owned and outside the app tree, so the service account cannot plant or clear it.
+PENDING="${RADAR_UPDATE_PENDING:-/var/lib/founder-radar-update/pending}"
 
 truthy() {
   case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
@@ -121,6 +124,11 @@ remote="$(run_git rev-parse origin/main)"
 if [ "$before" = "$remote" ]; then
   if truthy "$FORCE"; then
     say "already at $before — forced rescore without a pull"
+  elif [ -s "$PENDING" ]; then
+    # The checkout moved but install.sh / rescore never finished (10 Oct 2026:
+    # every later cycle said "nothing to do" and the failure stayed invisible).
+    say "already at $before, but the update to $(head -c 40 "$PENDING") did not finish — finishing it"
+    FORCE=1
   else
     say "already at $before — nothing to do"
     exit 0
@@ -139,6 +147,8 @@ if [ "$DRY" = "1" ]; then
   exit 0
 fi
 
+mkdir -p "$(dirname "$PENDING")"
+run_git rev-parse HEAD > "$PENDING"
 bash "$APP_DIR/deploy/install.sh"
 
 cd "$ROOT"
@@ -188,4 +198,5 @@ if command -v systemctl >/dev/null 2>&1; then
   [ "$fail" -eq 0 ] || exit 1
 fi
 
+rm -f "$PENDING"
 say "after:  $(run_git rev-parse HEAD)"
