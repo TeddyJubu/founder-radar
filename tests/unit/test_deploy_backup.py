@@ -538,3 +538,107 @@ def test_install_maintenance_suppresses_service_starts(tmp_path):
     assert result.returncode == 0, result.stderr
     assert commands.read_text().splitlines() == ["daemon-reload"]
     assert 'if [ "${INSTALL_MAINTENANCE:-0}" = 1 ]; then return 0; fi' in installer
+
+
+def _system_packages_block() -> str:
+    installer = INSTALL_SH.read_text()
+    return installer.split("# BEGIN system packages")[1].split("# END system packages")[0]
+
+
+@pytest.mark.parametrize("installed,expect_apt", [
+    ("python3 python3-venv git sqlite3 logrotate", False),
+    ("python3 git sqlite3 logrotate", True),
+])
+def test_install_touches_apt_only_for_missing_packages(tmp_path, installed, expect_apt):
+    """10 Oct 2026: Caddy's apt repo answered 402, `apt-get update` exited 100 and
+    the deploy stopped although nothing needed installing."""
+    calls = tmp_path / "apt-calls"
+    tools = {
+        "dpkg-query": 'for p in $TEST_INSTALLED; do [ "$p" = "$3" ] && { printf "install ok installed"; exit 0; }; done; exit 1',
+        # A broken third-party repository: update fails, install still works.
+        "apt-get": 'printf "%s\\n" "$*" >> "$TEST_CALLS"; [ "$1" = update ] && exit 100; exit 0',
+        "grep": 'exec /usr/bin/grep "$@"',
+    }
+    for name, body in tools.items():
+        tool = tmp_path / name
+        tool.write_text("#!/bin/sh\n" + body + "\n")
+        tool.chmod(0o755)
+    script = "set -euo pipefail\nsay() { printf '%s\\n' \"$*\"; }\n" + _system_packages_block()
+    result = subprocess.run([_BASH, "-c", script], capture_output=True, text=True,
+                            env=_hermetic_env(tmp_path, TEST_INSTALLED=installed, TEST_CALLS=str(calls)))
+    assert result.returncode == 0, result.stdout + result.stderr
+    recorded = calls.read_text().splitlines() if calls.exists() else []
+    if expect_apt:
+        assert recorded[0] == "update -qq"
+        assert recorded[1].split() == ["install", "-y", "-qq", "python3-venv"]
+        assert "apt-get update reported errors" in result.stdout
+    else:
+        assert recorded == []
+
+
+def test_updater_finishes_an_install_that_failed(tmp_path):
+    """A failed install.sh used to leave HEAD moved, and every later cycle said
+    "nothing to do": the deploy was half done and nothing said so again."""
+    if shutil.which("git") is None:
+        pytest.skip("git is not available")
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    rescores = tmp_path / "cli-calls"
+    for name, body in {
+        "systemctl": 'case "$1" in show) echo inactive ;; esac; exit 0',
+    }.items():
+        (tools / name).write_text("#!/bin/sh\n" + body + "\n")
+        (tools / name).chmod(0o755)
+    root = tmp_path / "root"
+    (root / "venv" / "bin").mkdir(parents=True)
+    cli = root / "venv" / "bin" / "founder-radar"
+    cli.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_CLI_CALLS"\necho "{}"\n')
+    cli.chmod(0o755)
+    origin, checkout, work = tmp_path / "origin.git", tmp_path / "app", tmp_path / "seed"
+    pending = tmp_path / "state" / "pending"
+    env = {
+        **os.environ,
+        "PATH": f"{tools}:{os.environ['PATH']}",
+        "ROOT": str(root), "APP_DIR": str(checkout),
+        "RADAR_UPDATE_ALLOW_NONROOT": "1", "RADAR_UPDATE_DRY_RUN": "0",
+        "RADAR_UPDATE_LOCK": str(tmp_path / "update.lock"),
+        "RADAR_UPDATE_LOG": str(tmp_path / "update.log"),
+        "RADAR_UPDATE_PENDING": str(pending),
+        "TEST_INSTALL_OK": str(tmp_path / "install-ok"), "TEST_CLI_CALLS": str(rescores),
+        "GIT_AUTHOR_NAME": "radar-test", "GIT_AUTHOR_EMAIL": "radar-test@example.test",
+        "GIT_COMMITTER_NAME": "radar-test", "GIT_COMMITTER_EMAIL": "radar-test@example.test",
+    }
+
+    def git(cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, check=True)
+
+    def update():
+        return subprocess.run(["bash", str(UPDATE_SCRIPT)], env=env, capture_output=True, text=True)
+
+    git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+    git(tmp_path, "clone", str(origin), str(work))
+    (work / "deploy").mkdir()
+    (work / "deploy" / "install.sh").write_text('[ -f "$TEST_INSTALL_OK" ] || exit 7\n')
+    git(work, "add", "deploy/install.sh")
+    git(work, "commit", "-m", "one")
+    git(work, "push", "origin", "main")
+    git(tmp_path, "clone", str(origin), str(checkout))
+    (work / "README").write_text("two\n")
+    git(work, "add", "README")
+    git(work, "commit", "-m", "two")
+    git(work, "push", "origin", "main")
+    target = git(work, "rev-parse", "HEAD").stdout.strip()
+
+    failed = update()                                  # install.sh exits 7
+    assert failed.returncode != 0
+    assert pending.read_text().strip() == target
+
+    (tmp_path / "install-ok").touch()                  # the outage clears
+    finished = update()
+    assert finished.returncode == 0, finished.stdout + finished.stderr
+    assert "did not finish — finishing it" in finished.stdout
+    assert "rescore --all" in rescores.read_text()
+    assert not pending.exists()
+
+    assert "nothing to do" in update().stdout
+
