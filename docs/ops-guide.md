@@ -286,3 +286,63 @@ mode defers service/timer enables and restarts, including Caddy and Hermes gatew
 After configuration, rescore, completed Today QA and Sheet verification, explicitly
 start the chosen services and timers. The ACL helper grants operator write access
 to mutable data/logs, never the protected application checkout or Python environment.
+
+---
+
+## 8. Control room (`/admin`)
+
+**Control room** is the password-protected admin page on the review server. It
+uses the same login as Today and Kept. It has four tabs:
+
+| Tab | What it does |
+|---|---|
+| **Flow** | Shows the daily flow stage by stage (① Config → ② Fetch → ③ Extract → ④ Resolve → ⑤ Enrich → ⑥ Gate+score → ⑥½ Today QA → ⑦ Render) and what the latest run did at each stage. Read-only. |
+| **Settings** | Thresholds, scoring weights, digest size and the LLM on / off / model switch. The **Sources** on / off switches sit here too. |
+| **Prompts** | The three AI prompts: article extraction (`extract.system`), Today QA brief (`today_qa.brief`) and publish check (`publish.brief`). View, edit or reset each one. |
+| **Changes** | Audit log of every change made from the page or the CLI, newest first. |
+
+**Settings and sources go to the Sheet first.** When the Sheet is configured,
+the change is written to the Settings or Sources tab before anything local
+changes. If that write fails, **nothing is changed** and the page shows an
+error. On success the change is saved to the local last-good snapshot, and Today
+is rescored automatically. The rescore is deterministic (no AI), so Today reads
+the score generation that matches the new settings (no `config_hash` drift).
+Without a configured Sheet, the change is saved locally only and the Changes tab
+records the Sheet sync as skipped.
+
+**After a rescore, Today waits for the Hermes check again.** A newer score makes
+every card's Today QA approval stale, exactly as with `founder-radar rescore`.
+Run `founder-radar today-qa` on the VPS (or ask Hermes to run Today QA); the
+morning run also does it. The page says so after every save.
+
+**Prompts live in SQLite, with history.** The built-in text stays in the code.
+Each save creates a new version in the `prompt_override` table, and the old
+versions stay in the history. A new version changes the prompt version, so the
+next run reads new articles with it (extract; articles already read keep their
+record until fetched again), re-checks every Today card (Today QA), or uses it at
+the next publish check. **Reset** makes the built-in default active again. It is recorded
+as a change, and the earlier versions remain in the history.
+
+**AI never sets scores.** Stage ⑥ (gate and score) is deterministic. The prompts
+only change how article prose is read, how Today cards are checked and how the
+publish gate judges the morning. Today QA can veto a card and the publish check
+can block a send. Neither can add a company or change a score.
+
+CLI equivalents (the same store and rules as the page):
+
+```bash
+founder-radar admin flow                      # the stage view, as text
+founder-radar admin settings show
+founder-radar admin settings set KEY VALUE    # e.g. shortlist_fit 65
+founder-radar admin prompts list
+founder-radar admin prompts show KEY
+founder-radar admin prompts set KEY --file new.md   # or --text "…"; --file - reads stdin
+founder-radar admin prompts preview KEY       # what the model would receive (no AI call)
+founder-radar admin prompts reset KEY         # back to the built-in default
+founder-radar admin sources set KEY on|off
+founder-radar admin rescore                   # rescore against the current snapshot
+founder-radar admin changes                   # the audit log
+```
+
+Every write command takes `--note "why"`, and `--json` (before `admin`) gives
+machine-readable output for Hermes.

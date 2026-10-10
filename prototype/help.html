@@ -163,6 +163,29 @@ a { color: var(--blue); }
      password into the repo, a chat thread, or anywhere else that is not the
      server itself.</p>
 
+  <h2>Control room (/admin)</h2>
+  <p>The password-protected admin page, with the same login as Today and Kept. Four tabs:
+     <strong>Flow</strong> (each daily stage and what the latest run did, read-only),
+     <strong>Settings</strong> (thresholds, weights, digest size, LLM on/off/model, and
+     Sources on/off), <strong>Prompts</strong> (the three AI prompts), and
+     <strong>Changes</strong> (audit log, newest first).</p>
+  <ul>
+    <li><strong>Sheet first:</strong> settings and source changes are written to the Sheet
+        before anything local changes. If the Sheet write fails, nothing is changed. On
+        success, Today is rescored automatically (no AI). Today then waits for the Hermes
+        check again: run <code>founder-radar today-qa</code> or ask Hermes; the morning run
+        also does it.</li>
+    <li><strong>Prompts:</strong> stored in SQLite with history. Saving makes a new version,
+        so the next run re-reads articles or re-checks Today cards. Reset returns to the
+        built-in default and is logged.</li>
+    <li><strong>AI never sets scores.</strong> Gate and score are deterministic. The prompts
+        only affect how article text is read and how Today cards are checked.</li>
+  </ul>
+  <p class="note">CLI equivalents: <code>founder-radar admin flow</code>,
+     <code>founder-radar admin settings show|set KEY VALUE</code>,
+     <code>founder-radar admin prompts list|show|set|reset|preview</code>,
+     <code>founder-radar admin sources set KEY on|off</code>, <code>founder-radar admin changes</code>.</p>
+
   <p class="note">CLI reminders: <code>founder-radar doctor</code>,
      <code>founder-radar sync-sheet</code>, <code>founder-radar sources --list</code>.</p>
 </div>

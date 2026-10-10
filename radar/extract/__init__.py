@@ -115,6 +115,10 @@ class ExtractContext:
     use_llm: bool = True
     model_id: str = DEFAULT_MODEL
     source_key: str = "unknown"
+    # The Control room can replace the system prompt; its version then
+    # differs too, so the cache never answers a new prompt with an old reply.
+    system_prompt: str = SYSTEM_PROMPT
+    prompt_version: str = PROMPT_VERSION
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -170,7 +174,7 @@ def extract_html(
     if not ctx.use_llm or ctx.llm is None:
         return _finish_heuristic(pre, title=title, html=html, url=url)
 
-    key = cache_key(pre.text, ctx.model_id)
+    key = cache_key(pre.text, ctx.model_id, prompt_version=ctx.prompt_version)
     user = build_user_prompt(title, pre.text, url=url, jsonld=pre.jsonld)
 
     # ---- ③ the cache ---------------------------------------------------------
@@ -183,7 +187,7 @@ def extract_html(
 
     # ---- ④ the one paid call, with one retry -------------------------------
     try:
-        response = ctx.llm.complete(key=key, system=SYSTEM_PROMPT, user=user)
+        response = ctx.llm.complete(key=key, system=ctx.system_prompt, user=user)
     except CacheMiss:
         raise  # a replay miss is never a content failure — surface it loudly
     except Exception as exc:
@@ -202,7 +206,7 @@ def extract_html(
             validation_error=_validation_error(response.payload),
         )
         try:
-            response = ctx.llm.complete(key=key, system=SYSTEM_PROMPT, user=retry_user)
+            response = ctx.llm.complete(key=key, system=ctx.system_prompt, user=retry_user)
         except CacheMiss:
             raise
         except Exception as exc:

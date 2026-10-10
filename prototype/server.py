@@ -1666,6 +1666,115 @@ def write_request_refusal(headers: Any) -> tuple[int, str] | None:
     return None
 
 
+# ------------------------------------------------------------ control room
+#
+# `/admin` is the Control room: the flow of the daily run, the Settings and
+# Sources the client may tune, and the three AI prompts. The logic lives in
+# `radar/admin/` (the CLI calls the same functions); this is only routing.
+# Writes go through the same `write_request_refusal` guard as verdicts.
+
+ADMIN_PROMPT_RE = re.compile(r"^/api/admin/prompts/([a-z_.]+)(/preview)?$")
+
+
+def _db_file(conn: sqlite3.Connection) -> str:
+    row = conn.execute("PRAGMA database_list").fetchone()
+    return row[2] if row else ""
+
+
+def admin_get(conn: sqlite3.Connection, path: str) -> tuple[int, dict]:
+    """GET /api/admin/* → (status, JSON body)."""
+    from radar.admin import prompts, settings
+    from radar.admin.flow import build_flow
+
+    db = _admin_db(conn)
+    try:
+        if path == "/api/admin/flow":
+            return 200, build_flow(db.conn, active_config_hash=_active_config_hash(conn))
+        if path == "/api/admin/settings":
+            return 200, settings.settings_view(db)
+        if path == "/api/admin/changes":
+            return 200, {"changes": settings.changes_view(db)}
+        if path == "/api/admin/prompts":
+            return 200, {"prompts": prompts.list_view(db)}
+        match = ADMIN_PROMPT_RE.match(path)
+        if match:
+            key, is_preview = match.group(1), bool(match.group(2))
+            try:
+                if is_preview:
+                    return 200, prompts.preview(db, key)
+                return 200, prompts.detail_view(db, key)
+            except prompts.UnknownPrompt:
+                return 404, {"error": f"unknown prompt {key!r}"}
+        return 404, {"error": "not found"}
+    finally:
+        db.close()
+
+
+def admin_post(conn: sqlite3.Connection, path: str, body: dict) -> tuple[int, dict]:
+    """POST /api/admin/* → (status, JSON body). The caller holds the write lock."""
+    from radar.admin import prompts, settings
+
+    note = body.get("note") if isinstance(body.get("note"), str) else None
+    db = _admin_db(conn)
+    try:
+        if path == "/api/admin/settings":
+            changes = body.get("changes")
+            if not isinstance(changes, dict) or not changes:
+                return 400, {"error": "changes must be a non-empty object"}
+            try:
+                return 200, settings.apply_settings(db, changes, note=note).as_dict()
+            except settings.SettingsInvalid as exc:
+                return 400, {"error": "invalid settings", "errors": exc.errors}
+            except settings.SheetUnavailable as exc:
+                log.warning("admin settings: sheet write failed: %s", exc)
+                return 502, {"error": "Google Sheet could not be updated; "
+                                      "nothing was changed"}
+        if path == "/api/admin/sources":
+            key, enabled = body.get("key"), body.get("enabled")
+            if not isinstance(key, str) or not isinstance(enabled, bool):
+                return 400, {"error": "key (string) and enabled (true/false) are required"}
+            try:
+                return 200, settings.apply_source(db, key, enabled, note=note).as_dict()
+            except settings.UnknownSource:
+                return 404, {"error": f"unknown source {key!r}"}
+            except settings.SheetUnavailable as exc:
+                log.warning("admin sources: sheet write failed: %s", exc)
+                return 502, {"error": "Google Sheet could not be updated; "
+                                      "nothing was changed"}
+        if path == "/api/admin/rescore":
+            return 200, {"ok": True, "rescore": settings.rescore_now(db, note=note)}
+        if path in ("/api/admin/prompts", "/api/admin/prompts/reset"):
+            key = body.get("key")
+            if not isinstance(key, str) or key not in prompts.SPECS:
+                return 400, {"error": "unknown prompt"}
+            if path.endswith("/reset"):
+                eff = prompts.reset(db, key, note)
+            else:
+                text = body.get("text")
+                if not isinstance(text, str) or not text.strip():
+                    return 400, {"error": "prompt text is empty"}
+                eff = prompts.save_override(db, key, text, note)
+            return 200, {"ok": True, "version": eff.version, "source": eff.source}
+        return 404, {"error": "not found"}
+    finally:
+        db.close()
+
+
+def _admin_db(conn: sqlite3.Connection) -> Any:
+    """A short-lived `Db` on the review surface's file, for this request only.
+
+    `Db` connections are bound to the thread that opened them and the server
+    answers each request on its own thread, so one is opened per request. WAL
+    keeps it consistent with the shared read connection.
+    """
+    from radar.store.db import Db
+
+    path = _db_file(conn)
+    if not path:
+        raise RuntimeError("the Control room needs a file database, not :memory:")
+    return Db(path)
+
+
 def make_handler(conn: sqlite3.Connection):
     # The connection is shared by every request thread. A write is a
     # BEGIN..COMMIT on it, so two writes must not interleave.
@@ -1736,6 +1845,13 @@ def make_handler(conn: sqlite3.Connection):
             elif self.path == "/tokens.css":
                 self._send(200, (HERE / "tokens.css").read_bytes(),
                            "text/css; charset=utf-8")
+            elif self.path in ("/admin", "/admin.html") or self.path.startswith("/admin#"):
+                self._send(200, (HERE / "admin.html").read_bytes(),
+                           "text/html; charset=utf-8")
+            elif self.path.startswith("/api/admin/"):
+                code, payload = admin_get(conn, urlsplit(self.path).path)
+                self._send(code, json.dumps(payload, default=str).encode(),
+                           "application/json")
             elif self.path.startswith("/api/today"):
                 payload = json.dumps(build_today(conn), default=str).encode()
                 self._send(200, payload, "application/json")
@@ -1749,6 +1865,8 @@ def make_handler(conn: sqlite3.Connection):
                 route = "verdict"
             elif self.path == "/api/undo":
                 route = "undo"
+            elif self.path.startswith("/api/admin/"):
+                route = "admin"
             else:
                 self._send(404, b"not found", "text/plain")
                 return
@@ -1768,6 +1886,11 @@ def make_handler(conn: sqlite3.Connection):
             elif route == "undo":
                 with write_lock:
                     self._undo(body)
+            elif route == "admin":
+                with write_lock:
+                    code, payload = admin_post(conn, urlsplit(self.path).path, body)
+                self._send(code, json.dumps(payload, default=str).encode(),
+                           "application/json")
             else:
                 with write_lock:
                     self._verdict(body)

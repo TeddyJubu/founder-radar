@@ -1012,6 +1012,282 @@ def doctor(ctx):
     sys.exit(EXIT_OK if required_ok and fund_ok else EXIT_PARTIAL)
 
 
+# ------------------------------------------------------------------- admin
+
+
+_TODAY_QA_NOTE = ("Today cards need the Hermes check again: "
+                  "run `founder-radar today-qa`.")
+
+
+@cli.group()
+def admin():
+    """Control room: flow, settings and prompts — the same actions as /admin."""
+
+
+@admin.group("settings")
+def admin_settings():
+    """Read and change the Settings tab."""
+
+
+@admin.group("sources")
+def admin_sources():
+    """Switch sources on or off."""
+
+
+@admin.group("prompts")
+def admin_prompts():
+    """View, edit and reset the AI prompts."""
+
+
+def _admin_report_applied(applied, as_json: bool) -> None:
+    if as_json:
+        _emit(applied.as_dict(), True)
+        return
+    if not applied.applied:
+        click.echo("nothing changed — already set that way")
+    for key, new in applied.applied.items():
+        click.echo(f"applied  {key} = {new}")
+    click.echo(f"sheet    {applied.sheet_sync}")
+    if applied.rescore:
+        click.echo(f"rescore  scored {applied.rescore.get('scored', '?')}, "
+                   f"shortlisted {applied.rescore.get('shortlisted', '?')} "
+                   f"(config {applied.config_hash})")
+    if applied.today_qa_needed:
+        click.echo(_TODAY_QA_NOTE)
+
+
+@admin.command("flow")
+@click.pass_context
+def admin_flow(ctx):
+    """Each stage of the daily run, with what the latest run did."""
+    from radar.admin.flow import build_flow
+
+    data = build_flow(_db(ctx).conn)
+    if ctx.obj["json"]:
+        _emit(data, True)
+        return
+    for stage in data["stages"]:
+        stats = ", ".join(f"{s['label']}: {s['value']}" for s in stage["stats"])
+        click.echo(f"{stage['num']} {stage['name']} — {stats}")
+    if data["runs"]:
+        latest = data["runs"][0]
+        click.echo(f"latest run #{latest['id']}: {latest['status']} "
+                   f"(started {latest['started_at']})")
+    else:
+        click.echo("latest run: none yet")
+
+
+@admin_settings.command("show")
+@click.pass_context
+def admin_settings_show(ctx):
+    """Every setting with its value and default, and each source's switch."""
+    from radar.admin.settings import settings_view
+
+    view = settings_view(_db(ctx))
+    if ctx.obj["json"]:
+        _emit(view, True)
+        return
+    sheet = "Google Sheet connected" if view["sheet_configured"] else "no Google Sheet"
+    click.echo(f"config {view['config_hash']} ({view['config_source']}) — {sheet}")
+    for s in view["settings"]:
+        click.echo(f"{s['key']} = {s['value']} (default {s['default']})")
+    click.echo("")
+    click.echo("sources:")
+    for s in view["sources"]:
+        click.echo(f"  {s['key']} [{s['track']}] {'on' if s['enabled'] else 'off'}")
+
+
+@admin_settings.command("set")
+@click.argument("key")
+@click.argument("value")
+@click.option("--note", default=None, help="Why this changed (kept in the change log)")
+@click.pass_context
+def admin_settings_set(ctx, key, value, note):
+    """Validate, write the Sheet, snapshot and rescore one setting."""
+    from radar.admin.settings import SettingsInvalid, SheetUnavailable, apply_settings
+
+    try:
+        applied = apply_settings(_db(ctx), {key: value}, note=note)
+    except SettingsInvalid as exc:
+        lines = [f"{k}: {v}" if k else v for k, v in exc.errors.items()]
+        raise click.ClickException("setting not applied:\n  " + "\n  ".join(lines)) from None
+    except SheetUnavailable as exc:
+        raise click.ClickException(
+            f"Google Sheet could not be updated; nothing was changed: {exc}") from None
+    _admin_report_applied(applied, ctx.obj["json"])
+
+
+@admin_sources.command("set")
+@click.argument("key")
+@click.argument("state", type=click.Choice(["on", "off"], case_sensitive=False))
+@click.option("--note", default=None, help="Why this changed (kept in the change log)")
+@click.pass_context
+def admin_sources_set(ctx, key, state, note):
+    """Switch one source on or off."""
+    from radar.admin.settings import SheetUnavailable, UnknownSource, apply_source
+
+    try:
+        applied = apply_source(_db(ctx), key, state.lower() == "on", note=note)
+    except UnknownSource:
+        raise click.ClickException(
+            f"unknown source: {key} (see `founder-radar admin settings show`)") from None
+    except SheetUnavailable as exc:
+        raise click.ClickException(
+            f"Google Sheet could not be updated; nothing was changed: {exc}") from None
+    _admin_report_applied(applied, ctx.obj["json"])
+
+
+@admin_prompts.command("list")
+@click.pass_context
+def admin_prompts_list(ctx):
+    """Every AI prompt, whether it is the default or edited, and its version."""
+    from radar.admin.prompts import list_view
+
+    rows = list_view(_db(ctx))
+    if ctx.obj["json"]:
+        _emit(rows, True)
+        return
+    for p in rows:
+        state = "edited" if p["source"] == "override" else "default"
+        click.echo(f"{p['key']}  [{state}]  {p['version']}  {p['label']}")
+
+
+@admin_prompts.command("show")
+@click.argument("key")
+@click.option("--default", "use_default", is_flag=True,
+              help="Show the shipped default instead of the active text")
+@click.pass_context
+def admin_prompts_show(ctx, key, use_default):
+    """Print the prompt text a run would use."""
+    from radar.admin.prompts import UnknownPrompt, effective, spec
+
+    handle = _db(ctx)
+    try:
+        eff = effective(handle, key)
+        if use_default:
+            s = spec(key)
+            text, version, source = s.default_text(), s.base_version(), "default"
+        else:
+            text, version, source = eff.text, eff.version, eff.source
+    except UnknownPrompt:
+        raise click.ClickException(f"unknown prompt: {key}") from None
+    if ctx.obj["json"]:
+        _emit({"key": key, "source": source, "version": version, "text": text}, True)
+        return
+    click.echo(text)
+
+
+@admin_prompts.command("set")
+@click.argument("key")
+@click.option("--file", "file_path", default=None,
+              help="Read the new text from this file ('-' for stdin)")
+@click.option("--text", default=None, help="The new text, on the command line")
+@click.option("--note", default=None, help="Why this changed (kept in the change log)")
+@click.pass_context
+def admin_prompts_set(ctx, key, file_path, text, note):
+    """Save new text for a prompt. Its version changes, so the next run re-checks."""
+    from dataclasses import asdict
+
+    from radar.admin.prompts import UnknownPrompt, save_override
+
+    if (file_path is None) == (text is None):
+        raise click.UsageError("give exactly one of --file or --text")
+    if file_path is not None:
+        try:
+            body = (sys.stdin.read() if file_path == "-"
+                    else Path(file_path).read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise click.ClickException(f"cannot read {file_path}: {exc}") from None
+    else:
+        body = text
+    try:
+        eff = save_override(_db(ctx), key, body, note=note)
+    except UnknownPrompt:
+        raise click.ClickException(f"unknown prompt: {key}") from None
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from None
+    if ctx.obj["json"]:
+        _emit(asdict(eff), True)
+        return
+    click.echo(f"{key} saved — version {eff.version} (source: {eff.source})")
+
+
+@admin_prompts.command("reset")
+@click.argument("key")
+@click.option("--note", default=None, help="Why this changed (kept in the change log)")
+@click.pass_context
+def admin_prompts_reset(ctx, key, note):
+    """Go back to the shipped default. History is kept."""
+    from dataclasses import asdict
+
+    from radar.admin.prompts import UnknownPrompt, reset
+
+    try:
+        eff = reset(_db(ctx), key, note=note)
+    except UnknownPrompt:
+        raise click.ClickException(f"unknown prompt: {key}") from None
+    if ctx.obj["json"]:
+        _emit(asdict(eff), True)
+        return
+    click.echo(f"{key} reset to default — version {eff.version}")
+
+
+@admin_prompts.command("preview")
+@click.argument("key")
+@click.pass_context
+def admin_prompts_preview(ctx, key):
+    """Show exactly what the model would receive. No network, no AI call."""
+    from radar.admin.prompts import UnknownPrompt, preview
+
+    try:
+        result = preview(_db(ctx), key)
+    except UnknownPrompt:
+        raise click.ClickException(f"unknown prompt: {key}") from None
+    if ctx.obj["json"]:
+        _emit(result, True)
+        return
+    click.echo(result["preview"])
+
+
+@admin.command("changes")
+@click.option("--limit", type=click.IntRange(1, 1000), default=100, show_default=True)
+@click.pass_context
+def admin_changes(ctx, limit):
+    """The audit log of every change made from the Control room or the CLI."""
+    from radar.admin.settings import changes_view
+
+    rows = changes_view(_db(ctx), limit)
+    if ctx.obj["json"]:
+        _emit(rows, True)
+        return
+    if not rows:
+        click.echo("no changes yet")
+        return
+    for r in rows:
+        note = f"  — {r['note']}" if r["note"] else ""
+        click.echo(f"{r['at']}  {r['kind']}  {r['key'] or '-'}  "
+                   f"{r['old_value'] or '-'} → {r['new_value'] or '-'}  "
+                   f"[{r['sheet_sync'] or 'n/a'}]{note}")
+
+
+@admin.command("rescore")
+@click.option("--note", default=None, help="Why this rescore (kept in the change log)")
+@click.pass_context
+def admin_rescore(ctx, note):
+    """Rescore every company against the current settings. No network, no AI."""
+    from radar.admin.settings import rescore_now
+
+    result = rescore_now(_db(ctx), note=note)
+    if ctx.obj["json"]:
+        _emit(result, True)
+        return
+    click.echo(f"rescored: {result.get('scored', '?')} scored, "
+               f"{result.get('shortlisted', '?')} shortlisted "
+               f"(config {result['config_hash']})")
+    if result["today_qa_needed"]:
+        click.echo(_TODAY_QA_NOTE)
+
+
 def main() -> None:
     load_env_file()
     cli(obj={})
