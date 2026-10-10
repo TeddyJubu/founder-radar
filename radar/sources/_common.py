@@ -37,6 +37,7 @@ __all__ = [
     "parse_date",
     "require_ok",
     "rss_entries",
+    "rss_feed",
     "selector_fingerprint",
     "slug_of",
     "snapshot_diff",
@@ -269,8 +270,24 @@ def wp_fingerprint(posts: Sequence[dict]) -> str:
 # ----------------------------------------------------------------------- RSS
 
 
+#: Feed fields our parser relies on. `rss_feed` fingerprints which of these the
+#: feed supplies — a fact about the site. It must never hash the keys of the
+#: dicts *we* build: adding `company_link_evidence` to them on 30 Sep 2026
+#: moved three feeds' fingerprints at once and blanked them for ten days.
+RSS_STRUCTURE_FIELDS = ("id", "link", "title", "published", "updated",
+                        "summary", "content", "tags")
+
+
 def rss_entries(payload: str | bytes, source_key: str) -> list[dict]:
+    """`rss_feed` without the fingerprint."""
+    return rss_feed(payload, source_key)[0]
+
+
+def rss_feed(payload: str | bytes, source_key: str) -> tuple[list[dict], str]:
     """Parse a feed, preferring `content:encoded` over `description`.
+
+    Returns the entries and an ``rss:`` structure fingerprint over which of
+    `RSS_STRUCTURE_FIELDS` the first few feed items carry.
 
     BusinessCloud and Tech.eu put the full article in `content:encoded`, which
     removes one fetch per article — that is the difference between 30 requests
@@ -322,7 +339,9 @@ def rss_entries(payload: str | bytes, source_key: str) -> list[dict]:
             "company_link_evidence": links[:100],
             "tags": [t.get("term", "") for t in entry.get("tags", []) or []],
         })
-    return out
+    present = [f for f in RSS_STRUCTURE_FIELDS
+               if any(f in entry for entry in parsed.entries[:5])]
+    return out, "rss:" + selector_fingerprint(["rss>channel>item", *present])
 
 
 # ---------------------------------------------------------------------- HTML

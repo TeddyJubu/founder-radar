@@ -168,13 +168,19 @@ class HttpClient:
                 self._backoff(attempt, r.headers.get("Retry-After"))
                 continue
 
-            from radar.sources._common import header_noindex, meta_noindex
-            if header_noindex(r.headers):
-                raise RobotsDenied(f"X-Robots-Tag noindex: {r.url}")
-            if "html" in r.headers.get("content-type", "").lower():
-                from selectolax.parser import HTMLParser
-                if meta_noindex(HTMLParser(r.text)):
-                    raise RobotsDenied(f"HTML meta noindex: {r.url}")
+            # noindex is a property of a page that was served. Error pages
+            # carry it too — Cloudflare's 403 challenge, most 404 templates —
+            # and reading theirs reported "HTML meta noindex" for what was
+            # really a refusal or a moved page (Outward, Mercia and Sheffield,
+            # Oct 2026). Non-2xx answers go back to the adapter as statuses.
+            if 200 <= r.status_code < 300:
+                from radar.sources._common import header_noindex, meta_noindex
+                if header_noindex(r.headers):
+                    raise RobotsDenied(f"X-Robots-Tag noindex: {r.url}")
+                if "html" in r.headers.get("content-type", "").lower():
+                    from selectolax.parser import HTMLParser
+                    if meta_noindex(HTMLParser(r.text)):
+                        raise RobotsDenied(f"HTML meta noindex: {r.url}")
             return Response(str(r.url), r.status_code, r.text, dict(r.headers),
                             from_cache=r.status_code == 304)
 

@@ -36,12 +36,12 @@ Legend — **Access:** `API` · `JSON` (WordPress/CMS endpoint) · `RSS` · `HTM
 | 6 | **Conception X** | A | HTML | `conceptionx.org/portfolio` | weekly | ~3 | PhD deeptech ventures **at or before incorporation** — structurally the youngest cohort in the entire list. Cohort codes CX18–CX26. |
 | 7 | **UKTN** | A | JSON | `uktech.news/wp-json/wp/v2/posts/latest` | daily | 25–50 | Highest-volume UK-only funding coverage. Slugs carry the publish date. |
 | 8 | **BusinessCloud** | A | RSS | `businesscloud.co.uk/feed/` | daily | 15–30 | **Full article text in the feed.** Genuine North of England coverage. Permissive robots. |
-| 9 | **Zinc VC** | — | JSON | `zinc.vc/wp-json/wp/v2/posts` | weekly | — | **Used as a denylist.** Posts are "Announcing Zinc's investment in X" — companies Zinc has already backed. Feeds `on_vc_portfolio`. Not a discovery source. |
+| 9 | **Zinc VC** | — | RSS | `zinc.vc/feed/` (the REST route sends `X-Robots-Tag: noindex`) | weekly | — | **Used as a denylist.** Posts are "Announcing Zinc's investment in X" — companies Zinc has already backed. Feeds `on_vc_portfolio`. Not a discovery source. |
 | 10 | **Entrepreneur First** | A | HTML | `joinef.com/portfolio/` | weekly | ~5 | Company-builder output is pre-seed by construction. London filter, founded-year filter. Snapshot-diff for new entries. |
 | 11 | **UKRI Gateway to Research** | A | API | `gtr.ukri.org/gtr/api/projects` | weekly | 5–15 | Innovate UK grant awards. Quality signal, not a freshness signal. |
 | 12 | **Innovate UK funded projects** | A | FILE | `ukri.org` XLSX, updated every 2–4 weeks | monthly | 10–30 | The most current official Innovate UK award data available free. |
 | 13 | **GOV.UK Search API** | A | API | `www.gov.uk/api/search.json` | daily | 5–10 | Keyless, no rate limit, day-level date stamps on Innovate UK announcements. Ten lines of code. |
-| 14 | **VC portfolio pages (inverted)** | — | HTML | dsw.vc, northstarventures.co.uk, outwardvc.com, anticuspartners.com + ~20 UK VCs | weekly | — | **Used as a denylist.** A company here has already been found. Feeds the `on_vc_portfolio` flag and Discovery Edge. |
+| 14 | **VC portfolio pages (inverted)** | — | HTML | dsw.vc, outwardvc.com/companies, anticuspartners.com/Portfolio, mercia.co.uk, pxnventures.co.uk (Par Equity + Praetura). Northstar's grid is JavaScript-only and its REST/sitemap copies are `noindex`, so it is not read — see `radar/sources/vc_portfolios.py` | weekly | — | **Used as a denylist.** A company here has already been found. Feeds the `on_vc_portfolio` flag and Discovery Edge. |
 
 ### Tier 2 — add after Tier 1 is proven
 
@@ -187,7 +187,8 @@ Each adapter is one file implementing the `SourceAdapter` protocol from `02-arch
 
 ### 4.1 WordPress JSON adapters — the easy ones
 
-Northern Accelerator, Cambridge Enterprise, Zinc VC, Startups Magazine, UKTN, Carbon13.
+Northern Accelerator, Cambridge Enterprise, Startups Magazine, UKTN, Carbon13. (Zinc VC
+moved to its RSS feed in October 2026 — its REST route answers `noindex`.)
 
 ```python
 GET {base}/wp-json/wp/v2/posts?per_page=50&page=1&_embed
@@ -199,13 +200,15 @@ adapter falls back to the official `https://northernaccelerator.org/feed/`
 route, which carries `content:encoded`; if both routes are blocked, the source
 is recorded as degraded rather than being mistaken for a quiet day.
 
-> **Known state (September 2026):** both routes return 403 from the production VPS
-> for every User-Agent tried, while the same URLs answer from other networks — an
-> IP-reputation block on the VPS address range, not a crawler-identity or robots
-> problem, so no adapter change fixes it. The source therefore sits at `degraded`
-> and the heartbeat says so once and then weekly. Options if it matters: a
-> different egress IP, or asking Northern Accelerator to allowlist the crawler
-> (its User-Agent should first carry a real contact address — see `radar/fetch`).
+> **Known state (October 2026):** this is a User-Agent filter, not an IP block.
+> The site (LiteSpeed) answers 403 to every crawler-identifying User-Agent tried
+> — `founder-radar/2.0 (+…)`, plain `founder-radar/2.0`, even `radar/2.0` — from
+> the VPS *and* from a home connection, while a generic client gets 200; after a
+> few refusals it stops accepting connections from that address for a while.
+> Disguising the crawler is not an option (04-sources §5), so no adapter or
+> egress change fixes it. Set the row's **Enabled** to `FALSE` in the Sources tab
+> and ask Northern Accelerator to allowlist the `founder-radar` User-Agent; until
+> then each run only collects another 403.
 
 Returns `id`, `date` (ISO), `link`, `title.rendered`, `content.rendered`, `excerpt.rendered`. Map `date` → `published_at`, `id` → `external_id`, strip HTML from `content.rendered` → `body_text`.
 
@@ -224,6 +227,10 @@ Oxford University Innovation, Conception X, Entrepreneur First, Bethnal Green Ve
 Parse with `selectolax`. Every HTML adapter must:
 
 - Store a **structure fingerprint** (a hash of the selector path set) and fail loudly with `layout_changed` if it shifts. Silent zero-results is the failure mode to avoid.
+  Hash only what the *site* controls — never the keys of dicts our own parser builds (that
+  blanked three feeds for ten days in October 2026) — and give a changed recipe a new prefix
+  (`rss:`, `vc:`) so it is re-learned instead of reported. After checking a source by hand,
+  `founder-radar sources --accept-layout KEY` clears its stored structure; the next run learns it.
 - Return `RawItem.structured` directly when the page already gives clean fields (Oxford gives name, description, website, sector, **incorporation date**, department — no AI needed at all).
 - Use snapshot-diff for undated portfolio pages: store the set of `external_id`s per run; new entries are new companies with `published_at = run_date` and `date_confidence = "inferred"`.
 

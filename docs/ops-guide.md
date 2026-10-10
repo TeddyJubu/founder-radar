@@ -126,9 +126,21 @@ Useful CLI:
 
 ```bash
 founder-radar sources --list
+founder-radar sources --test KEY            # run one adapter against the live site
+founder-radar sources --accept-layout KEY   # after checking a "layout changed" source by hand
 founder-radar doctor
 founder-radar sync-sheet
 ```
+
+**"Layout changed".** The source's page structure no longer matches what was
+stored, and its items are held back so a redesign cannot feed half-parsed
+companies into the pipeline. Look at the site (or run `sources --test KEY`). If
+it reads correctly, run `founder-radar sources --accept-layout KEY` on the server;
+the next run learns the new structure. If it does not, the adapter needs a fix.
+
+**Refused by the site.** A source that answers 403 to the crawler shows as
+degraded every day. Northern Accelerator does this to any crawler User-Agent:
+set its row to `FALSE` until it allowlists `founder-radar`.
 
 ---
 

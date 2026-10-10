@@ -470,6 +470,7 @@ def cli_sources(
     list_: bool = False,
     test_key: str | None = None,
     sniff_url: str | None = None,
+    accept_layout: str | None = None,
     http: Any = None,
     ctx: FetchContext | None = None,
     config: Any = None,
@@ -483,6 +484,20 @@ def cli_sources(
     that can only be exercised live is a CLI entry point that rots.
     """
     from radar.fetch.http import user_agent
+
+    if accept_layout:
+        # No network: the operator has already looked at the source. Clearing
+        # the stored structure (and any per-site entries, `vc_portfolios:dsw`)
+        # lets the next run learn the page as it is now.
+        from radar.fetch.layout import forget_fingerprints
+
+        if accept_layout not in set(REGISTRY):   # keys only; imports nothing
+            return {"key": accept_layout, "status": "unknown source",
+                    "known_keys": sorted(REGISTRY)}
+        cleared = forget_fingerprints(db, accept_layout)
+        return {"key": accept_layout, "cleared": cleared,
+                "next": "the next run learns the current page structure"
+                        if cleared else "nothing stored; the next run learns it anyway"}
 
     if sniff_url:
         return sniff(sniff_url, _http(http))

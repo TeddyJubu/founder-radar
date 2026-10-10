@@ -772,12 +772,16 @@ def repair_fund_criteria(ctx, force_sheet):
 @click.option("--list", "list_", is_flag=True, help="Every source with its robots verdict")
 @click.option("--test", "test_key", default=None, help="Run one adapter against the live site")
 @click.option("--sniff", "sniff_url", default=None, help="Find a CMS JSON endpoint on a site")
+@click.option("--accept-layout", "accept_key", default=None,
+              help="After checking a 'layout changed' source by hand: forget its stored "
+                   "structure so the next run learns the current one")
 @click.pass_context
-def sources(ctx, list_, test_key, sniff_url):
+def sources(ctx, list_, test_key, sniff_url, accept_key):
     """Inspect, test and discover sources."""
     from radar.sources import cli_sources
 
-    _emit(cli_sources(_db(ctx), list_=list_, test_key=test_key, sniff_url=sniff_url),
+    _emit(cli_sources(_db(ctx), list_=list_, test_key=test_key, sniff_url=sniff_url,
+                      accept_layout=accept_key),
           ctx.obj["json"])
 
 

@@ -15,6 +15,10 @@ Three complementary mechanisms, cheapest first:
 2. **Selector fingerprint** (`selector_fingerprint` / `check_fingerprint`) —
    a hash of the selector-path set an HTML adapter actually matched, stored in
    `_meta`. A theme change that still yields *some* items shifts the hash.
+   Hash only what the *site* controls, never our own parser's output, and
+   prefix a new recipe (`fingerprint_scheme`) so changing it is re-learned
+   rather than reported. `founder-radar sources --accept-layout KEY` clears a
+   source's stored structure once a human has checked it.
 3. **Item-count history** (`check_health` over the `source_health` table) —
    a source that normally returns items and today returned none. This is the
    one that catches partial breakage and the 7-consecutive-zero-days alert
@@ -83,27 +87,71 @@ def remember_fingerprint(db: Any, source_key: str, fingerprint: str) -> None:
         db.set_meta(f"{_META_PREFIX}{source_key}", fingerprint)
 
 
+def fingerprint_scheme(fingerprint: str | None) -> str:
+    """The recipe a fingerprint was built with: the text before ``:``, or ``""``.
+
+    A fingerprint is only comparable with one built the same way. Changing what
+    an adapter hashes (a feed's own fields instead of our parser's output keys,
+    say) must not look like the *site* changing — that false alarm took three
+    news feeds dark for ten days in October 2026, because the hash covered the
+    keys of our own entry dicts and a new key we added moved all three at once.
+    Adapters that change their recipe give it a new prefix (``rss:``, ``vc:``);
+    a stored value from another recipe is re-learned instead of compared.
+    Legacy, unprefixed values form the ``""`` scheme.
+    """
+    if not fingerprint or ":" not in fingerprint:
+        return ""
+    return fingerprint.split(":", 1)[0]
+
+
 def check_fingerprint(db: Any, source_key: str, fingerprint: str, *, learn: bool = True) -> None:
     """Raise `LayoutChanged` when the structure hash moves.
 
     The first sighting is *learned*, not rejected — otherwise a brand-new
-    adapter can never have a first successful run. `learn=False` makes it a
-    pure assertion, which is what `sources --test` wants.
+    adapter can never have a first successful run. So is the first sighting
+    under a new recipe (`fingerprint_scheme`): that is our code changing, not
+    the site. `learn=False` makes it a pure assertion, which is what
+    `sources --test` wants.
     """
     previous = stored_fingerprint(db, source_key)
-    if previous is None:
+    if previous is None or fingerprint_scheme(previous) != fingerprint_scheme(fingerprint):
         if learn:
             remember_fingerprint(db, source_key, fingerprint)
         return
     if previous != fingerprint:
+        base_key = source_key.split(":", 1)[0]
         raise LayoutChanged(
-            source_key, f"structure fingerprint {previous} -> {fingerprint}"
+            source_key,
+            f"structure fingerprint {previous} -> {fingerprint}; if the source "
+            f"still reads correctly, run `founder-radar sources --accept-layout {base_key}`",
         )
 
 
 def accept_fingerprint(db: Any, source_key: str, fingerprint: str) -> None:
     """Adopt a new structure after a human has looked at it."""
     remember_fingerprint(db, source_key, fingerprint)
+
+
+def forget_fingerprints(db: Any, source_key: str) -> list[str]:
+    """Drop the stored structure for a source (and its per-site entries).
+
+    The next run learns whatever the page looks like then. This is the
+    operator's "I have looked at it, it reads fine" lever, so it needs no
+    network and no fingerprint value. Returns the `_meta` keys removed.
+    """
+    if db is None:
+        return []
+    exact = f"{_META_PREFIX}{source_key}"
+    rows = db.query(
+        "SELECT key FROM _meta WHERE key = ? OR key LIKE ? ORDER BY key",
+        (exact, f"{exact}:%"),
+    )
+    keys = [r["key"] for r in rows]
+    if keys:
+        db.execute(
+            f"DELETE FROM _meta WHERE key IN ({','.join('?' for _ in keys)})", keys
+        )
+    return keys
 
 
 # ------------------------------------------------------------------- guards

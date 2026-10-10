@@ -23,8 +23,7 @@ from typing import Iterable
 from radar.sources._common import (
     after,
     require_ok,
-    rss_entries,
-    selector_fingerprint,
+    rss_feed,
     unique_by_id,
     wp_fingerprint,
     wp_posts,
@@ -85,10 +84,7 @@ class NorthernAcceleratorAdapter:
         return [self._item(post) for post in posts]
 
     def parse_feed(self, payload: str | bytes) -> list[RawItem]:
-        entries = rss_entries(payload, self.key)
-        self.last_fingerprint = selector_fingerprint(
-            ["rss>channel>item"] + sorted({k for e in entries[:5] for k in e})
-        )
+        entries, self.last_fingerprint = rss_feed(payload, self.key)
         return [self._item_from_feed(entry) for entry in entries]
 
     def _item_from_feed(self, entry: dict) -> RawItem:
