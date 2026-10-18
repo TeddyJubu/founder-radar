@@ -125,7 +125,13 @@ class Settings(BaseModel):
     max_enrichment_requests_per_run: int = Field(500, ge=0)
     daily_digest_max: int = Field(10, ge=1)
 
-    llm_model: str = "claude-haiku-4-5-20251001"
+    # Light caps on Today's order (radar.selection.cap_source_share): a card
+    # beyond its source's share of its fund's list waits behind the rest.
+    max_source_share: float = Field(0.40, ge=0.05, le=1)
+    max_registry_share: float = Field(0.20, ge=0, le=1)
+
+    # A cache label, not a switch: the provider comes from LLM_PROVIDER.
+    llm_model: str = "hermes"
     llm_enabled: bool = True
 
     @field_validator("max_stage")

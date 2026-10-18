@@ -1005,7 +1005,8 @@ def load_today_cards(
     if company_id is not None:
         return cards[:max(1, int(limit))]
     by_id = {card.company_id: card for card in cards}
-    ranked = rank_today_rows(db, eligible_rows, config_hash=config_hash)
+    ranked = rank_today_rows(db, eligible_rows, config_hash=config_hash,
+                             settings=getattr(cfg, "settings", None))
     return [by_id[row["company_id"]] for row in ranked[:max(1, int(limit))]]
 
 

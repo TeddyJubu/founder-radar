@@ -48,9 +48,13 @@ sudo ln -sf /opt/founder-radar/venv/bin/founder-radar /usr/local/bin/founder-rad
 # --- secrets ---
 sudo -u radar tee /opt/founder-radar/.env > /dev/null <<'EOF'
 COMPANIES_HOUSE_API_KEY=...
-LLM_PROVIDER=anthropic
+# hermes = extraction through the operator's Hermes (Aryan's ChatGPT plan);
+# LLM_API_KEY/LLM_MODEL/LLM_BASE_URL then name an OpenAI-format fallback.
+# anthropic | openai are the direct-API alternatives.
+LLM_PROVIDER=hermes
 LLM_API_KEY=...
-LLM_MODEL=<pinned-dated-snapshot-id>
+LLM_MODEL=<fallback-model-id>
+LLM_BASE_URL=<openai-format-gateway>/v1
 GOOGLE_SA_JSON=/opt/founder-radar/secrets/google-sa.json
 RADAR_SHEET_ID=<your-sheet-id>
 TELEGRAM_BOT_TOKEN=...

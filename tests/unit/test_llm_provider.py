@@ -217,3 +217,108 @@ def test_openai_payload_json_dumps_roundtrip():
     llm = OpenAILLM("m", api_key="k", base_url="https://gw/v1", client=client)
     payload = llm.complete(key="k1", system="s", user="u").payload
     assert json.loads(json.dumps(payload)) == {"ok": True}
+
+
+# ------------------------------------------------------------- HermesLLM
+
+
+class _Done:
+    def __init__(self, stdout="", returncode=0, stderr=""):
+        self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+
+def _hermes(runner, monkeypatch):
+    from radar.extract.llm import HermesLLM
+    monkeypatch.setattr("radar.qa.publish._ensure_hermes_acl", lambda: None)
+    return HermesLLM(binary="/usr/bin/hermes", runner=runner)
+
+
+def test_hermes_extraction_is_one_tool_free_turn_and_parses_the_json(monkeypatch):
+    seen = {}
+
+    def runner(argv, **kw):
+        seen.update(argv=argv, input=kw["input"], env=kw["env"])
+        return _Done('Sure.\n```json\n{"company_name": "Kelvin Bio"}\n```')
+
+    response = _hermes(runner, monkeypatch).complete(key="k", system="SYS", user="ARTICLE")
+    assert response.payload == {"company_name": "Kelvin Bio"}
+    argv = seen["argv"]
+    assert argv[1:3] == ["chat", "-Q"] and "--oneshot" in argv
+    assert argv[argv.index("--max-turns") + 1] == "1" and "--ignore-rules" in argv
+    assert seen["input"].startswith("SYS") and seen["input"].endswith("ARTICLE")
+    assert "company_name" in seen["input"]            # the schema travels with it
+    assert seen["env"]["HERMES_DISABLE_LAZY_INSTALLS"] == "1"
+
+
+@pytest.mark.parametrize("outcome", ["exit", "timeout", "empty"])
+def test_hermes_that_cannot_answer_is_provider_down(monkeypatch, outcome):
+    import subprocess
+
+    def runner(argv, **kw):
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(argv, kw["timeout"])
+        return _Done("", 1 if outcome == "exit" else 0, "boom")
+
+    with pytest.raises(ProviderDown):
+        _hermes(runner, monkeypatch).complete(key="k", system="s", user="u")
+
+
+def test_hermes_prose_without_json_is_invalid_model_json(monkeypatch):
+    with pytest.raises(InvalidModelJSON):
+        _hermes(lambda argv, **kw: _Done("I could not find a company."), monkeypatch
+                ).complete(key="k", system="s", user="u")
+
+
+class _Scripted:
+    def __init__(self, model_id, outcomes):
+        self.model_id, self.outcomes, self.calls = model_id, list(outcomes), 0
+
+    def complete(self, *, key, system, user):
+        self.calls += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        from radar.extract.llm import LLMResponse
+        return LLMResponse(payload=outcome, model_id=self.model_id)
+
+
+def test_fallback_uses_the_secondary_only_when_the_primary_is_down():
+    from radar.extract.llm import FallbackLLM
+    primary = _Scripted("hermes", [{"a": 1}, ProviderDown("x"), InvalidModelJSON("bad")])
+    secondary = _Scripted("kilo", [{"b": 2}])
+    llm = FallbackLLM(primary, secondary)
+    assert llm.complete(key="1", system="s", user="u").payload == {"a": 1}
+    assert llm.complete(key="2", system="s", user="u").payload == {"b": 2}
+    with pytest.raises(InvalidModelJSON):          # bad JSON is not an outage
+        llm.complete(key="3", system="s", user="u")
+    assert secondary.calls == 1
+
+
+def test_fallback_stops_asking_a_dead_primary_after_three_failures():
+    from radar.extract.llm import FallbackLLM
+    primary = _Scripted("hermes", [ProviderDown("x")] * 3)
+    secondary = _Scripted("kilo", [{"n": i} for i in range(5)])
+    llm = FallbackLLM(primary, secondary)
+    for _ in range(5):
+        llm.complete(key="k", system="s", user="u")
+    assert primary.calls == 3 and secondary.calls == 5
+
+
+def test_build_llm_hermes_falls_back_to_the_configured_gateway(monkeypatch):
+    from radar.extract.llm import FallbackLLM, HermesLLM
+    monkeypatch.setenv("LLM_PROVIDER", "hermes")
+    monkeypatch.setenv("LLM_API_KEY", "k")
+    monkeypatch.setenv("LLM_MODEL", "kilo-auto/free")
+    monkeypatch.setenv("LLM_BASE_URL", "https://gw/v1")
+    llm = build_llm()
+    assert isinstance(llm, FallbackLLM)
+    assert isinstance(llm.primary, HermesLLM) and isinstance(llm.secondary, OpenAILLM)
+    assert llm.secondary.model_id == "kilo-auto/free"
+    for name in ("LLM_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert isinstance(build_llm(), HermesLLM)
+
+
+def test_settings_no_longer_default_to_a_claude_model():
+    from radar.config.models import Settings
+    assert "claude" not in Settings().llm_model

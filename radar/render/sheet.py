@@ -110,7 +110,9 @@ SETTING_SPECS: tuple[tuple[str, str, str], ...] = (
     ("ch_daily_window_days", "int", "Daily trailing window"),
     ("max_enrichment_requests_per_run", "int", "Companies House request budget (not companies)"),
     ("daily_digest_max", "int", "Cap on digest length"),
-    ("llm_model", "string", "Swap provider without a redeploy"),
+    ("max_source_share", "0.05–1", "Most of one fund's Today list a single source may fill before its other cards wait"),
+    ("max_registry_share", "0–1", "The same cap for Companies House-only finds (stricter)"),
+    ("llm_model", "string", "Extraction model label (cache key); LLM_PROVIDER picks the provider"),
     ("llm_enabled", "bool", "Off = heuristic extraction only, no AI calls"),
 )
 

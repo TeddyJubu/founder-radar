@@ -47,23 +47,36 @@ class DeliveryError(RuntimeError):
 
 def hermes_transport(text: str) -> bool:
     """`hermes send --to telegram <text>`. False for every kind of failure."""
-    from radar.qa.today import resolve_hermes_binary
+    from radar.qa.today import (
+        _hermes_subprocess_env, _refresh_hermes_acl, resolve_hermes_binary,
+    )
 
     binary = resolve_hermes_binary()
     if binary is None:
         log.debug("hermes binary not on PATH — using the direct Bot API")
         return False
+    # Same launch as Today QA: the operator's HOME/HERMES_HOME and a repaired
+    # ACL. Without them `hermes send` could not read its own install as radar,
+    # exited 1 on every ping (Oct 2026), and the Bot API fallback delivered to
+    # TELEGRAM_CHAT_ID instead of Hermes's home channel.
+    _refresh_hermes_acl()
     try:
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [binary, "send", "--to", "telegram", text],
             capture_output=True,
             timeout=HERMES_TIMEOUT_S,
+            env=_hermes_subprocess_env(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         log.warning("hermes send failed (%s) — falling back to the Bot API", type(exc).__name__)
         return False
+    finally:
+        _refresh_hermes_acl()
     if completed.returncode != 0:
-        log.warning("hermes send exited %s — falling back to the Bot API", completed.returncode)
+        reason = (completed.stderr or completed.stdout or b"").decode("utf-8", "replace")
+        reason = (reason.strip().splitlines() or [""])[-1][:200]
+        log.warning("hermes send exited %s (%s) — falling back to the Bot API",
+                    completed.returncode, reason)
         return False
     return True
 

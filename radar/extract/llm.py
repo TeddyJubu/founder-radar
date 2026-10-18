@@ -420,6 +420,109 @@ class OpenAILLM:
         )
 
 
+class HermesLLM:
+    """Extraction through the operator's Hermes install, i.e. Aryan's ChatGPT plan.
+
+    Hermes already runs Today QA on the `openai-codex` provider, so routing
+    extraction through it puts every AI call on his subscription: no API key,
+    no per-token bill. One `hermes chat` per article, no tools, no rules files,
+    one turn — about 13 s each (measured Oct 2026). Same contract as the other
+    clients: any failure to get an answer is `ProviderDown` (the caller falls
+    back), an answer that is not JSON is `InvalidModelJSON`.
+    """
+
+    def __init__(
+        self,
+        model_id: str = "hermes",
+        *,
+        binary: str | None = None,
+        timeout: float = 120,
+        runner: Any | None = None,
+    ) -> None:
+        self.model_id = model_id
+        self._binary = binary
+        self.timeout = timeout
+        self._runner = runner
+
+    def complete(self, *, key: str, system: str, user: str) -> LLMResponse:
+        import subprocess
+
+        from radar.qa.today import (
+            _hermes_subprocess_env, _refresh_hermes_acl, resolve_hermes_binary,
+        )
+
+        binary = self._binary or resolve_hermes_binary()
+        if not binary:
+            raise ProviderDown("hermes binary not found")
+        prompt = (
+            system
+            + "\n\nYour JSON output MUST match this exact schema — the same key "
+            "names, the same types, no extra keys, no omitted required keys.\n"
+            + json.dumps(llm_json_schema(), sort_keys=True)
+            + "\n\nDo not use any tools. Reply with the JSON object only.\n\n"
+            + user
+        )
+        run = self._runner or subprocess.run
+        _refresh_hermes_acl()
+        try:
+            completed = run(  # noqa: S603 - fixed argv, no shell
+                [binary, "chat", "-Q", "--oneshot", "--reasoning", "low",
+                 "--max-turns", "1", "--ignore-rules",
+                 "--source", "founder-radar-extract", "--query-file", "-"],
+                input=prompt, capture_output=True, text=True,
+                timeout=self.timeout, env=_hermes_subprocess_env(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ProviderDown(f"hermes: no answer after {self.timeout:g} s") from exc
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ProviderDown(f"hermes: {type(exc).__name__}: {exc}") from exc
+        finally:
+            _refresh_hermes_acl()
+        text = (completed.stdout or "").strip()
+        if completed.returncode != 0 or not text:
+            detail = (completed.stderr or text or "").strip().splitlines()[-1:] or [""]
+            raise ProviderDown(f"hermes exit {completed.returncode}: {detail[0][:200]}")
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise InvalidModelJSON("hermes answered without a JSON object")
+        try:
+            payload = json.loads(text[start:end + 1])
+        except json.JSONDecodeError as exc:
+            raise InvalidModelJSON(f"not JSON: {exc}") from exc
+        return LLMResponse(payload=payload, model_id=self.model_id,
+                           raw_text=text[start:end + 1])
+
+
+class FallbackLLM:
+    """Primary client first; the secondary when the primary cannot answer.
+
+    Only `ProviderDown` falls through — bad JSON is the article's problem, not
+    the provider's. After `trip` provider failures in a row the primary is
+    skipped for the rest of the run, so a dead Hermes costs three timeouts,
+    not one per article.
+    """
+
+    def __init__(self, primary: LLMClient, secondary: LLMClient, *, trip: int = 3) -> None:
+        self.primary = primary
+        self.secondary = secondary
+        self.model_id = primary.model_id
+        self._trip = trip
+        self._failures = 0
+
+    def complete(self, *, key: str, system: str, user: str) -> LLMResponse:
+        if self._failures < self._trip:
+            try:
+                response = self.primary.complete(key=key, system=system, user=user)
+                self._failures = 0
+                return response
+            except ProviderDown as exc:
+                self._failures += 1
+                log.warning("primary LLM unavailable (%s) — using %s",
+                            exc, self.secondary.model_id)
+        return self.secondary.complete(key=key, system=system, user=user)
+
+
 # ------------------------------------------------------------------- factory
 
 
@@ -432,14 +535,26 @@ def build_llm(
 ) -> LLMClient | None:
     """One client from env, or `None` for the documented heuristic-only mode.
 
-    `LLM_PROVIDER` is `anthropic` (default) or `openai` — any OpenAI-format
-    chat-completions gateway. The generic `LLM_API_KEY` (the name 08-deployment
+    `LLM_PROVIDER` is `hermes` (production: the operator's Hermes, falling back
+    to an OpenAI-format gateway when `LLM_API_KEY` is set), `anthropic` (the
+    code default) or `openai` — any OpenAI-format chat-completions gateway.
+    The generic `LLM_API_KEY` (the name 08-deployment
     §3 and the README promise) is read first, then the provider-specific key.
     No key → `None` → heuristic extraction at £0 AI cost, which is a supported
     mode, not an error (README: "with no LLM_API_KEY the system falls back to
     a deterministic heuristic extractor").
     """
     provider = (provider or os.environ.get("LLM_PROVIDER") or "anthropic").lower()
+    if provider == "hermes":
+        # Aryan's ChatGPT plan via Hermes; an OpenAI-format gateway configured
+        # with LLM_API_KEY (+ LLM_MODEL / LLM_BASE_URL) is the fallback.
+        primary = HermesLLM()
+        key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            return primary
+        return FallbackLLM(primary, OpenAILLM(
+            model_id or os.environ.get("LLM_MODEL") or "gpt-4o-mini",
+            api_key=key, base_url=base_url))
     model_id = model_id or os.environ.get("LLM_MODEL") or DEFAULT_MODEL
     if provider in ("openai", "openai_compatible", "openai-compatible"):
         key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")

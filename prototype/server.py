@@ -1361,7 +1361,8 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
         passing.append(r)
 
     from radar.selection import rank_today_rows
-    passing = rank_today_rows(conn, passing, config_hash=config_hash)
+    passing = rank_today_rows(conn, passing, config_hash=config_hash,
+                              settings=getattr(config, "settings", None))
 
     out = []
     for r in passing[: max(0, int(limit))]:

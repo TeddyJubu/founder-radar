@@ -120,9 +120,12 @@ def diagnose_today(db: Any) -> dict[str, Any]:
             f"Hermes Today QA has {hermes_rejected} stored rejects — check "
             "`today_check` reasons"
         )
-    if qa_incomplete_ids:
+    # Only the Today queue: decided companies, and ones a Today rule hides, are
+    # never re-checked, so counting them made this cause permanent (195 when
+    # Today itself had 0 unchecked, 18 Oct 2026).
+    if pending["incomplete"]:
         likely_causes.append(
-            f"Today QA left {len(qa_incomplete_ids)} company(ies) without a "
+            f"Today QA left {pending['incomplete']} company(ies) without a "
             "completed check (Hermes missing, timing out or unparseable) — they "
             "are withheld from Today, the Sheet and the ping until "
             "`founder-radar today-qa` completes"
@@ -227,8 +230,8 @@ def format_today_diagnosis(report: dict[str, Any]) -> str:
     lines.append(
         f"Fund Criteria {'POISONED' if report['poisoned_fund_criteria'] else 'ok'} · "
         f"Hermes rejects (latest) {report['hermes_rejects_latest']}"
-        + (f" · QA incomplete {report['qa_incomplete']}"
-           if report.get("qa_incomplete") else "")
+        + (f" · QA incomplete {report['pending']['incomplete']}"
+           if (report.get("pending") or {}).get("incomplete") else "")
     )
     last = report.get("last_run")
     if last:

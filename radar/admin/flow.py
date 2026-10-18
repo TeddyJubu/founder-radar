@@ -68,6 +68,7 @@ STAGES: tuple[Stage, ...] = (
                     "watchlist_fit", "min_qualifiers", "weight_fit", "weight_edge")),
     Stage("today_qa", "⑥½", "Today QA", "Hermes veto on the morning list",
           ai=True, network=True, deterministic=True,
+          settings=("max_source_share", "max_registry_share"),
           prompts=("today_qa.brief",)),
     Stage("render", "⑦", "Render", "Sheet (minimal diff), then Telegram digest",
           ai=False, network=True, deterministic=True,

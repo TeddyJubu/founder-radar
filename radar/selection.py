@@ -49,11 +49,60 @@ def diversify(rows: list[Any], *, metadata: dict[str, dict]) -> list[Any]:
     return result
 
 
-def rank_today_rows(db: Any, rows: list[Any], *, config_hash: str | None = None) -> list[Any]:
+FREE_CARDS = 3
+
+
+def cap_source_share(rows: list[Any], *, metadata: dict[str, dict],
+                     max_share: float, registry_share: float) -> list[Any]:
+    """Light cap: no source family fills more than its share of a fund's list.
+
+    Walk the ranked rows per fund (the row's winning fund). A card whose source
+    family already holds its share of that fund's cards so far waits: it moves
+    behind every card that fits, in its original order. Nothing is hidden or
+    rescored, so the backlog stays whole; what changes is what Aryan sees
+    first. Companies House-only finds (`registry`) get the stricter share.
+    The share binds only past a source's first `FREE_CARDS` per fund, so a
+    short list keeps its natural order. The registry gets no free cards: with
+    other sources waiting it would otherwise jump them, the opposite of
+    turning Companies House down.
+
+    Oct 2026: Innovate UK was 55 of 63 Today cards, 39 of them DSW.
+    """
+    fits, waits = [], []
+    per_fund: Counter = Counter()
+    per_source: Counter = Counter()
+    for row in rows:
+        fund = row["fund_key"] or "unknown"
+        family = metadata[row["company_id"]]["source"]
+        registry = family == "registry"
+        share = registry_share if registry else max_share
+        free = 0 if registry else FREE_CARDS
+        allowed = max(free, int(share * (per_fund[fund] + 1)))
+        if per_source[(fund, family)] + 1 > allowed:
+            waits.append(row)
+            continue
+        per_fund[fund] += 1
+        per_source[(fund, family)] += 1
+        fits.append(row)
+    return fits + waits
+
+
+def _shares(settings: Any) -> tuple[float, float]:
+    def number(name: str, default: float) -> float:
+        try:
+            return float(getattr(settings, name))
+        except (AttributeError, TypeError, ValueError):
+            return default
+    return number("max_source_share", 0.40), number("max_registry_share", 0.20)
+
+
+def rank_today_rows(db: Any, rows: list[Any], *, config_hash: str | None = None,
+                    settings: Any = None) -> list[Any]:
     """Shared ordering for the QA queue and approved Today cards.
 
     Fund diversity uses the actual winning score only if that fund has a latest
     non-rejected reviewable match. Rejected/unscored funds cannot supply variety.
+    The per-source share caps (`cap_source_share`) then apply on top.
     """
     if not rows:
         return []
@@ -83,7 +132,9 @@ def rank_today_rows(db: Any, rows: list[Any], *, config_hash: str | None = None)
             "source": source_family(source.get(cid), route),
             "sector": row["sector"] or "unknown",
         }
-    return diversify(rows, metadata=metadata)
+    max_share, registry_share = _shares(settings)
+    return cap_source_share(diversify(rows, metadata=metadata), metadata=metadata,
+                            max_share=max_share, registry_share=registry_share)
 
 
 def _value(row, key, default=None):
