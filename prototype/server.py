@@ -1257,7 +1257,7 @@ def _fund_score_payload(
     return scores
 
 
-def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
+def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = None) -> dict:
     config = _config(conn)
     vehicles = _vehicles(conn)
     today = date.today()
@@ -1363,6 +1363,16 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
     from radar.selection import rank_today_rows
     passing = rank_today_rows(conn, passing, config_hash=config_hash,
                               settings=getattr(config, "settings", None))
+    fund = (fund or "").strip().lower() or None
+    if fund:
+        # `?fund=outward` (the link a Telegram fund scan replies with): only
+        # companies with a live shortlist/watchlist match for that fund, even
+        # when another fund is their best fit.
+        sql = ("SELECT DISTINCT company_id FROM score WHERE fund_key = ? "
+               "AND tier IN (?, ?)" + (" AND config_hash = ?" if config_hash else ""))
+        fits = {r["company_id"] for r in conn.execute(
+            sql, (fund, *REVIEWABLE, *((config_hash,) if config_hash else ())))}
+        passing = [r for r in passing if r["company_id"] in fits]
 
     out = []
     for r in passing[: max(0, int(limit))]:
@@ -1525,6 +1535,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20) -> dict:
         },
         "run": dict(run) if run else None,
         "eligibility_diagnostics": eligibility_diagnostics,
+        "fund_filter": fund,
     }
 
 
@@ -1811,7 +1822,7 @@ def make_handler(conn: sqlite3.Connection):
             self.wfile.write(body)
 
         def do_GET(self) -> None:          # noqa: N802 - stdlib naming
-            if self.path in ("/", "/index.html"):
+            if urlsplit(self.path).path in ("/", "/index.html"):
                 self._send(200, (HERE / "index.html").read_bytes(),
                            "text/html; charset=utf-8")
             elif self.path in ("/onboarding", "/onboarding.html"):
@@ -1854,7 +1865,9 @@ def make_handler(conn: sqlite3.Connection):
                 self._send(code, json.dumps(payload, default=str).encode(),
                            "application/json")
             elif self.path.startswith("/api/today"):
-                payload = json.dumps(build_today(conn), default=str).encode()
+                query = parse_qs(urlsplit(self.path).query)
+                payload = json.dumps(build_today(conn, fund=query.get("fund", [None])[0]),
+                                     default=str).encode()
                 self._send(200, payload, "application/json")
             else:
                 self._send(404, b"not found", "text/plain")

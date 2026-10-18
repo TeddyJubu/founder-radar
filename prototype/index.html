@@ -712,6 +712,9 @@ button.no  { color: var(--red); }
   .date { display: none; }             /* the header already says Today */
   button .kbd { display: none; }       /* no hardware keyboard to hint at */
 }
+.fund-filter { margin: 0 0 12px; padding: 8px 12px; border-radius: var(--r-control);
+  background: var(--fill); color: var(--label); font-size: var(--footnote); }
+.fund-filter a { color: inherit; }
 </style>
 </head>
 <body>
@@ -725,6 +728,9 @@ button.no  { color: var(--red); }
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
     <div class="progress-count" id="progress" data-testid="progress"></div>
   </header>
+  <div class="fund-filter" id="fund-filter" data-testid="fund-filter" hidden>
+    Showing <strong id="fund-filter-name"></strong> matches only · <a href="/">Show all funds</a>
+  </div>
 
   <main id="main" data-testid="today-main" aria-live="polite"></main>
 
@@ -1526,8 +1532,20 @@ document.addEventListener("click", (e) => {
   if (b) decide(b.dataset.v);
 });
 
+// `/?fund=outward` (the link a Telegram fund scan replies with) narrows Today
+// to companies with a live match for that fund.
+const FUND_FILTER = (new URLSearchParams(location.search).get("fund") || "").trim().toLowerCase();
+const FUND_NAMES = {dsw: "DSW", northstar: "Northstar", outward: "Outward VC", anticus: "Anticus"};
+function todayUrl() {
+  return FUND_FILTER ? "/api/today?fund=" + encodeURIComponent(FUND_FILTER) : "/api/today";
+}
+
 async function loadToday() {
-  data = await (await fetch("/api/today", {cache: "no-store"})).json();
+  data = await (await fetch(todayUrl(), {cache: "no-store"})).json();
+  if (data.fund_filter) {
+    $("#fund-filter-name").textContent = FUND_NAMES[data.fund_filter] || data.fund_filter;
+    $("#fund-filter").hidden = false;
+  }
   $("#date").textContent = new Date(data.date + "T00:00:00").toLocaleDateString("en-GB",
     { weekday: "long", day: "numeric", month: "long" });
   i = 0; history = []; sessionReviewed = new Set(); reviewedAtTotals = 0;
@@ -1565,7 +1583,7 @@ function shortlistSig(p) {
 async function refresh() {
   if (busy) return;
   try {
-    const next = await (await fetch("/api/today", {cache: "no-store"})).json();
+    const next = await (await fetch(todayUrl(), {cache: "no-store"})).json();
     // A decision may have started while this fetch was in flight; replacing
     // `data` now would leave its response advancing the wrong queue.
     if (busy) return;

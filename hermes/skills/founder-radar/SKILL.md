@@ -48,6 +48,7 @@ company list, scores, or source-by-source narration.
 | Intent | Command |
 |---|---|
 | **search / search now / start / run a scan** | `founder-radar search` |
+| **scan one fund** ("scan Outward VC") | `founder-radar search --fund outward` |
 | today's list / what's new (no scan) | `founder-radar today` |
 | **keep / reject / unsure** | `founder-radar decide "<name>" --verdict "…"` |
 | **publish to Aryan** | `founder-radar publish --send` |
@@ -63,6 +64,11 @@ company list, scores, or source-by-source narration.
 | this week | `founder-radar digest --week` |
 
 Fund keys: northstar · dsw · outward · anticus
+
+A fund scan's stdout names up to five of that fund's companies now on Today
+and links Today filtered to the fund (`/?fund=<key>`). Send it as printed —
+never a count you worked out yourself ("found 4" used to be the global
+shortlist, not the scan).
 
 Verdict values (exact): `worth contacting` · `not for me` · `unsure`
 

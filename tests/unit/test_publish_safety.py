@@ -550,17 +550,33 @@ def test_a_sheet_failure_at_publish_is_a_warning_not_a_lost_ping(monkeypatch, tm
     assert "sheet" in result.output.lower() and "sheets 503" in result.output
 
 
-def test_publish_refuses_and_stays_silent_while_any_card_is_unchecked(monkeypatch, tmp_path):
+def test_publish_still_pings_while_a_card_is_unchecked_and_says_partial(monkeypatch, tmp_path):
+    """Oct 2026: one Hermes timeout refused the whole morning and Aryan got no
+    message at all. The unchecked card stays withheld everywhere (H-03), the
+    ping counts only checked cards, and the exit code says partial."""
     events = _publish_rig(
         monkeypatch, tmp_path, qa_writes="incomplete",
         report=TodayQaReport(cards=3, checked=2, passed=2, incomplete=1,
                              hermes_used=False))
     result = _invoke(tmp_path, "publish", "--send")
-    assert result.exit_code == EXIT_FATAL, result.output
-    assert "send" not in events
-    assert "incomplete" in result.output.lower()
-    # The Sheet still reflects what QA just decided, even though we refused.
-    assert "sync" in events
+    assert result.exit_code == EXIT_PARTIAL, result.output
+    assert "send" in events
+    assert "partial" in result.output.lower()
+    # The Sheet reflects what QA just decided before the ping goes.
+    assert events.index("sync") < events.index("send")
+
+
+def test_a_gate_block_sends_a_delay_notice_not_the_list(monkeypatch, tmp_path):
+    sent = []
+    _publish_rig(monkeypatch, tmp_path, qa_writes=None,
+                 report=TodayQaReport(cards=1, checked=1, passed=1, hermes_used=True))
+    monkeypatch.setattr("radar.qa.publish.pre_publish_check",
+                        lambda *a, **k: PublishReport(ok=False, hermes_verdict="block"))
+    monkeypatch.setattr("radar.notify.telegram.send_message",
+                        lambda text, **k: sent.append(text) or True)
+    result = _invoke(tmp_path, "publish", "--send")
+    assert result.exit_code == EXIT_FATAL
+    assert len(sent) == 1 and "delayed" in sent[0] and "PING" not in sent[0]
 
 
 def test_rules_only_override_still_lets_publish_through(monkeypatch, tmp_path):

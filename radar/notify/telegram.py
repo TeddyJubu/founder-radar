@@ -24,7 +24,7 @@ import logging
 import os
 import subprocess
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 
 log = logging.getLogger(__name__)
 
@@ -81,10 +81,10 @@ def hermes_transport(text: str) -> bool:
     return True
 
 
-def bot_api_transport(text: str) -> bool:
+def bot_api_transport(text: str, chat_id: str | None = None) -> bool:
     """POST sendMessage directly. The path that must work when Hermes is dead."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         # Never log the token, and never log what we were about to send.
         log.error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set — cannot deliver")
@@ -164,6 +164,22 @@ def send_message(
         if raise_on_failure:
             raise DeliveryError("neither hermes nor the Telegram Bot API accepted the message")
     return delivered
+
+
+def send_ops_message(text: str, **kwargs: Any) -> bool:
+    """Server-side alerts (a failed deploy, a stale scan) for whoever runs the box.
+
+    `RADAR_OPS_CHAT_ID` names that chat and the Bot API delivers there alone.
+    Without it, alerts take the normal route to Aryan. Once `hermes send`
+    worked (Oct 2026), `journalctl` hints would otherwise land in the client's
+    chat beside his morning list.
+    """
+    ops = (os.environ.get("RADAR_OPS_CHAT_ID") or "").strip()
+    if not ops:
+        return send_message(text, **kwargs)
+    return send_message(text, hermes=lambda _chunk: False,
+                        bot_api=lambda chunk: bot_api_transport(chunk, chat_id=ops),
+                        raise_on_failure=kwargs.get("raise_on_failure", False))
 
 
 # 08-deployment §5 names the delivery helper `send_digest`, and so does

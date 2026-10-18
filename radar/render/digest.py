@@ -113,6 +113,42 @@ def render_today_ping(db) -> str:
     return "\n".join(lines)
 
 
+FUND_NAMES = {"dsw": "DSW", "northstar": "Northstar", "outward": "Outward VC",
+              "anticus": "Anticus"}
+
+
+def render_fund_scan_ping(db, fund_key: str, *, names: int = 5) -> str:
+    """What a Telegram fund scan replies: that fund's cards on Today, by name.
+
+    The old reply was the global ping, whose "4 shortlisted" Hermes relayed as
+    "found 4 companies" — four companies decided weeks earlier, which is why
+    the scan never seemed to reach the dashboard. A handful of names plus a
+    link to Today filtered to the fund is the answer; the cards stay on Today.
+    """
+    from radar.qa.today import fund_match_ids, load_today_cards, qa_state
+
+    fund_key = (fund_key or "").strip().lower()
+    label = FUND_NAMES.get(fund_key, fund_key)
+    fits = fund_match_ids(db, fund_key)
+    queue = [c for c in load_today_cards(db, None, limit=100_000) if c.company_id in fits]
+    shown = [c for c in queue if qa_state(db, c.company_id) == "pass"]
+    held = len(queue) - len(shown)
+    url = review_url(f"/?fund={fund_key}")
+    lines = [f"📡 {label} scan finished", ""]
+    if shown:
+        lines.append(f"{len(shown)} {label} match{'es' if len(shown) != 1 else ''} on Today:")
+        lines.extend(f"• {c.name}" for c in shown[:names])
+        if len(shown) > names:
+            lines.append(f"…and {len(shown) - names} more")
+    else:
+        lines.append(f"No new {label} matches on Today — nothing to review for this fund.")
+    if held:
+        lines.append(f"⚠️ {held} more held back until their final company check completes")
+    lines.append("")
+    lines.append(url or "Open the Today page on the review site.")
+    return "\n".join(lines)
+
+
 # Vocabulary that `str.title()` gets wrong.
 PRETTY = {
     "ai_data": "AI / Data",

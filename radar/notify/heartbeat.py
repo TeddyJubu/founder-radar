@@ -324,7 +324,7 @@ def check(
 
     body = "📡 UK Founder Radar — alert\n\n" + "\n".join(alerts)
     if sender is None:
-        from radar.notify.telegram import send_message as sender  # noqa: PLC0415
+        from radar.notify.telegram import send_ops_message as sender  # noqa: PLC0415
     try:
         result.sent = bool(sender(body))
     except Exception as exc:  # noqa: BLE001 - an unsent alert is not a crash

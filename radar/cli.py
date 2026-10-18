@@ -226,7 +226,18 @@ def search(ctx, fund_key, source_key, since, dry_run, no_llm, send_ping, backgro
         if result.status == "failed":
             click.echo(f"search failed: {result.error}", err=True)
             sys.exit(EXIT_FATAL)
-        ping = render_today_ping(db)
+        if fund_key and not dry_run:
+            # Check this fund's finds now; in the global queue they could sit
+            # below the QA limit and stay hidden from Today.
+            from radar.qa.today import run_today_qa
+            from radar.render.digest import render_fund_scan_ping
+
+            qa = run_today_qa(db, None, use_hermes=not no_llm, fund_key=fund_key)
+            for line in qa.warnings:
+                click.echo(line, err=True)
+            ping = render_fund_scan_ping(db, fund_key)
+        else:
+            ping = render_today_ping(db)
         if send_ping:
             from radar.notify.telegram import send_message
 
@@ -504,8 +515,15 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
     click.echo(format_publish_report(report))
     if not report.ok:
         click.echo("publish refused: gate BLOCK", err=True)
+        _send_delayed_notice(send)
         sys.exit(EXIT_FATAL)
 
+    # Unchecked cards are withheld from Today, the Sheet and the ping's counts
+    # (H-03), so the ping is still safe to send: it says how many are held
+    # back. Refusing outright left Aryan with no morning message at all on
+    # any day one Hermes check timed out (13 and 15 Oct 2026). Exit 1 marks
+    # the run partial; systemd counts that as success.
+    partial = False
     if not skip_today_qa:
         from radar.qa.today import run_today_qa
 
@@ -526,31 +544,15 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
             except Exception as exc:
                 click.echo(f"sheet sync warning: {type(exc).__name__}: {exc}", err=True)
         if qa.incomplete or qa.aborted:
-            click.echo("publish refused: Today QA incomplete", err=True)
-            sys.exit(EXIT_FATAL)
-        allow_rules = (os.environ.get("RADAR_ALLOW_RULES_ONLY_PUBLISH") or "").strip().lower() in {
-            "1", "true", "yes",
-        }
-        if (
-            not no_hermes
-            and qa.cards > 0
-            and not qa.hermes_used
-            and not allow_rules
-        ):
-            click.echo(
-                "publish refused: Today QA did not use Hermes while cards exist "
-                "(set RADAR_ALLOW_RULES_ONLY_PUBLISH=1 to override)",
-                err=True,
-            )
-            sys.exit(EXIT_FATAL)
+            partial = True
+            click.echo("publish partial: cards without a completed check stay "
+                       "withheld; the ping counts only checked cards", err=True)
 
     report2 = pre_publish_check(db, use_hermes=False, heal=not no_heal)
-    if int(report2.diagnosis.get("qa_incomplete") or 0):
-        click.echo("publish refused: incomplete Today QA remains", err=True)
-        sys.exit(EXIT_FATAL)
     if not report2.ok:
         click.echo(format_publish_report(report2))
         click.echo("publish refused after Today QA: gate BLOCK", err=True)
+        _send_delayed_notice(send)
         sys.exit(EXIT_FATAL)
 
     ping = render_today_ping(db)
@@ -560,6 +562,25 @@ def publish(ctx, send, no_hermes, no_heal, skip_today_qa):
         send_message(ping)
         click.echo("dashboard ping sent")
     _emit(ping, ctx.obj["json"])
+    if partial:
+        sys.exit(EXIT_PARTIAL)
+
+
+def _send_delayed_notice(send: bool) -> None:
+    """A blocked morning still tells Aryan something; the alert tells the operator why."""
+    if not send:
+        return
+    from radar.notify.telegram import send_message
+    from radar.render.digest import review_url
+
+    url = review_url()
+    send_message(
+        "📡 UK Founder Radar\n\nToday's list is delayed: a morning check found a "
+        "problem and it has been flagged for fixing. The dashboard still shows "
+        "every company that has been checked."
+        + (f"\n{url}" if url else "")
+    )
+    click.echo("delay notice sent")
 
 
 @cli.command("today")

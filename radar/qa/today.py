@@ -1172,6 +1172,18 @@ def _record_incomplete_quietly(db: Any, card: TodayCard, exc: Exception) -> None
         log.warning("could not record incomplete marker for %s", card.name)
 
 
+def fund_match_ids(db: Any, fund_key: str) -> set[str]:
+    """Companies with a live shortlist/watchlist score for `fund_key`."""
+    config_hash = _active_config_hash(db)
+    rows = _query(
+        db,
+        "SELECT DISTINCT company_id FROM score WHERE fund_key = ? AND tier IN (?, ?)"
+        + (" AND config_hash = ?" if config_hash else ""),
+        (fund_key, *REVIEWABLE, *((config_hash,) if config_hash else ())),
+    )
+    return {_row_get(row, "company_id") for row in rows}
+
+
 def run_today_qa(
     db: Any,
     cfg: Any = None,
@@ -1180,8 +1192,13 @@ def run_today_qa(
     use_hermes: bool = True,
     limit: int = QA_LIMIT,
     source_verifier: Any = None,
+    fund_key: str | None = None,
 ) -> TodayQaReport:
     """Check the companies selected for Today. Never raises into the run.
+
+    `fund_key` limits the pass to companies with a live match for that fund —
+    what a Telegram fund scan needs so its finds are checked now, instead of
+    queueing behind every other fund's cards below the limit.
 
     Every card it considers leaves a row: pass, reject, or `incomplete`. What
     it could not do is on the report (`incomplete`, `aborted`, `warnings`) so
@@ -1192,6 +1209,9 @@ def run_today_qa(
     try:
         cfg = _config_for(db, cfg)
         candidates = load_today_cards(db, cfg, limit=10_000)
+        if fund_key:
+            fits = fund_match_ids(db, fund_key)
+            candidates = [card for card in candidates if card.company_id in fits]
     except Exception as exc:  # noqa: BLE001 - one stage, not the run
         report.aborted = f"{type(exc).__name__}: {exc}"
         report.warnings.append(f"today QA skipped: {report.aborted}")
@@ -1319,6 +1339,7 @@ __all__ = [
     "build_today_checker",
     "build_user_prompt",
     "cached_check",
+    "fund_match_ids",
     "check_one",
     "has_registry_venture_signal",
     "is_rejected",

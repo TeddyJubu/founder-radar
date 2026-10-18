@@ -92,7 +92,7 @@ def notify(unit: str, *, db=None, sender=None, now: datetime | None = None,
     if not _due(db, unit, moment, repeat):
         return False
     if sender is None:
-        from radar.notify.telegram import send_message as sender  # noqa: PLC0415
+        from radar.notify.telegram import send_ops_message as sender  # noqa: PLC0415
     try:
         delivered = bool(sender(build_message(unit)))
     except Exception as exc:  # noqa: BLE001 - an unsent alert is not a crash
