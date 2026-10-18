@@ -23,6 +23,10 @@ from radar.sources.innovate_uk import PUBLICATION, citation_url
 from radar.sources._common import header_noindex
 from radar.store.db import Db
 
+#: A reachable proof lasts 24 h. A check that would leave less than this left
+#: fetches again, so a morning check stays valid until the next morning's.
+REUSE_MIN_LEFT = timedelta(hours=18)
+
 
 @dataclass(frozen=True)
 class LinkOutcome:
@@ -78,7 +82,12 @@ def verify_source(db, url: str, *, http=None, now: datetime | None = None,
     url = url.split('#',1)[0]  # Different workbook row fragments share one GET.
     if not force:
         previous = cached_outcome(db, url, now=now)
-        if previous:
+        # Reuse a reachable proof only if it outlives the day it is approving.
+        # Re-using yesterday morning's proof left it expiring minutes after
+        # today's publish, and Today then withheld every card that cited it
+        # (18 Oct 2026: 63 passed at 07:04, 24 still shown by 07:10).
+        if previous and (previous.state != 'reachable'
+                         or datetime.fromisoformat(previous.expires_at) - now > REUSE_MIN_LEFT):
             return previous
     owned = http is None
     http = http or HttpClient(timeout=8, max_retries=0)

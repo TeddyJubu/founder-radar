@@ -107,3 +107,37 @@ def test_invalid_urls_record_outcome_without_get(db,url):
         raise AssertionError('Invalid URL must never be fetched')
     with client(no_get) as http:
         assert verify_source(db,url,http=http,resolve=False).state=='invalid'
+
+
+def test_a_reachable_proof_near_expiry_is_fetched_again_not_reused(db):
+    """A proof from yesterday's publish expired minutes after today's, and
+    Today withheld every card that cited it (18 Oct 2026)."""
+    calls = []
+    def handle(req):
+        calls.append(req.method)
+        return httpx.Response(200, text='page')
+    start = datetime(2026, 10, 17, 7, 0, tzinfo=timezone.utc)
+    with client(handle) as http:
+        verify_source(db, 'https://source.test/a', http=http, resolve=False, now=start)
+        # Two hours on: 22 h left, comfortably more than a day's use.
+        assert verify_source(db, 'https://source.test/a', http=http, resolve=False,
+                             now=start + timedelta(hours=2)).cached
+        # Next morning: 1 h left. Re-check rather than approve on a dying proof.
+        fresh = verify_source(db, 'https://source.test/a', http=http, resolve=False,
+                              now=start + timedelta(hours=23))
+    assert not fresh.cached and calls == ['GET', 'GET']
+    later = start + timedelta(hours=23 + 12)
+    assert cached_outcome(db, 'https://source.test/a', now=later).state == 'reachable'
+
+
+def test_a_failed_proof_is_reused_until_it_expires(db):
+    calls = []
+    def handle(req):
+        calls.append(req.method)
+        return httpx.Response(404)
+    now = datetime(2026, 10, 17, 7, 0, tzinfo=timezone.utc)
+    with client(handle) as http:
+        verify_source(db, 'https://source.test/gone', http=http, resolve=False, now=now)
+        assert verify_source(db, 'https://source.test/gone', http=http, resolve=False,
+                             now=now + timedelta(minutes=30)).cached
+    assert calls == ['GET']
