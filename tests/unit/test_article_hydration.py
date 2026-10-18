@@ -110,3 +110,32 @@ def test_redirect_checks_robots_on_destination_with_real_client(monkeypatch):
     assert not got and 'RobotsDenied' in fail[0]
     assert checked[-1].endswith('/forbidden')
     assert len(requested)==1
+
+
+def test_noindex_article_is_a_warning_not_a_degraded_source():
+    # startups_magazine (Oct 2026) marks some stories noindex. Honouring that
+    # is the policy, not a fault, so it must not mark the source degraded.
+    adapter=SimpleNamespace(key='startups_magazine',kind='news',fetch=lambda ctx:[item(n=1),item(n=2)])
+    noindex=response('<meta name="robots" content="noindex"><div class="post-content">'+('Evidence '*100)+'</div>')
+    result=fetch_all(FetchContext(HTTP([noindex,response()]),{}),adapters=[adapter])
+    assert [x.external_id for x in result.items]==['2']
+    assert result.sources[0].status=='ok'
+    assert '1 pages skipped' in result.sources[0].warning
+
+
+def test_a_bodiless_hub_page_beside_readable_articles_is_skipped():
+    # UKTN's regional "tech report" pages are hubs with no article body.
+    adapter=SimpleNamespace(key='businesscloud',kind='news',fetch=lambda ctx:[item(n=1),item(n=2)])
+    hub=response('<main>'+('Navigation '*100)+'</main>')
+    result=fetch_all(FetchContext(HTTP([hub,response()]),{}),adapters=[adapter])
+    assert result.sources[0].status=='ok'
+    assert 'skipped' in result.sources[0].warning
+
+
+def test_no_article_body_anywhere_still_degrades_the_source():
+    # Every article empty means the content wrappers changed: say so.
+    adapter=SimpleNamespace(key='businesscloud',kind='news',fetch=lambda ctx:[item(n=1),item(n=2)])
+    hub=lambda: response('<main>'+('Navigation '*100)+'</main>')
+    result=fetch_all(FetchContext(HTTP([hub(),hub()]),{}),adapters=[adapter])
+    assert result.sources[0].status=='degraded'
+    assert 'no substantive article content' in result.sources[0].error

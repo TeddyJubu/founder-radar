@@ -320,6 +320,39 @@ def test_hermes_subagent_falls_back_to_query_argv():
     assert any("-q" in argv and "today_card" in " ".join(argv) for argv in seen)
 
 
+def test_a_hermes_timeout_is_not_retried_with_the_other_argv_forms(monkeypatch):
+    """A timeout means Hermes took the prompt and was slow. Re-sending it as
+    `-q` and `-z` tripled the wait per card (3 x 60 s for SCALR in Oct 2026)."""
+    import subprocess
+
+    monkeypatch.setattr("radar.qa.publish._ensure_hermes_acl", lambda: None)
+    seen: list[list[str]] = []
+
+    def slow(argv, **kw):
+        seen.append(list(argv))
+        raise subprocess.TimeoutExpired(argv, kw["timeout"])
+
+    with pytest.raises(HermesUnavailable) as err:
+        HermesSubagent(binary="/usr/bin/hermes", runner=slow, timeout=5).review(_card())
+    assert len(seen) == 1
+    assert "after 5 s" in str(err.value)
+    # The prompt is not echoed into the reason that ends up in the log.
+    assert "today_card" not in str(err.value)
+
+
+def test_hermes_timeout_defaults_to_three_minutes_and_reads_the_env(monkeypatch):
+    from radar.qa import today as qa_today
+
+    monkeypatch.delenv("TODAY_QA_TIMEOUT_S", raising=False)
+    assert HermesSubagent(binary="/usr/bin/hermes").timeout == 180
+    monkeypatch.setenv("TODAY_QA_TIMEOUT_S", "240")
+    assert HermesSubagent(binary="/usr/bin/hermes").timeout == 240
+    for bad in ("soon", "0", "-5"):
+        monkeypatch.setenv("TODAY_QA_TIMEOUT_S", bad)
+        assert HermesSubagent(binary="/usr/bin/hermes").timeout == qa_today.HERMES_TIMEOUT_S
+    assert HermesSubagent(binary="/usr/bin/hermes", timeout=7).timeout == 7
+
+
 def test_hermes_subagent_heals_acls_before_and_after_the_run(monkeypatch):
     """Today QA runs Hermes as radar under the operator's home and rewrites
     files there. Healing only *before* the next run left the gateway reading a

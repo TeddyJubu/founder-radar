@@ -28,6 +28,7 @@ class FakeResponse:
     def __init__(self, payload, *, status=200):
         self._payload = payload
         self.status = status
+        self.status_code = status
 
     def raise_for_status(self):
         if self.status >= 400:
@@ -122,6 +123,36 @@ def test_openai_transport_error_is_provider_down():
     llm = OpenAILLM("m", api_key="k", base_url="https://gw/v1", client=FakeClient([]))
     with pytest.raises(ProviderDown):
         llm.complete(key="k1", system="s", user="u")
+
+
+def test_openai_retries_without_json_mode_when_the_gateway_rejects_it():
+    # Oct 2026: `kilo-auto/free` routed to a backend that answers 400 to
+    # `response_format`, and every article fell back to the heuristic.
+    client = FakeClient([
+        FakeResponse({"error": "upstream_error"}, status=400),
+        FakeResponse(_completion('{"ok": true}')),
+        FakeResponse(_completion('{"ok": 2}')),
+    ])
+    llm = OpenAILLM("kilo-auto/free", api_key="k", base_url="https://gw/v1", client=client)
+
+    assert llm.complete(key="k1", system="s", user="u").payload == {"ok": True}
+    assert "response_format" in client.calls[0]["json"]
+    assert "response_format" not in client.calls[1]["json"]
+    # Learned once per client: the next article does not pay the 400 again.
+    assert llm.complete(key="k2", system="s", user="u").payload == {"ok": 2}
+    assert len(client.calls) == 3
+    assert "response_format" not in client.calls[2]["json"]
+
+
+def test_openai_400_without_json_mode_is_still_provider_down():
+    client = FakeClient([
+        FakeResponse({"error": "bad"}, status=400),
+        FakeResponse({"error": "bad"}, status=400),
+    ])
+    llm = OpenAILLM("m", api_key="k", base_url="https://gw/v1", client=client)
+    with pytest.raises(ProviderDown):
+        llm.complete(key="k1", system="s", user="u")
+    assert len(client.calls) == 2
 
 
 def test_openai_http_error_is_provider_down():

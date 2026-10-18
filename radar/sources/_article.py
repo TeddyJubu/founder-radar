@@ -10,6 +10,7 @@ from radar.sources._common import clean_text, html_doc, header_noindex
 
 MAX_ARTICLES = 20
 ARTICLE_TIMEOUT = 8.0
+NO_BODY = 'no substantive article content in reviewed wrappers'
 SELECTORS = {
     'businesscloud': ('div.post-content',),
     'bdaily_regional': ('div.Artivent__content',),
@@ -32,7 +33,7 @@ def article_text(payload, source_key):
         text = clean_text(' '.join(node.text(separator=' ', strip=True) for node in nodes))
         if len(text) >= 200:
             return text
-    raise ValueError('no substantive article content in reviewed wrappers')
+    raise ValueError(NO_BODY)
 
 
 def article_links(payload, source_key, base_url):
@@ -55,10 +56,23 @@ def article_links(payload, source_key, base_url):
     return []
 
 
+#: Failure prefix for an article the site asked us not to index, or a page with
+#: no article body (UKTN's regional "tech report" hubs). The registry reports
+#: these as a warning, like `budget:`, because nothing is broken: honouring
+#: noindex is the policy, and a hub page is not a story.
+SKIPPED = 'skipped: '
+
+
+def _is_noindex(exc):
+    from radar.fetch.http import RobotsDenied
+    return isinstance(exc, RobotsDenied) or 'noindex' in str(exc)
+
+
 def hydrate_articles(items, ctx, *, kind, limit=MAX_ARTICLES):
     if kind not in ('news', 'spinout'):
         return items, []
     out, failures, fetched = [], [], 0
+    hydrated, empty = 0, []
     for item in items:
         structured = dict(item.structured or {})
         if structured.get('full_text_in_feed') is not False or structured.get('needs_article_fetch') is False:
@@ -109,6 +123,16 @@ def hydrate_articles(items, ctx, *, kind, limit=MAX_ARTICLES):
                               article_body_hydrated=True,
                               company_link_evidence=article_links(resp.text, item.source_key, current))
             out.append(replace(item, body_text=text, structured=structured))
+            hydrated += 1
         except Exception as exc:  # isolate one article; preserve the healthy feed
-            failures.append(f'{item.external_id}: {type(exc).__name__}: {exc}; excerpt withheld')
+            note = f'{item.external_id}: {type(exc).__name__}: {exc}; excerpt withheld'
+            if _is_noindex(exc):
+                failures.append(SKIPPED + note)
+            elif str(exc) == NO_BODY:
+                empty.append(note)
+            else:
+                failures.append(note)
+    # A page without a body among readable articles is a hub, not a broken
+    # reader. When nothing read at all, the wrappers may have changed: fail.
+    failures.extend((SKIPPED + note) if hydrated else note for note in empty)
     return out, failures

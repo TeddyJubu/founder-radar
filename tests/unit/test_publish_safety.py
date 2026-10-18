@@ -383,6 +383,31 @@ def test_the_ping_counts_only_cards_that_passed_and_says_what_is_held_back(db, m
     assert "held back" in text
 
 
+def test_the_ping_ignores_companies_already_decided_on_an_earlier_day(db, monkeypatch):
+    """Oct 2026 pings read "0 shortlisted · 175 held back": the four shortlist
+    rows were companies Aryan had kept or rejected in September, still counted
+    as QA-withheld because a decided company is never re-checked."""
+    from radar.render.digest import render_today_ping
+
+    monkeypatch.delenv("RADAR_WEB_DOMAIN", raising=False)
+    monkeypatch.delenv("RADAR_WEB_PUBLIC_URL", raising=False)
+    ids = _withheld_fixture(db)          # ids[0] incomplete, ids[2] shown shortlist
+    before = render_today_ping(db)
+    assert "1 shortlisted · 1 watchlist" in before
+    assert "⚠️ 1 held back" in before
+
+    earlier = (date.today() - timedelta(days=20)).isoformat() + "T10:00:00"
+    for cid, verdict in ((ids[0], "worth contacting"), (ids[2], "not for me")):
+        db.execute(
+            "INSERT INTO user_field (company_id, field, value, updated_at) "
+            "VALUES (?, 'verdict', ?, ?)", (cid, verdict, earlier))
+    db.conn.commit()
+
+    after = render_today_ping(db)
+    assert "0 shortlisted · 1 watchlist" in after
+    assert "held back" not in after
+
+
 def test_when_qa_is_unavailable_nothing_unchecked_reaches_any_surface(db, monkeypatch):
     """The scenario from the audit: Hermes is down during the morning run."""
     from radar.render.digest import render_today_ping

@@ -156,12 +156,21 @@ _TLD_EXTRACT = None
 
 
 def _extractor():
-    """tldextract with the bundled suffix snapshot — never a network fetch."""
+    """tldextract with the bundled suffix snapshot and no disk cache."""
     global _TLD_EXTRACT
     if _TLD_EXTRACT is None:
         import tldextract
 
-        _TLD_EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
+        # The scan runs with ProtectSystem=strict and only its data/log/backup
+        # directories writable. tldextract otherwise creates a cache lock under
+        # ~/.cache (or its package directory), aborting extraction on production.
+        # The bundled snapshot is enough here: domains must be resolved
+        # deterministically without network access or a writable cache.
+        _TLD_EXTRACT = tldextract.TLDExtract(
+            cache_dir=None,
+            suffix_list_urls=(),
+            fallback_to_snapshot=True,
+        )
     return _TLD_EXTRACT
 
 

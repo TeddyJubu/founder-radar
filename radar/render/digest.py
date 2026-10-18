@@ -86,12 +86,13 @@ def render_today_ping(db) -> str:
     from radar.render.today_diagnose import diagnose_today
 
     report = diagnose_today(db)
-    tiers = report.get("tiers") or {}
-    # Count only what Today will show: cards QA rejected, or could not check,
-    # are withheld everywhere, so they are not in the number either.
-    held = report.get("qa_withheld") or {}
-    shortlist_n = max(int(tiers.get("shortlist") or 0) - int(held.get("shortlist") or 0), 0)
-    watchlist_n = max(int(tiers.get("watchlist") or 0) - int(held.get("watchlist") or 0), 0)
+    # Count only what Today will show: companies still awaiting a decision,
+    # minus the ones QA rejected or could not check (withheld everywhere).
+    pending = report.get("pending") or {}
+    shortlist_n = max(int(pending.get("shortlist") or 0)
+                      - int(pending.get("withheld_shortlist") or 0), 0)
+    watchlist_n = max(int(pending.get("watchlist") or 0)
+                      - int(pending.get("withheld_watchlist") or 0), 0)
     url = review_url()
     lines = [
         "📡 UK Founder Radar",
@@ -104,7 +105,7 @@ def render_today_ping(db) -> str:
         lines.append("Open the Today page on the review site.")
     lines.append("")
     lines.append(f"{shortlist_n} shortlisted · {watchlist_n} watchlist")
-    incomplete = int(report.get("qa_incomplete") or 0)
+    incomplete = int(pending.get("incomplete") or 0)
     if incomplete:
         lines.append(
             f"⚠️ {incomplete} held back — their final company check did not complete"

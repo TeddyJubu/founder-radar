@@ -84,6 +84,8 @@ def diagnose_today(db: Any) -> dict[str, Any]:
             if state == "incomplete":
                 qa_incomplete_ids.add(row["company_id"])
 
+    pending = _pending_today(db, config_hash, withheld)
+
     last_run = db.one(
         "SELECT started_at, finished_at, status, items_fetched, gated_out, "
         "shortlisted, error FROM run ORDER BY id DESC LIMIT 1"
@@ -159,11 +161,53 @@ def diagnose_today(db: Any) -> dict[str, Any]:
         # ping subtracts so it counts only cards Today will actually show.
         "qa_withheld": qa_held,
         "qa_incomplete": len(qa_incomplete_ids),
+        # The same funnel limited to companies nobody has decided yet — what
+        # the Today queue actually holds, and so what the ping should count.
+        "pending": pending,
         "reviewable": reviewable,
         "vehicle_keys": vehicle_keys,
         "last_run": dict(last_run) if last_run else None,
         "likely_causes": likely_causes,
     }
+
+
+def _pending_today(
+    db: Any, config_hash: str | None, withheld: dict[str, str],
+) -> dict[str, int]:
+    """The Today QA queue by company and best tier, and how many QA withholds.
+
+    The queue is `load_today_cards`: undecided, not hidden by a deterministic
+    Today rule, with a usable source — the companies Today can show once they
+    pass. Counting every reviewable score row instead told the ping that
+    companies Aryan kept or rejected weeks ago, or that Today hides anyway,
+    were "held back" (185 on 18 Oct 2026 when Today itself reported 8), and
+    left the shortlist at 0 because those rows were QA-withheld.
+    """
+    out = {"shortlist": 0, "watchlist": 0, "withheld_shortlist": 0,
+           "withheld_watchlist": 0, "incomplete": 0}
+    from radar.qa.today import load_today_cards
+
+    queue = {card.company_id for card in load_today_cards(db, None, limit=100_000)}
+    if not queue:
+        return out
+    rows = db.query(
+        "SELECT company_id, MIN(CASE tier WHEN 'shortlist' THEN 0 ELSE 1 END) AS best "
+        "FROM score WHERE tier IN ('shortlist', 'watchlist')"
+        + (" AND config_hash = ?" if config_hash else "")
+        + " GROUP BY company_id",
+        (config_hash,) if config_hash else (),
+    )
+    for row in rows:
+        if row["company_id"] not in queue:
+            continue
+        tier = "shortlist" if int(row["best"]) == 0 else "watchlist"
+        out[tier] += 1
+        state = withheld.get(row["company_id"])
+        if state:
+            out[f"withheld_{tier}"] += 1
+        if state == "incomplete":
+            out["incomplete"] += 1
+    return out
 
 
 def format_today_diagnosis(report: dict[str, Any]) -> str:

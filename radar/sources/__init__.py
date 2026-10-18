@@ -261,16 +261,19 @@ def fetch_all(
         key = getattr(adapter, "key", adapter.__class__.__name__)
         started = time.monotonic()
         status, error, got = "ok", None, []
-        budget_warnings = []
+        budget_warnings, skipped_warnings = [], []
         try:
             got = list(adapter.fetch(ctx))
             fingerprint = getattr(adapter, "last_fingerprint", None)
             if fingerprint and db is not None:
                 check_fingerprint(db, key, fingerprint)
-            from radar.sources._article import hydrate_articles
+            from radar.sources._article import SKIPPED, hydrate_articles
             got, article_failures = hydrate_articles(got, ctx, kind=getattr(adapter, "kind", ""))
             budget_warnings = [f for f in article_failures if f.startswith("budget:")]
-            failures = list(getattr(adapter, "last_failures", None) or []) + [f for f in article_failures if not f.startswith("budget:")]
+            skipped_warnings = [f for f in article_failures if f.startswith(SKIPPED)]
+            failures = list(getattr(adapter, "last_failures", None) or []) + [
+                f for f in article_failures
+                if not f.startswith("budget:") and not f.startswith(SKIPPED)]
             if failures:
                 status, error = "degraded", "; ".join(failures)
 
@@ -315,6 +318,10 @@ def fetch_all(
         if budget_warnings:
             budget_note = f"Article budget reached; {len(budget_warnings)} excerpts withheld"
             run.warning = "; ".join(filter(None, [run.warning, budget_note]))
+        if skipped_warnings:
+            skipped_note = (f"{len(skipped_warnings)} pages skipped "
+                            "(noindex or no article body)")
+            run.warning = "; ".join(filter(None, [run.warning, skipped_note]))
         result.sources.append(run)
         result.items.extend(got)
 

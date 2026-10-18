@@ -56,7 +56,21 @@ log = logging.getLogger(__name__)
 
 PROMPT_VERSION = "today-qa-2026-09-30.1"
 QA_LIMIT = 24
-HERMES_TIMEOUT_S = 60
+# One card's Hermes review. 60 s was too tight: a card whose evidence makes
+# Hermes look further (Oct 2026, SCALR PLATFORM HOLDINGS) ran past it on every
+# morning, stayed incomplete, and the publish gate then sent no ping at all.
+# `TODAY_QA_TIMEOUT_S` overrides it on a box with a slower model.
+HERMES_TIMEOUT_S = 180
+
+
+def _hermes_timeout() -> float:
+    raw = (os.environ.get("TODAY_QA_TIMEOUT_S") or "").strip()
+    try:
+        value = float(raw) if raw else HERMES_TIMEOUT_S
+    except ValueError:
+        log.warning("TODAY_QA_TIMEOUT_S=%r is not a number; using %ss", raw, HERMES_TIMEOUT_S)
+        return HERMES_TIMEOUT_S
+    return value if value > 0 else HERMES_TIMEOUT_S
 # A Hermes call can burn 3 attempts x HERMES_TIMEOUT_S. When this many cards in a
 # row fail, Hermes is down, not the cards: stop asking and leave the rest
 # incomplete instead of hanging a 3600 s unit on a dead subagent.
@@ -469,11 +483,11 @@ class HermesSubagent:
         self,
         *,
         binary: str | None = None,
-        timeout: float = HERMES_TIMEOUT_S,
+        timeout: float | None = None,
         runner: Any | None = None,
     ) -> None:
         self._binary = binary
-        self.timeout = timeout
+        self.timeout = _hermes_timeout() if timeout is None else timeout
         self._runner = runner or subprocess.run
 
     def review(self, card: TodayCard) -> TodayCheckResult:
@@ -513,6 +527,15 @@ class HermesSubagent:
                     timeout=self.timeout,
                     env=env,
                 )
+            except subprocess.TimeoutExpired as exc:
+                # Hermes accepted the prompt and was still working. The other
+                # argv forms are for a CLI that rejects this one, not for a
+                # slow review: retrying them only tripled the wait per card.
+                last = f"TimeoutExpired: no answer after {self.timeout:g} s"
+                log.warning(
+                    "hermes today-qa %s failed: %s", _argv_for_log(argv), last,
+                )
+                break
             except (OSError, subprocess.SubprocessError) as exc:
                 last = f"{type(exc).__name__}: {exc}"
                 log.warning(
@@ -1256,11 +1279,14 @@ def run_today_qa(
         else:
             report.passed += 1
 
+    unfinished_here = report.incomplete
     report.incomplete += report.uncovered
     report.hermes_used = bool(is_hermes and report.incomplete == 0)
-    if report.incomplete:
+    if unfinished_here:
+        # Only the cards this pass tried: `report.cards` excludes the ones
+        # below the limit, which have their own line ("61 of 24" read as a bug).
         report.warnings.append(
-            f"today QA: {report.incomplete} of {report.cards} cards have no "
+            f"today QA: {unfinished_here} of {report.cards} cards have no "
             "completed check — withheld from Today, the Sheet and the ping "
             "until one completes"
         )

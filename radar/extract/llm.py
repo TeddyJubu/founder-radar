@@ -323,6 +323,7 @@ class OpenAILLM:
         self._api_key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
         self._base_url = (base_url or os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
         self._client = client
+        self._json_mode = True
 
     def _connect(self) -> Any:
         if self._client is None:
@@ -349,31 +350,46 @@ class OpenAILLM:
         )
         content: str | None = None
         data: dict = {}
-        for attempt in range(2):
+        json_mode = self._json_mode
+        attempt = 0
+        while attempt < 2:
             # A reasoning model (e.g. the free tier of a gateway) can spend the
             # whole token budget thinking and answer `content: null`. That is a
             # bad draw, not a dead provider, so one retry happens here — before
             # the pipeline's heuristic fallback — rather than degrading a whole
             # article over a coin flip.
+            body = {
+                "model": self.model_id,
+                "max_tokens": self.max_tokens,
+                "temperature": 0,
+                "messages": [
+                    {"role": "system", "content": system + schema_hint},
+                    {"role": "user", "content": user},
+                ],
+            }
+            if json_mode:
+                body["response_format"] = {"type": "json_object"}
             try:
                 response = client.post(
                     f"{self._base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self._api_key}"},
-                    json={
-                        "model": self.model_id,
-                        "max_tokens": self.max_tokens,
-                        "temperature": 0,
-                        "response_format": {"type": "json_object"},
-                        "messages": [
-                            {"role": "system", "content": system + schema_hint},
-                            {"role": "user", "content": user},
-                        ],
-                    },
+                    json=body,
                 )
+                if json_mode and getattr(response, "status_code", None) == 400:
+                    # An auto-routing gateway (Kilo `kilo-auto/free`, Oct 2026)
+                    # can land on a backend without JSON mode and answer 400 to
+                    # every call. The prompt already demands JSON and the reply
+                    # is parsed and validated, so ask again without the field
+                    # and stop sending it to this client.
+                    log.warning("LLM gateway rejected response_format (400); "
+                                "retrying without JSON mode")
+                    json_mode = self._json_mode = False
+                    continue
                 response.raise_for_status()
                 data = response.json()
             except Exception as exc:  # network, 4xx, 5xx, timeout — all the same
                 raise ProviderDown(f"{type(exc).__name__}: {exc}") from exc
+            attempt += 1
 
             try:
                 content = data["choices"][0]["message"]["content"]

@@ -1393,10 +1393,14 @@ def _run_pipeline(
                     qa_ran = False
                 elif result.qa_incomplete:
                     result.status = "partial"
+                    uncovered = int(getattr(qa, "uncovered", 0) or 0)
+                    tried = result.qa_incomplete - uncovered
                     result.warnings.append(
-                        f"today QA incomplete: {result.qa_incomplete} of "
-                        f"{getattr(qa, 'cards', 0)} cards withheld from Today, "
-                        "the Sheet and the ping until a check completes")
+                        f"today QA incomplete: {result.qa_incomplete} cards "
+                        f"withheld from Today, the Sheet and the ping until a "
+                        f"check completes ({tried} of {getattr(qa, 'cards', 0)} "
+                        f"checked without a verdict, {uncovered} queued below "
+                        "the QA limit)")
             except Exception as exc:  # noqa: BLE001 — one stage, not the run
                 qa_ran = False
                 result.warnings.append(
