@@ -110,8 +110,34 @@ def fund_from(text: str) -> str | None:
     return match.group(1).lower() if match else None
 
 
+_CLEAR_FOCUS = re.compile(
+    r"^(?:/clearfocus\b|/unfocus\b|unfocus\b|no focus\b|"
+    r"(?:please\s+)?(?:clear|stop|end|cancel|remove|drop)\s+(?:the\s+)?focus(?:ing)?\b|"
+    r"stop focusing\b|back to all funds\b|show all funds\b)", re.I)
+_FOCUS = re.compile(r"^(?:/focus\b|(?:please\s+)?(?:focus|concentrate)\b)", re.I)
+_ROTATION = re.compile(r"^(?:/schedule\b|/rotation\b|(?:weekly\s+)?(?:schedule|rotation|rotate)\b)",
+                       re.I)
+
+
+def focus_days(text: str) -> int:
+    """'this week' → 7, 'for 3 days' → 3, 'for 2 weeks' → 14, 'today' → 1. Default 7."""
+    folded = compact(text)
+    m = re.search(r"/focus\s+\S+\s+(\d{1,2})\b", folded)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\b(\d{1,2})\s*(day|days|week|weeks)\b", folded)
+    if m:
+        n = int(m.group(1))
+        return n * 7 if m.group(2).startswith("week") else n
+    if re.search(r"\btoday\b", folded):
+        return 1
+    if "month" in folded:
+        return 30
+    return 7
+
+
 def classify(text: str) -> str | None:
-    """Return ``search``, ``today``, or ``None`` (leave the message to Hermes)."""
+    """``search``, ``today``, ``focus``, ``clearfocus``, ``rotation``, or None."""
     raw = str(text or "").strip()
     if not raw:
         return None
@@ -121,6 +147,12 @@ def classify(text: str) -> str | None:
     folded = compact(raw)
     if not folded:
         return None
+    if _CLEAR_FOCUS.match(folded):
+        return "clearfocus"
+    if _FOCUS.match(folded) and fund_from(folded):
+        return "focus"
+    if _ROTATION.match(folded) and len(folded) <= 160:
+        return "rotation"
     if any(token in folded for token in _NOT_SEARCH):
         return None
 
@@ -153,12 +185,20 @@ def slash_rewrite(text: str) -> str | None:
         return None
     folded = compact(text)
     first = folded.split()[0].split("@", 1)[0] if folded else ""
-    if first in {"/run", "/search", "/today"}:
+    if first in {"/run", "/search", "/today", "/focus", "/clearfocus", "/unfocus",
+                 "/schedule", "/rotation"}:
         return None
     if kind == "today":
         return "/today"
+    if kind == "clearfocus":
+        return "/clearfocus"
+    if kind == "focus":
+        return f"/focus {fund_from(text)} {focus_days(text)}"
+    if kind == "rotation":
+        rest = re.sub(r"^(?:weekly\s+)?(?:schedule|rotation|rotate)\b[:\s]*", "", folded)
+        return f"/schedule {rest}".strip()
     fund = fund_from(text)
     return f"/run {fund}" if fund else "/run"
 
 
-__all__ = ["FUND_KEYS", "classify", "compact", "fund_from", "slash_rewrite"]
+__all__ = ["FUND_KEYS", "classify", "compact", "focus_days", "fund_from", "slash_rewrite"]

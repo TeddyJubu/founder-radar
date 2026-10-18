@@ -133,8 +133,17 @@ def rank_today_rows(db: Any, rows: list[Any], *, config_hash: str | None = None,
             "sector": row["sector"] or "unknown",
         }
     max_share, registry_share = _shares(settings)
-    return cap_source_share(diversify(rows, metadata=metadata), metadata=metadata,
-                            max_share=max_share, registry_share=registry_share)
+    ranked = cap_source_share(diversify(rows, metadata=metadata), metadata=metadata,
+                              max_share=max_share, registry_share=registry_share)
+    # Fund focus (radar.focus): that fund's live matches first, so Today QA
+    # checks them before anything else. Order only; nothing is dropped here.
+    from radar.focus import active as active_focus
+
+    focus = active_focus(db)
+    if focus is None:
+        return ranked
+    first = [r for r in ranked if (r["company_id"], focus.fund) in viable]
+    return first + [r for r in ranked if (r["company_id"], focus.fund) not in viable]
 
 
 def _value(row, key, default=None):

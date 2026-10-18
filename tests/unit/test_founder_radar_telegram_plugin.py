@@ -39,7 +39,7 @@ def test_plugin_registers_slash_commands_and_hooks():
     assert "pre_llm_call" in seen.hooks
     assert "pre_tool_call" in seen.hooks
     assert "transform_llm_output" in seen.hooks
-    assert seen.commands == ["run", "search", "today"]
+    assert seen.commands == ["run", "search", "today", "focus", "clearfocus", "schedule"]
 
 
 def test_plugin_rewrites_start_to_run():
@@ -49,3 +49,23 @@ def test_plugin_rewrites_start_to_run():
     assert result == {"action": "rewrite", "text": "/run"}
     assert mod._on_pre_gateway_dispatch(event=SimpleNamespace(text="/start")) is None
     assert mod._on_pre_gateway_dispatch(event=SimpleNamespace(text="/run")) is None
+
+
+def test_plugin_focus_commands_call_the_cli(monkeypatch):
+    mod = _load()
+    calls = []
+    monkeypatch.setattr(mod, "_radar", lambda args, timeout=25: calls.append(args) or "ok")
+    mod._cmd_focus("outward 10")
+    mod._cmd_clearfocus("")
+    mod._cmd_schedule("mon=outward wed=dsw")
+    assert calls == [
+        ["focus", "outward", "--days", "10", "--note", "Telegram"],
+        ["focus", "--clear", "--note", "Telegram"],
+        ["rotation", "mon=outward", "wed=dsw", "--note", "Telegram"],
+    ]
+
+
+def test_plugin_rewrites_plain_focus_before_the_llm():
+    mod = _load()
+    out = mod._on_pre_gateway_dispatch(event=SimpleNamespace(text="Focus on Outward VC this week"))
+    assert out == {"action": "rewrite", "text": "/focus outward 7"}

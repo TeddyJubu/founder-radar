@@ -729,7 +729,7 @@ button.no  { color: var(--red); }
     <div class="progress-count" id="progress" data-testid="progress"></div>
   </header>
   <div class="fund-filter" id="fund-filter" data-testid="fund-filter" hidden>
-    Showing <strong id="fund-filter-name"></strong> matches only · <a href="/">Show all funds</a>
+    <span id="fund-filter-text"></span> · <a href="/?fund=all" data-testid="fund-filter-all">Show all funds</a>
   </div>
 
   <main id="main" data-testid="today-main" aria-live="polite"></main>
@@ -1563,9 +1563,19 @@ function todayUrl() {
 
 async function loadToday() {
   data = await (await fetch(todayUrl(), {cache: "no-store"})).json();
+  const box = $("#fund-filter");
   if (data.fund_filter) {
-    $("#fund-filter-name").textContent = FUND_NAMES[data.fund_filter] || data.fund_filter;
-    $("#fund-filter").hidden = false;
+    const name = FUND_NAMES[data.fund_filter] || data.fund_filter;
+    const focused = data.focus && data.focus.fund === data.fund_filter && !FUND_FILTER;
+    $("#fund-filter-text").textContent = focused
+      ? `🎯 Focus: ${data.focus.label} — showing only ${name} matches`
+      : `Showing ${name} matches only`;
+    box.hidden = false;
+  } else if (data.focus) {
+    $("#fund-filter-text").textContent = `Showing all funds (focus: ${data.focus.label})`;
+    box.querySelector("a").href = "/";
+    box.querySelector("a").textContent = `Back to ${data.focus.name} only`;
+    box.hidden = false;
   }
   $("#date").textContent = new Date(data.date + "T00:00:00").toLocaleDateString("en-GB",
     { weekday: "long", day: "numeric", month: "long" });

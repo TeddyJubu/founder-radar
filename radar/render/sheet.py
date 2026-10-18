@@ -774,6 +774,9 @@ def build_overview_grid(db: Any, cfg: Any, *, now: datetime | None = None) -> li
     """
     from radar.render.digest import FUND_NAMES, review_url
 
+    from radar.focus import active as active_focus
+
+    focus = active_focus(db)
     cards = today_cards(db, cfg)
     tiers = {r["company_id"]: r["best"] for r in db.query(
         "SELECT company_id, MIN(CASE tier WHEN 'shortlist' THEN 0 ELSE 1 END) best "
@@ -793,7 +796,8 @@ def build_overview_grid(db: Any, cfg: Any, *, now: datetime | None = None) -> li
 
     grid = [
         line("UK Founder Radar"),
-        line(f"Live from the radar · updated {stamp} · the same numbers as the dashboard"),
+        line(f"Live from the radar · updated {stamp} · the same numbers as the dashboard"
+             + (f" · 🎯 Focus: {focus.describe()} (Today tab shows only that fund)" if focus else "")),
         list(blank),
         line("ON TODAY", "", "", "SHORTLIST", "", "", "WATCHLIST"),
         line(total, "", "", short, "", "", total - short),
@@ -832,7 +836,17 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
     # This tab used to list shortlist rows only — including companies already
     # decided — so it and the dashboard never agreed (Oct 2026).
     shortlisted = []
-    for card in today_cards(db, cfg):
+    cards = today_cards(db, cfg)
+    from radar.focus import active as active_focus
+
+    focus = active_focus(db)
+    if focus is not None:
+        # Same as the dashboard: a fund focus narrows Today to that fund.
+        from radar.qa.today import fund_match_ids
+
+        fits = fund_match_ids(db, focus.fund)
+        cards = [card for card in cards if card.company_id in fits]
+    for card in cards:
         view = views.get(card.company_id)
         if view is None:
             continue

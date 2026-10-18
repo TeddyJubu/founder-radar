@@ -200,6 +200,11 @@ td .empty { padding: var(--s4) 0; }
 .link-btn { border: 0; background: none; padding: 6px 0; min-height: 32px; color: var(--blue); font: inherit; cursor: pointer; text-align: left; }
 .link-btn.danger { color: var(--red); }
 .add-source { margin-top: 20px; }
+.focus-box { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--fill); }
+.focus-now { font-weight: 600; margin: 8px 0; }
+.focus-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
+.focus-row > div { flex: 1 1 140px; }
+.rotation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 8px 0 10px; }
 .vehicle { border-top: 1px solid var(--fill); padding: 14px 0; }
 .vehicle-head { margin-bottom: 8px; }
 .vehicle-head .cell-sub { display: block; }
@@ -438,6 +443,23 @@ td .empty { padding: var(--s4) 0; }
   <section class="panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" data-testid="panel-settings" hidden>
     <div id="sheet-banner" class="banner-sheet" role="status" hidden></div>
 
+    <section class="focus-box" id="focus-box" data-testid="focus-box">
+      <h2 class="section-title">Fund focus</h2>
+      <p class="lede-sm">Show only one fund's matches on Today, in the morning message and in the Sheet for a few days. Scores don't change, and zero matches is a fine answer. Telegram: <code>/focus outward 7</code>, <code>/clearfocus</code>, <code>/schedule</code>.</p>
+      <p class="focus-now" id="focus-now" data-testid="focus-now">Loading…</p>
+      <div class="focus-row">
+        <div><label class="field-label" for="focus-fund">Fund</label><select id="focus-fund" class="field"></select></div>
+        <div><label class="field-label" for="focus-days">For (days)</label><input id="focus-days" class="field" type="number" min="1" max="60" value="7"></div>
+        <button type="button" class="btn" id="focus-set" data-testid="focus-set">Set focus</button>
+        <button type="button" class="btn btn-secondary" id="focus-clear" data-testid="focus-clear">Clear focus</button>
+      </div>
+      <h3 class="section-sub">Weekly rotation</h3>
+      <p class="lede-sm">A fund per weekday, used when no focus is set. Leave a day on "All funds" to show everything.</p>
+      <div class="rotation-grid" id="rotation-grid"></div>
+      <button type="button" class="btn btn-secondary" id="rotation-save" data-testid="rotation-save">Save rotation</button>
+      <p class="msg" id="focus-msg" role="status" hidden></p>
+    </section>
+
     <h2 class="section-title">Settings</h2>
     <p class="lede-sm">Change a value, then press Save. Only the rows you changed are saved, and they go to the Google Sheet first.</p>
 
@@ -450,6 +472,7 @@ td .empty { padding: var(--s4) 0; }
       <button type="button" class="btn" id="settings-save" data-testid="settings-save" disabled>Save changes</button>
     </div>
     <p class="msg" id="settings-msg" role="status" data-testid="settings-msg" hidden></p>
+
 
     <div class="settings-list" id="settings-form" data-testid="settings-form">
       <p class="empty">Loading settings…</p>
@@ -868,6 +891,7 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       renderSettingsForm(d);
       renderSources();
       loadFunds();
+      loadFocus();
       applyHighlight();
       return true;
     } catch (e) {
@@ -1057,6 +1081,50 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       picks.innerHTML = ((state.settings && state.settings.fund_keys) || []).map(function (k) {
         return '<label class="fund-pick"><input type="checkbox" value="' + esc(k) + '"> ' + esc(fundName(k)) + '</label>';
       }).join('');
+    }
+  }
+
+  var DAY_NAMES = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+
+  async function loadFocus() {
+    try {
+      state.focus = await api('/api/admin/focus');
+      renderFocus();
+    } catch (e) {
+      notify($('focus-msg'), e.message, 'err');
+    }
+  }
+
+  function renderFocus() {
+    var d = state.focus;
+    if (!d) return;
+    $('focus-now').textContent = d.active
+      ? '🎯 Now: ' + d.active.label + (d.active.source === 'rotation' ? '' : '')
+      : 'No focus — Today shows every fund.';
+    var opts = d.funds.map(function (f) { return '<option value="' + esc(f.key) + '">' + esc(f.name) + '</option>'; }).join('');
+    $('focus-fund').innerHTML = opts;
+    if (d.active) $('focus-fund').value = d.active.fund;
+    $('rotation-grid').innerHTML = d.weekdays.map(function (day) {
+      var cur = d.rotation[day] || '';
+      return '<div><label class="field-label" for="rot-' + day + '">' + DAY_NAMES[day] + '</label>' +
+        '<select id="rot-' + day + '" class="field" data-day="' + day + '">' +
+        '<option value="">All funds</option>' +
+        d.funds.map(function (f) {
+          return '<option value="' + esc(f.key) + '"' + (f.key === cur ? ' selected' : '') + '>' + esc(f.name) + '</option>';
+        }).join('') + '</select></div>';
+    }).join('');
+  }
+
+  async function focusPost(path, body, okText) {
+    var msg = $('focus-msg');
+    try {
+      var d = await api(path, { method: 'POST', body: body });
+      state.focus.active = d.active;
+      state.focus.rotation = d.rotation;
+      renderFocus();
+      notify(msg, okText, 'ok');
+    } catch (e) {
+      notify(msg, e.message, 'err');
     }
   }
 
@@ -1434,6 +1502,21 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
   $('settings-form').addEventListener('change', onSettingInput);
   $('settings-save').addEventListener('click', saveSettings);
   $('add-source').addEventListener('submit', addSource);
+  $('focus-set').addEventListener('click', function () {
+    var fund = $('focus-fund').value, days = $('focus-days').value || '7';
+    focusPost('/api/admin/focus', { fund: fund, days: Number(days), note: '' },
+      'Focus set. Today now shows only that fund\'s matches.');
+  });
+  $('focus-clear').addEventListener('click', function () {
+    focusPost('/api/admin/focus', { clear: true, note: '' }, 'Focus cleared.');
+  });
+  $('rotation-save').addEventListener('click', function () {
+    var plan = {};
+    Array.prototype.forEach.call($('rotation-grid').querySelectorAll('select[data-day]'), function (sel) {
+      plan[sel.getAttribute('data-day')] = sel.value || null;
+    });
+    focusPost('/api/admin/rotation', { plan: plan, note: '' }, 'Weekly rotation saved.');
+  });
   $('funds-list').addEventListener('submit', function (e) {
     var form = e.target.closest && e.target.closest('form.vehicle');
     if (!form) return;

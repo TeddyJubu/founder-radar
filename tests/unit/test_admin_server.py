@@ -420,3 +420,18 @@ def test_bad_fund_edits_are_refused_per_field(admin):
     status, _ = post(admin, "/api/admin/funds", {
         "fund_key": "nofund", "vehicle_key": "x", "changes": {"active": True}})
     assert status == 404
+
+
+def test_focus_and_rotation_from_the_control_room(admin):
+    status, view = get(admin, "/api/admin/focus")
+    assert status == 200 and view["active"] is None and len(view["weekdays"]) == 7
+    status, body = post(admin, "/api/admin/focus", {"fund": "outward", "days": 3})
+    assert status == 200 and body["active"]["fund"] == "outward"
+    status, body = post(admin, "/api/admin/focus", {"fund": "nofund"})
+    assert status == 400
+    status, body = post(admin, "/api/admin/rotation", {"plan": {"mon": "dsw", "tue": None}})
+    assert status == 200 and body["rotation"]["mon"] == "dsw"
+    status, body = post(admin, "/api/admin/focus", {"clear": True})
+    assert status == 200
+    kinds = admin.read("SELECT kind FROM admin_change WHERE kind = 'focus'")
+    assert len(kinds) >= 3

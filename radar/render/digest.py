@@ -104,7 +104,18 @@ def render_today_ping(db) -> str:
     else:
         lines.append("Open the Today page on the review site.")
     lines.append("")
-    lines.append(f"{shortlist_n} shortlisted · {watchlist_n} watchlist")
+    from radar.focus import active as active_focus
+
+    focus = active_focus(db)
+    if focus is not None:
+        shown, held = _fund_today(db, focus.fund)
+        lines.append(f"🎯 Focus: {focus.describe()}")
+        lines.append(f"{len(shown)} {focus.name} match{'es' if len(shown) != 1 else ''} on Today"
+                     + (f" ({held} more awaiting their check)" if held else ""))
+        lines.append("")
+        lines.append(f"All funds: {shortlist_n} shortlisted · {watchlist_n} watchlist")
+    else:
+        lines.append(f"{shortlist_n} shortlisted · {watchlist_n} watchlist")
     incomplete = int(pending.get("incomplete") or 0)
     if incomplete:
         lines.append(
@@ -117,6 +128,16 @@ FUND_NAMES = {"dsw": "DSW", "northstar": "Northstar", "outward": "Outward VC",
               "anticus": "Anticus"}
 
 
+def _fund_today(db, fund_key: str) -> tuple[list, int]:
+    """(checked cards on Today with a live match for the fund, unchecked count)."""
+    from radar.qa.today import fund_match_ids, load_today_cards, qa_state
+
+    fits = fund_match_ids(db, fund_key)
+    queue = [c for c in load_today_cards(db, None, limit=100_000) if c.company_id in fits]
+    shown = [c for c in queue if qa_state(db, c.company_id) == "pass"]
+    return shown, len(queue) - len(shown)
+
+
 def render_fund_scan_ping(db, fund_key: str, *, names: int = 5) -> str:
     """What a Telegram fund scan replies: that fund's cards on Today, by name.
 
@@ -125,14 +146,9 @@ def render_fund_scan_ping(db, fund_key: str, *, names: int = 5) -> str:
     the scan never seemed to reach the dashboard. A handful of names plus a
     link to Today filtered to the fund is the answer; the cards stay on Today.
     """
-    from radar.qa.today import fund_match_ids, load_today_cards, qa_state
-
     fund_key = (fund_key or "").strip().lower()
     label = FUND_NAMES.get(fund_key, fund_key)
-    fits = fund_match_ids(db, fund_key)
-    queue = [c for c in load_today_cards(db, None, limit=100_000) if c.company_id in fits]
-    shown = [c for c in queue if qa_state(db, c.company_id) == "pass"]
-    held = len(queue) - len(shown)
+    shown, held = _fund_today(db, fund_key)
     url = review_url(f"/?fund={fund_key}")
     lines = [f"📡 {label} scan finished", ""]
     if shown:

@@ -637,8 +637,10 @@ def refresh_source_evidence(ctx, company_id, apply):
               help="Rules only — skip the Hermes subagent")
 @click.option("--limit", type=click.IntRange(1, 500), default=24, show_default=True,
               help="Maximum new company checks; completed approvals do not use these slots")
+@click.option("--fund", "fund_key", default=None,
+              help="Only that fund's matches (what a fund focus or scan needs first)")
 @click.pass_context
-def today_qa(ctx, no_hermes, limit):
+def today_qa(ctx, no_hermes, limit, fund_key):
     """Re-run the Hermes Today QA subagent on Today's list.
 
     Veto only: a reject hides the card from Today. Scores are not rewritten.
@@ -648,7 +650,8 @@ def today_qa(ctx, no_hermes, limit):
 
     db = _db(ctx)
     cfg, _, warnings = load_runtime_config(db)
-    report = run_today_qa(db, cfg, use_hermes=not no_hermes, limit=limit)
+    report = run_today_qa(db, cfg, use_hermes=not no_hermes, limit=limit,
+                          fund_key=fund_key)
     payload = {
         "checked": report.checked,
         "passed": report.passed,
@@ -670,6 +673,80 @@ def today_qa(ctx, no_hermes, limit):
     )
     for line in payload["warnings"]:
         click.echo(line)
+
+
+@cli.command("focus")
+@click.argument("fund", required=False)
+@click.option("--days", type=int, default=7, show_default=True, help="How long the focus lasts")
+@click.option("--clear", "clear", is_flag=True, help="End the focus (the weekly rotation applies again)")
+@click.option("--note", default=None, help="Why (kept in the change log)")
+@click.pass_context
+def focus_cmd(ctx, fund, days, clear, note):
+    """Focus Today, the ping and the Sheet on one fund for N days.
+
+    `founder-radar focus outward --days 7` · `founder-radar focus --clear` ·
+    `founder-radar focus` shows the current focus. Scores are not changed.
+    """
+    from radar import focus as focus_mod
+    from radar.render.digest import _fund_today, review_url
+
+    db = _db(ctx)
+    try:
+        if clear:
+            focus_mod.clear_focus(db, note=note)
+        elif fund:
+            focus_mod.set_focus(db, fund, days, note=note)
+    except focus_mod.FocusInvalid as exc:
+        raise click.ClickException(str(exc)) from None
+    current = focus_mod.active(db)
+    if ctx.obj["json"]:
+        _emit({"focus": current.as_dict() if current else None,
+               "rotation": focus_mod.rotation(db)}, True)
+        return
+    if current is None:
+        click.echo("🎯 No focus — Today shows every fund."
+                   + (" Focus cleared." if clear else ""))
+        return
+    shown, held = _fund_today(db, current.fund)
+    lines = [f"🎯 Focus: {current.describe()}",
+             f"Today shows only {current.name} matches: {len(shown)} right now"
+             + (f" ({held} more awaiting their check)" if held else "") + "."]
+    if not shown:
+        lines.append("Zero is a fine answer — new matches appear as the morning scans find them.")
+    url = review_url()
+    if url:
+        lines += ["", url]
+    click.echo("\n".join(lines))
+
+
+@cli.command("rotation")
+@click.argument("plan", required=False, nargs=-1)
+@click.option("--clear", "clear", is_flag=True, help="No rotation: every fund, every day")
+@click.option("--note", default=None, help="Why (kept in the change log)")
+@click.pass_context
+def rotation_cmd(ctx, plan, clear, note):
+    """The weekly fund rotation, e.g. `rotation mon=outward tue=outward wed=dsw`.
+
+    Days not named show every fund. An explicit `focus` wins while it runs.
+    With no arguments, prints the current plan.
+    """
+    from radar import focus as focus_mod
+
+    db = _db(ctx)
+    try:
+        if clear:
+            focus_mod.set_rotation(db, {}, note=note)
+        elif plan:
+            focus_mod.set_rotation(db, focus_mod.parse_rotation(" ".join(plan)), note=note)
+    except focus_mod.FocusInvalid as exc:
+        raise click.ClickException(str(exc)) from None
+    current = focus_mod.rotation(db)
+    if ctx.obj["json"]:
+        _emit({"rotation": current}, True)
+        return
+    click.echo("🗓 Weekly rotation: " + focus_mod.describe_rotation(current))
+    today = focus_mod.active(db)
+    click.echo(f"Today: {today.describe()}" if today else "Today: every fund")
 
 
 @cli.command("why-today")

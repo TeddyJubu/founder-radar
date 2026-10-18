@@ -49,6 +49,11 @@ company list, scores, or source-by-source narration.
 |---|---|
 | **search / search now / start / run a scan** | `founder-radar search` |
 | **scan one fund** ("scan Outward VC") | `founder-radar search --fund outward` |
+| **focus on a fund** ("focus on Outward VC this week") | `founder-radar focus outward --days 7` |
+| end the focus / show every fund | `founder-radar focus --clear` |
+| what is the focus | `founder-radar focus` |
+| weekly rotation ("Mon/Tue Outward, Wed DSW") | `founder-radar rotation mon=outward tue=outward wed=dsw` |
+| show / clear the rotation | `founder-radar rotation` · `founder-radar rotation --clear` |
 | today's list / what's new (no scan) | `founder-radar today` |
 | **keep / reject / unsure** | `founder-radar decide "<name>" --verdict "…"` |
 | **publish to Aryan** | `founder-radar publish --send` |
@@ -64,6 +69,11 @@ company list, scores, or source-by-source narration.
 | this week | `founder-radar digest --week` |
 
 Fund keys: northstar · dsw · outward · anticus
+
+A focus narrows Today, the morning message and the Sheet's Today tab to that
+fund's matches; it never changes scores. Zero matches is a valid answer.
+Telegram `/focus`, `/clearfocus` and `/schedule` (and plain "focus on …") are
+handled by the plugin before they reach you.
 
 A fund scan's stdout names up to five of that fund's companies now on Today
 and links Today filtered to the fund (`/?fund=<key>`). Send it as printed —

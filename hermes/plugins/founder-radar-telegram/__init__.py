@@ -139,6 +139,49 @@ def _cmd_today(_raw_args: str) -> str:
     return _ping()
 
 
+_FUNDS = ("northstar", "dsw", "outward", "anticus")
+
+
+def _cmd_focus(raw_args: str) -> str:
+    """/focus <fund> [days] — narrow Today and the ping to one fund."""
+    parts = (raw_args or "").lower().split()
+    fund = next((p for p in parts if p in _FUNDS), "") or _fund_from_args(raw_args)
+    if not fund:
+        return _radar(["focus"]) or "Which fund? /focus outward 7 (northstar · dsw · outward · anticus)"
+    days = next((p for p in parts if p.isdigit()), "7")
+    return _radar(["focus", fund, "--days", days, "--note", "Telegram"]) or (
+        "Could not set the focus — try again in a minute.")
+
+
+def _cmd_clearfocus(_raw_args: str) -> str:
+    return _radar(["focus", "--clear", "--note", "Telegram"]) or "Could not clear the focus."
+
+
+def _cmd_schedule(raw_args: str) -> str:
+    """/schedule mon=outward tue=outward wed=dsw · /schedule clear · /schedule."""
+    raw = (raw_args or "").strip()
+    if not raw:
+        return _radar(["rotation"]) or "Could not read the rotation."
+    if raw.lower() in {"clear", "none", "off"}:
+        return _radar(["rotation", "--clear", "--note", "Telegram"]) or "Could not clear the rotation."
+    return _radar(["rotation", *raw.split(), "--note", "Telegram"]) or (
+        "Could not save that. Write it like: /schedule mon=outward tue=outward wed=dsw")
+
+
+_FOCUS_KINDS = {"focus", "clearfocus", "rotation"}
+
+
+def _focus_reply(kind: str, text: str) -> str:
+    _, slash_rewrite, _ = _load_intent()
+    command = slash_rewrite(text) or text
+    args = command.split(maxsplit=1)[1] if " " in command else ""
+    if kind == "focus":
+        return _cmd_focus(args)
+    if kind == "clearfocus":
+        return _cmd_clearfocus(args)
+    return _cmd_schedule(args)
+
+
 def _on_pre_gateway_dispatch(event=None, **_kwargs: Any):
     try:
         _, slash_rewrite, _ = _load_intent()
@@ -164,6 +207,8 @@ def _on_pre_llm_call(user_message: str = "", session_id: str = "", **_kwargs: An
     _PENDING[key] = kind
     if kind == "search":
         ack = _kickoff(fund_from(user_message or "") or "")
+    elif kind in _FOCUS_KINDS:
+        ack = _focus_reply(kind, user_message or "")
     else:
         ack = _ping()
     return {
@@ -210,4 +255,21 @@ def register(ctx) -> None:
         "today",
         handler=_cmd_today,
         description="Today dashboard URL + counts. No company list.",
+    )
+    ctx.register_command(
+        "focus",
+        handler=_cmd_focus,
+        description="Focus Today and the morning message on one fund for N days.",
+        args_hint="<fund> [days]",
+    )
+    ctx.register_command(
+        "clearfocus",
+        handler=_cmd_clearfocus,
+        description="End the fund focus: Today shows every fund again.",
+    )
+    ctx.register_command(
+        "schedule",
+        handler=_cmd_schedule,
+        description="Weekly fund rotation, e.g. mon=outward tue=outward wed=dsw.",
+        args_hint="[mon=fund ...|clear]",
     )

@@ -1379,7 +1379,14 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
     from radar.selection import rank_today_rows
     passing = rank_today_rows(conn, passing, config_hash=config_hash,
                               settings=getattr(config, "settings", None))
+    from radar.focus import active as active_focus
+
+    focus = active_focus(conn)
     fund = (fund or "").strip().lower() or None
+    if fund == "all":
+        fund = None                       # "show all funds" overrides a focus
+    elif fund is None and focus is not None:
+        fund = focus.fund                 # a focus narrows Today by default
     if fund:
         # `?fund=outward` (the link a Telegram fund scan replies with): only
         # companies with a live shortlist/watchlist match for that fund, even
@@ -1554,6 +1561,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
         "run": dict(run) if run else None,
         "eligibility_diagnostics": eligibility_diagnostics,
         "fund_filter": fund,
+        "focus": focus.as_dict() if focus else None,
     }
 
 
@@ -1725,6 +1733,15 @@ def admin_get(conn: sqlite3.Connection, path: str) -> tuple[int, dict]:
         if path == "/api/admin/funds":
             from radar.config.models import STAGES
             return 200, {"vehicles": settings.funds_view(db), "stages": list(STAGES)}
+        if path == "/api/admin/focus":
+            from radar import focus as focus_mod
+
+            current = focus_mod.active(db)
+            return 200, {"active": current.as_dict() if current else None,
+                         "rotation": focus_mod.rotation(db),
+                         "funds": [{"key": k, "name": focus_mod.FUND_NAMES[k]}
+                                   for k in focus_mod.FUND_KEYS],
+                         "weekdays": list(focus_mod.WEEKDAYS)}
         if path == "/api/admin/changes":
             return 200, {"changes": settings.changes_view(db)}
         if path == "/api/admin/prompts":
@@ -1791,6 +1808,25 @@ def admin_post(conn: sqlite3.Connection, path: str, body: dict) -> tuple[int, di
                 log.warning("admin funds: sheet write failed: %s", exc)
                 return 502, {"error": "Google Sheet could not be updated; "
                                       "nothing was changed"}
+        if path in ("/api/admin/focus", "/api/admin/rotation"):
+            from radar import focus as focus_mod
+
+            try:
+                if path.endswith("/rotation"):
+                    plan = body.get("plan")
+                    if not isinstance(plan, dict):
+                        return 400, {"error": "plan must be an object of weekday → fund"}
+                    focus_mod.set_rotation(db, plan, note=note)
+                elif body.get("clear"):
+                    focus_mod.clear_focus(db, note=note)
+                else:
+                    focus_mod.set_focus(db, str(body.get("fund") or ""),
+                                        body.get("days", 7), note=note)
+            except focus_mod.FocusInvalid as exc:
+                return 400, {"error": str(exc)}
+            current = focus_mod.active(db)
+            return 200, {"ok": True, "active": current.as_dict() if current else None,
+                         "rotation": focus_mod.rotation(db)}
         if path in ("/api/admin/sources/add", "/api/admin/sources/remove",
                     "/api/admin/sources/funds"):
             try:
