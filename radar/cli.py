@@ -801,8 +801,15 @@ def sources(ctx, list_, test_key, sniff_url, accept_key):
     """Inspect, test and discover sources."""
     from radar.sources import cli_sources
 
-    _emit(cli_sources(_db(ctx), list_=list_, test_key=test_key, sniff_url=sniff_url,
-                      accept_layout=accept_key),
+    db = _db(ctx)
+    extra = {}
+    if test_key and test_key.startswith("feed_"):
+        # Feed sources exist only in the config (the Sources tab), not the registry.
+        from radar.admin.settings import current_config
+
+        extra["config"], _ = current_config(db)
+    _emit(cli_sources(db, list_=list_, test_key=test_key, sniff_url=sniff_url,
+                      accept_layout=accept_key, **extra),
           ctx.obj["json"])
 
 

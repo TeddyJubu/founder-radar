@@ -24,11 +24,24 @@ SELECTORS = {
     'uktn': ('div.js-post-content', 'article .entry-content', 'div.article-content', 'div.post-content'),
 }
 DEFAULT_SELECTORS = ('article .entry-content', 'div.article-content', 'div.post-content')
+#: Reviewed article wrappers by site, for feeds added from the Control room
+#: (their keys are not known in advance). Checked Oct 2026 by hand.
+HOST_SELECTORS = {
+    'www.maddyness.com': ('div.article-text',),
+    'iuk-business-connect.org.uk': ('div.wysiwyg-block div.prose',),
+}
 
 
-def article_text(payload, source_key):
+def _selectors(source_key, url=None):
+    if source_key in SELECTORS:
+        return SELECTORS[source_key]
+    host = (urlsplit(url).hostname or '').lower() if url else ''
+    return HOST_SELECTORS.get(host, DEFAULT_SELECTORS)
+
+
+def article_text(payload, source_key, url=None):
     doc = html_doc(payload, source_key)  # strips scripts and honors meta noindex
-    for selector in SELECTORS.get(source_key, DEFAULT_SELECTORS):
+    for selector in _selectors(source_key, url):
         nodes = doc.css(selector)
         text = clean_text(' '.join(node.text(separator=' ', strip=True) for node in nodes))
         if len(text) >= 200:
@@ -39,7 +52,7 @@ def article_text(payload, source_key):
 def article_links(payload, source_key, base_url):
     """Retain labelled links only from the same reviewed article wrappers."""
     doc = html_doc(payload, source_key)
-    for selector in SELECTORS.get(source_key, DEFAULT_SELECTORS):
+    for selector in _selectors(source_key, base_url):
         nodes = doc.css(selector)
         if len(clean_text(' '.join(n.text(separator=' ', strip=True) for n in nodes))) < 200:
             continue
@@ -118,7 +131,7 @@ def hydrate_articles(items, ctx, *, kind, limit=MAX_ARTICLES):
                 raise ValueError(f'HTTP {resp.status}; article unavailable')
             if header_noindex(resp.headers):
                 raise ValueError('article requests noindex')
-            text = article_text(resp.text, item.source_key)
+            text = article_text(resp.text, item.source_key, current)
             structured.update(full_text_in_feed=True, needs_article_fetch=False,
                               article_body_hydrated=True,
                               company_link_evidence=article_links(resp.text, item.source_key, current))

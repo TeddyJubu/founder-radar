@@ -517,8 +517,14 @@ def cli_sources(
     if test_key:
         client = _http(http)
         try:
-            adapter = REGISTRY[test_key]
-        except KeyError as exc:
+            if test_key.startswith("feed_"):
+                from radar.sources.feed import feed_adapters
+
+                adapter = next(a for a in feed_adapters(getattr(config, "sources", []) or [])
+                               if a.key == test_key)
+            else:
+                adapter = REGISTRY[test_key]
+        except (KeyError, StopIteration) as exc:
             return {"key": test_key, "status": "unavailable",
                     "error": REGISTRY.error(test_key) or str(exc),
                     "known_keys": sorted(REGISTRY)}

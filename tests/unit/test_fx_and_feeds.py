@@ -80,3 +80,27 @@ def test_source_fund_mapping_limits_the_suggested_fund(db):
     assert source_funds(db, ids[0], open_cfg) is None
     mapped = Config(sources=[SourceConfig(key="uktn", funds=["dsw", "outward"])])
     assert source_funds(db, ids[0], mapped) == {"dsw", "outward"}
+
+
+def test_feed_articles_use_the_reviewed_wrapper_for_their_site():
+    from radar.sources._article import article_text
+    body = "Kelvin Bio raised a seed round to scale enzyme recycling. " * 8
+    page = f'<nav>{"Menu " * 80}</nav><div class="article-text"><p>{body}</p></div>'
+    text = article_text(page, "feed_maddyness_uk", "https://www.maddyness.com/uk/2026/10/x/")
+    assert "Kelvin Bio" in text and "Menu" not in text
+
+
+def test_sources_test_can_run_a_feed_source(monkeypatch):
+    from radar import sources as registry
+    cfg = Config(sources=[SourceConfig(key="feed_x", url="https://x.test/feed")])
+    seen = []
+    monkeypatch.setattr(registry, "fetch_all",
+                        lambda ctx, adapters, **k: seen.append([a.key for a in adapters])
+                        or SimpleNamespace(sources=[SimpleNamespace(
+                            key="feed_x", status="ok", items=0, error=None, warning=None,
+                            duration_ms=1)], items=[]))
+    try:
+        registry.cli_sources(None, test_key="feed_x", config=cfg, http=object())
+    except Exception:
+        pass
+    assert seen and seen[0] == ["feed_x"]
