@@ -102,13 +102,68 @@ def _choices(key: str) -> list[str] | None:
     return None
 
 
+#: Plain-language help for every setting: what it does, then an example change.
+#: Shown behind the ⓘ next to each row in the Control room.
+SETTING_HELP: dict[str, str] = {
+    "max_company_age_months": "Companies older than this are rejected. Example: lower it to 24 to see only companies under two years old.",
+    "max_total_funding_gbp": "Companies that have already raised more than this (in £, foreign amounts converted) are rejected. Example: £1,500,000 keeps only the earliest rounds.",
+    "max_stage": "The latest funding stage allowed through. Example: set it to seed to drop Series A companies.",
+    "shortlist_fit": "How well a company must fit a fund (0–100) to be shortlisted. Example: raise it to 80 for fewer, stronger shortlist picks.",
+    "shortlist_edge": "How fresh a company must be (0–100: young, little press, not yet funded) to be shortlisted. Example: lower it to 45 to shortlist better-known companies too.",
+    "min_coverage": "How complete a company's record must be (0–1) before it is scored. Example: 0.4 lets in companies with more unknowns.",
+    "watchlist_fit": "Fund fit (0–100) needed for the watchlist, below the shortlist. Example: raise it to 55 for a shorter, better watchlist.",
+    "min_qualifiers": "How many signals (a grant, press, an accelerator, a share issue) a Companies House-only company needs before it is scored. Example: 2 keeps out more bare registrations.",
+    "weight_fit": "How much fund fit counts in the ranking (0–1). It and weight_edge should add up to 1. Example: 0.7 ranks by fit more than freshness.",
+    "weight_edge": "How much freshness counts in the ranking (0–1). It and weight_fit should add up to 1. Example: 0.5 gives freshness equal weight.",
+    "regions_enabled": "Which UK regions the Companies House sweep covers, comma-separated. Example: add london to include London companies.",
+    "ch_backfill_days": "How many days back the very first Companies House sweep reads. Example: 30 for a quicker first run.",
+    "ch_daily_window_days": "How many recent days each daily Companies House sweep re-reads. Example: 5 for a lighter daily sweep.",
+    "max_enrichment_requests_per_run": "Most Companies House look-ups (officers, filings) per run. Example: 200 for a faster, lighter run.",
+    "daily_digest_max": "Most companies listed in the written daily digest. Example: 5 for a shorter digest.",
+    "max_source_share": "Most of one fund's Today list a single source may fill after its first three cards; extra cards wait behind the rest. Example: 0.3 for a more varied list.",
+    "max_registry_share": "The same limit for companies found only on Companies House, kept stricter. Example: 0 puts every Companies House-only card behind all others.",
+    "llm_model": "A label for the model that reads articles; the provider itself is set on the server. Change it only to force every article to be read again.",
+    "llm_enabled": "Off means articles are read by simple rules only, with no AI. Example: FALSE to pause AI use entirely.",
+}
+
+
+def _shown(key: str, type_hint: str, value: Any) -> str:
+    """Money settings read as £3,000,000, not 3000000.0."""
+    if type_hint == "money" and isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f"£{value:,.0f}"
+    return _display(value)
+
+
+def source_quality(db: Any) -> dict[str, dict[str, int]]:
+    """Per source: companies Aryan decided, and how many he kept.
+
+    Kept is `worth contacting` or `unsure`; `not for me` is a reject. A
+    company found by several sources counts for each of them.
+    """
+    out: dict[str, dict[str, int]] = {}
+    for row in db.query(
+        """SELECT cs.source_key, COUNT(DISTINCT u.company_id) AS decided,
+                  COUNT(DISTINCT CASE WHEN lower(u.value) != 'not for me'
+                                      THEN u.company_id END) AS kept
+             FROM user_field u
+             JOIN company_source cs ON cs.company_id = u.company_id
+            WHERE u.field = 'verdict' AND TRIM(COALESCE(u.value, '')) != ''
+            GROUP BY cs.source_key"""):
+        out[row["source_key"]] = {"decided": int(row["decided"]), "kept": int(row["kept"])}
+    return out
+
+
 def settings_view(db: Any) -> dict[str, Any]:
     from radar.config.models import Settings
     from radar.render.sheet import SETTING_SPECS
 
+    from radar.config.defaults import DEFAULT_SOURCES
+
     cfg, source = current_config(db)
     defaults = Settings()
     stages = _stage_of()
+    builtin = {s.key for s in DEFAULT_SOURCES}
+    quality = source_quality(db)
     return {
         "config_hash": cfg.hash(),
         "config_source": source,
@@ -116,19 +171,23 @@ def settings_view(db: Any) -> dict[str, Any]:
         "settings": [
             {
                 "key": key,
-                "value": _display(getattr(cfg.settings, key, None)),
-                "default": _display(getattr(defaults, key, None)),
+                "value": _shown(key, type_hint, getattr(cfg.settings, key, None)),
+                "default": _shown(key, type_hint, getattr(defaults, key, None)),
                 "type": type_hint,
                 "description": description,
+                "help": SETTING_HELP.get(key, ""),
                 "stage": stages.get(key),
                 "choices": _choices(key),
             }
             for key, type_hint, description in SETTING_SPECS
         ],
         "sources": [
-            {"key": s.key, "track": s.track, "enabled": s.enabled, "note": s.note}
+            {"key": s.key, "track": s.track, "enabled": s.enabled, "note": s.note,
+             "url": s.url, "funds": list(s.funds), "removable": s.key not in builtin,
+             **quality.get(s.key, {"decided": 0, "kept": 0})}
             for s in cfg.sources
         ],
+        "fund_keys": list(FUND_KEYS),
     }
 
 
@@ -344,6 +403,294 @@ def apply_source(db: Any, key: str, enabled: bool, *, note: str | None = None,
     return Applied({key: word}, digest, sheet_sync, summary, qa_needed)
 
 
+class SourceInvalid(ValueError):
+    pass
+
+
+FUND_KEYS = ("dsw", "northstar", "outward", "anticus")
+
+
+def _clean_funds(funds: Any) -> list[str]:
+    raw = funds if isinstance(funds, (list, tuple)) else re.split(r"[,\s]+", str(funds or ""))
+    out = []
+    for f in raw:
+        f = str(f).strip().lower()
+        if not f:
+            continue
+        if f not in FUND_KEYS:
+            raise SourceInvalid(f"unknown fund {f!r} — use {', '.join(FUND_KEYS)}")
+        if f not in out:
+            out.append(f)
+    return out
+
+
+def _write_source_row(gw: Any, key: str, cells: Mapping[str, str] | None) -> bool:
+    """Write columns of `key`'s Sources row; `cells=None` blanks the row.
+
+    A missing row is appended when `cells` names column A. Returns False only
+    when there is no row to change and none was added.
+    """
+    from radar.render.sheet import ValueRange
+
+    tab = _quote(SOURCES_TAB)
+    rng = f"{tab}!A1:A200"
+    grid = gw.batch_get([rng]).get(rng, [])
+    row_no = next((i for i, row in enumerate(grid, start=1)
+                   if i > 1 and _source_slug(_cell(row, 0)) == key), None)
+    if row_no is None:
+        if not cells or "A" not in cells:
+            return False
+        row_no = max(len(grid) + 1, 2)
+    if cells is None:
+        gw.batch_set([ValueRange(f"{tab}!A{row_no}:J{row_no}", [[""] * 10])], "USER_ENTERED")
+        return True
+    gw.batch_set([ValueRange(f"{tab}!{col}{row_no}:{col}{row_no}", [[value]])
+                  for col, value in cells.items()], "USER_ENTERED")
+    return True
+
+
+def _sheet_write(gateway: Any, fn) -> str:
+    gw = _gateway(gateway)
+    if gw is None:
+        return "skipped"
+    try:
+        return "synced" if fn(gw) else "not_in_sheet"
+    except Exception as exc:  # noqa: BLE001
+        raise SheetUnavailable(f"{type(exc).__name__}: {exc}") from exc
+
+
+def add_feed_source(db: Any, name: str, url: str, *, funds: Any = None,
+                    note: str | None = None, gateway: Any = AUTO,
+                    check: Any = None) -> Applied:
+    """Add an RSS/Atom feed as a source (`feed_<name>`), on, feeding `funds`.
+
+    The feed is fetched and parsed once first (`check`), so a URL that is not
+    a feed is refused here rather than failing every morning.
+    """
+    from radar.sources.feed import PREFIX
+
+    slug = _source_slug(name or "")
+    if not slug:
+        raise SourceInvalid("give the source a name")
+    key = slug if slug.startswith(PREFIX) else PREFIX + slug
+    url = (url or "").strip()
+    if not re.match(r"^https://[^\s/]+\.[^\s]+$", url):
+        raise SourceInvalid("the feed URL must start with https://")
+    fund_list = _clean_funds(funds)
+    cfg, _ = current_config(db)
+    if any(s.key == key for s in cfg.sources):
+        raise SourceInvalid(f"a source called {key} already exists")
+    (check or _check_feed)(key, url)
+
+    from radar.config.models import SourceConfig
+
+    sheet_sync = _sheet_write(gateway, lambda gw: _write_source_row(gw, key, {
+        "A": key, "B": "A", "C": "TRUE", "H": (note or "").strip(), "I": url,
+        "J": ", ".join(fund_list)}))
+    source = SourceConfig(key=key, track="A", enabled=True, note=(note or "").strip(),
+                          url=url, funds=fund_list)
+    new_cfg = cfg.model_copy(update={"sources": [*cfg.sources, source]}, deep=True)
+    digest, summary, qa_needed = _commit(
+        db, new_cfg, kind="source", rows=[(key, "", f"added {url}")],
+        note=note, sheet_sync=sheet_sync)
+    return Applied({key: "added"}, digest, sheet_sync, summary, qa_needed)
+
+
+def _check_feed(key: str, url: str) -> None:
+    from radar.fetch.http import HttpClient
+    from radar.sources._common import rss_feed
+
+    with HttpClient(timeout=10, max_retries=0) as http:
+        resp = http.get(url)
+    if not resp.ok:
+        raise SourceInvalid(f"the feed answered HTTP {resp.status}")
+    try:
+        entries, _ = rss_feed(resp.text, key)
+    except Exception as exc:  # noqa: BLE001
+        raise SourceInvalid(f"that URL is not a readable RSS/Atom feed ({exc})") from exc
+    if not entries:
+        raise SourceInvalid("the feed has no entries")
+
+
+def remove_source(db: Any, key: str, *, note: str | None = None,
+                  gateway: Any = AUTO) -> Applied:
+    """Remove a source the Control room added, or a built-in no longer shipped.
+
+    Built-in sources in `DEFAULT_SOURCES` come back on the next load, so they
+    are switched off instead (`apply_source`), never removed.
+    """
+    from radar.config.defaults import DEFAULT_SOURCES
+
+    cfg, _ = current_config(db)
+    if not any(s.key == key for s in cfg.sources):
+        raise UnknownSource(key)
+    if any(s.key == key for s in DEFAULT_SOURCES):
+        raise SourceInvalid(f"{key} is built in — switch it off instead")
+    sheet_sync = _sheet_write(gateway, lambda gw: _write_source_row(gw, key, None))
+    new_cfg = cfg.model_copy(update={"sources": [s for s in cfg.sources if s.key != key]},
+                             deep=True)
+    digest, summary, qa_needed = _commit(
+        db, new_cfg, kind="source", rows=[(key, "present", "removed")],
+        note=note, sheet_sync=sheet_sync)
+    return Applied({key: "removed"}, digest, sheet_sync, summary, qa_needed)
+
+
+def set_source_funds(db: Any, key: str, funds: Any, *, note: str | None = None,
+                     gateway: Any = AUTO) -> Applied:
+    """Which funds a source feeds (the Sources tab's Funds column). Empty = all."""
+    cfg, _ = current_config(db)
+    sources = list(cfg.sources)
+    index = next((i for i, s in enumerate(sources) if s.key == key), None)
+    if index is None:
+        raise UnknownSource(key)
+    fund_list = _clean_funds(funds)
+    before = sources[index]
+    if list(before.funds) == fund_list:
+        return Applied({}, cfg.hash(), "skipped", {}, False)
+    sheet_sync = _sheet_write(gateway, lambda gw: _write_source_row(
+        gw, key, {"J": ", ".join(fund_list)}))
+    sources[index] = before.model_copy(update={"funds": fund_list})
+    new_cfg = cfg.model_copy(update={"sources": sources}, deep=True)
+    digest, summary, qa_needed = _commit(
+        db, new_cfg, kind="source", rows=[(f"{key}.funds", ", ".join(before.funds) or "all",
+                                           ", ".join(fund_list) or "all")],
+        note=note, sheet_sync=sheet_sync)
+    return Applied({key: ", ".join(fund_list) or "all"}, digest, sheet_sync, summary, qa_needed)
+
+
+FUND_CRITERIA_TAB = "Fund Criteria"
+#: Vehicle fields the Control room may edit → Fund Criteria column.
+#: Geography and sector rules stay in the Sheet: a HARD geography typo there
+#: is held (never loosened) by the loader's own validation.
+VEHICLE_FIELDS: dict[str, str] = {
+    "active": "E", "stage_min": "F", "stage_max": "G", "cheque_min": "H",
+    "cheque_max": "I", "max_age_years": "L", "one_liner": "P",
+}
+
+
+class FundInvalid(ValueError):
+    def __init__(self, errors: Mapping[str, str]) -> None:
+        super().__init__("invalid fund criteria")
+        self.errors = dict(errors)
+
+
+class UnknownVehicle(KeyError):
+    pass
+
+
+def _vehicle_value(field: str, raw: Any) -> tuple[Any, str]:
+    """(model value, sheet text) for one edited vehicle field, or ValueError."""
+    from radar.config.loader import coerce_bool, coerce_number
+    from radar.config.models import canon_enum
+
+    text = "" if raw is None else str(raw).strip()
+    if field == "active":
+        value = raw if isinstance(raw, bool) else coerce_bool(text)
+        return value, "TRUE" if value else "FALSE"
+    if field in ("stage_min", "stage_max"):
+        if not text:
+            return None, ""
+        canon = canon_enum(text, STAGES)
+        if canon is None:
+            raise ValueError(f"is not a stage ({', '.join(STAGES)})")
+        return canon, canon
+    if field in ("cheque_min", "cheque_max"):
+        if not text:
+            return None, ""
+        value = float(coerce_number(text))
+        if value < 0:
+            raise ValueError("cannot be negative")
+        return value, f"{value:.0f}"
+    if field == "max_age_years":
+        if not text:
+            return None, ""
+        value = coerce_number(text)
+        if float(value) != int(value) or not 0 < int(value) <= 30:
+            raise ValueError("must be a whole number of years, 1–30")
+        return int(value), str(int(value))
+    return text, text            # one_liner
+
+
+def funds_view(db: Any) -> list[dict[str, Any]]:
+    cfg, _ = current_config(db)
+    return [
+        {"fund_key": v.fund_key, "vehicle_key": v.vehicle_key, "fund_name": v.fund_name,
+         "vehicle_name": v.vehicle_name, "active": v.active, "stage_min": v.stage_min,
+         "stage_max": v.stage_max, "cheque_min": v.cheque_min, "cheque_max": v.cheque_max,
+         "max_age_years": v.max_age_years, "geo_rule": v.geo_rule,
+         "geo_values": list(v.geo_values), "one_liner": v.one_liner}
+        for v in cfg.all_vehicles()
+    ]
+
+
+def _write_vehicle_cells(gw: Any, fund_key: str, vehicle_key: str,
+                         cells: Mapping[str, str]) -> bool:
+    from radar.render.sheet import ValueRange
+
+    tab = _quote(FUND_CRITERIA_TAB)
+    rng = f"{tab}!A1:B200"
+    grid = gw.batch_get([rng]).get(rng, [])
+    row_no = next((i for i, row in enumerate(grid, start=1) if i > 1
+                   and _cell(row, 0).lower() == fund_key and _cell(row, 1).lower() == vehicle_key),
+                  None)
+    if row_no is None:
+        return False
+    gw.batch_set([ValueRange(f"{tab}!{col}{row_no}:{col}{row_no}", [[value]])
+                  for col, value in cells.items()], "USER_ENTERED")
+    return True
+
+
+def apply_vehicle(db: Any, fund_key: str, vehicle_key: str, changes: Mapping[str, Any], *,
+                  note: str | None = None, gateway: Any = AUTO) -> Applied:
+    """Edit one Fund Criteria row: Sheet first, then snapshot and rescore."""
+    cfg, _ = current_config(db)
+    found = next(((fi, vi) for fi, f in enumerate(cfg.funds) for vi, v in enumerate(f.vehicles)
+                  if v.fund_key == fund_key and v.vehicle_key == vehicle_key), None)
+    if found is None:
+        raise UnknownVehicle(f"{fund_key}/{vehicle_key}")
+    fi, vi = found
+    vehicle = cfg.funds[fi].vehicles[vi]
+    errors: dict[str, str] = {}
+    updates: dict[str, Any] = {}
+    cells: dict[str, str] = {}
+    for field, raw in (changes or {}).items():
+        if field not in VEHICLE_FIELDS:
+            errors[field] = "cannot be edited here — change it in the Fund Criteria tab"
+            continue
+        try:
+            value, text = _vehicle_value(field, raw)
+        except ValueError as exc:
+            errors[field] = str(exc)
+            continue
+        if getattr(vehicle, field) != value:
+            updates[field] = value
+            cells[VEHICLE_FIELDS[field]] = text
+    merged = vehicle.model_copy(update=updates)
+    if (merged.cheque_min is not None and merged.cheque_max is not None
+            and merged.cheque_min > merged.cheque_max):
+        errors["cheque_min"] = "is above cheque_max"
+    if (merged.stage_min and merged.stage_max
+            and STAGES.index(merged.stage_min) > STAGES.index(merged.stage_max)):
+        errors["stage_min"] = "is later than stage_max"
+    if errors:
+        raise FundInvalid(errors)
+    if not updates:
+        return Applied({}, cfg.hash(), "skipped", {}, False)
+
+    sheet_sync = _sheet_write(gateway, lambda gw: _write_vehicle_cells(
+        gw, fund_key, vehicle_key, cells))
+    funds = [f.model_copy(deep=True) for f in cfg.funds]
+    funds[fi].vehicles[vi] = merged
+    new_cfg = cfg.model_copy(update={"funds": funds}, deep=True)
+    label = f"{fund_key}/{vehicle_key}"
+    digest, summary, qa_needed = _commit(
+        db, new_cfg, kind="fund",
+        rows=[(f"{label}.{k}", _display(getattr(vehicle, k)), _display(v)) for k, v in updates.items()],
+        note=note, sheet_sync=sheet_sync)
+    return Applied({f"{label}.{k}": _display(v) for k, v in updates.items()},
+                   digest, sheet_sync, summary, qa_needed)
+
+
 def rescore_now(db: Any, *, note: str | None = None) -> dict[str, Any]:
     """`founder-radar rescore --all` against the current snapshot, logged."""
     from radar.pipeline import rescore_all
@@ -364,7 +711,9 @@ def rescore_now(db: Any, *, note: str | None = None) -> dict[str, Any]:
 
 
 __all__ = [
-    "AUTO", "Applied", "SettingsInvalid", "SheetUnavailable", "UnknownSource",
-    "apply_settings", "apply_source", "changes_view", "current_config",
-    "rescore_now", "settings_view",
+    "AUTO", "Applied", "SettingsInvalid", "SheetUnavailable", "SourceInvalid",
+    "UnknownSource", "add_feed_source", "apply_settings", "apply_source",
+    "FundInvalid", "UnknownVehicle", "apply_vehicle", "funds_view",
+    "changes_view", "current_config", "remove_source", "rescore_now",
+    "set_source_funds", "settings_view",
 ]

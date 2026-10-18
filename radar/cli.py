@@ -1158,6 +1158,58 @@ def admin_sources_set(ctx, key, state, note):
     _admin_report_applied(applied, ctx.obj["json"])
 
 
+def _admin_source_call(ctx, fn, *args, **kwargs):
+    from radar.admin.settings import SheetUnavailable, SourceInvalid, UnknownSource
+
+    try:
+        applied = fn(_db(ctx), *args, **kwargs)
+    except UnknownSource as exc:
+        raise click.ClickException(
+            f"unknown source: {exc.args[0]} (see `founder-radar admin settings show`)") from None
+    except SourceInvalid as exc:
+        raise click.ClickException(str(exc)) from None
+    except SheetUnavailable as exc:
+        raise click.ClickException(
+            f"Google Sheet could not be updated; nothing was changed: {exc}") from None
+    _admin_report_applied(applied, ctx.obj["json"])
+
+
+@admin_sources.command("add")
+@click.argument("name")
+@click.argument("url")
+@click.option("--funds", default="", help="Comma-separated fund keys it feeds (default: all)")
+@click.option("--note", default=None, help="Why this changed (kept in the change log)")
+@click.pass_context
+def admin_sources_add(ctx, name, url, funds, note):
+    """Add an RSS/Atom feed as a source (key feed_<name>)."""
+    from radar.admin.settings import add_feed_source
+
+    _admin_source_call(ctx, add_feed_source, name, url, funds=funds, note=note)
+
+
+@admin_sources.command("remove")
+@click.argument("key")
+@click.option("--note", default=None, help="Why this changed (kept in the change log)")
+@click.pass_context
+def admin_sources_remove(ctx, key, note):
+    """Remove a source added from the Control room (built-ins: switch off)."""
+    from radar.admin.settings import remove_source
+
+    _admin_source_call(ctx, remove_source, key, note=note)
+
+
+@admin_sources.command("funds")
+@click.argument("key")
+@click.argument("funds", required=False, default="")
+@click.option("--note", default=None, help="Why this changed (kept in the change log)")
+@click.pass_context
+def admin_sources_funds(ctx, key, funds, note):
+    """Set which funds a source feeds, e.g. `dsw,northstar`. Empty = all funds."""
+    from radar.admin.settings import set_source_funds
+
+    _admin_source_call(ctx, set_source_funds, key, funds, note=note)
+
+
 @admin_prompts.command("list")
 @click.pass_context
 def admin_prompts_list(ctx):

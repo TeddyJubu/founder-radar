@@ -214,6 +214,28 @@ def deterministic_block_reason(db, row, config, *, today, config_hash=None):
     return None
 
 
+def source_funds(db: Any, company_id: str, config: Any) -> set[str] | None:
+    """Funds a company's sources may feed, or None when any fund is fine.
+
+    A source with an empty Funds list feeds every fund, so one such source
+    lifts the restriction; a source missing from the config counts the same.
+    """
+    from radar.qa.today import _query
+
+    mapping = {s.key: set(getattr(s, "funds", []) or [])
+               for s in getattr(config, "sources", []) or []}
+    if not any(mapping.values()):
+        return None
+    allowed: set[str] = set()
+    for r in _query(db, "SELECT DISTINCT source_key FROM company_source WHERE company_id = ?",
+                    (company_id,)):
+        funds = mapping.get(r["source_key"])
+        if not funds:
+            return None
+        allowed |= funds
+    return allowed or None
+
+
 def recommend_today_rows(db: Any, rows: list[Any], config: Any, *, config_hash=None) -> list[dict]:
     """Suggest a real alternative for London; DSW EIS eligibility stays intact.
 
@@ -240,6 +262,11 @@ def recommend_today_rows(db: Any, rows: list[Any], config: Any, *, config_hash=N
         sql += ") WHERE rank = 1 ORDER BY priority DESC, scored_at DESC, id DESC"
         scores = [score for score in _query(db, sql, tuple(params))
                   if score['tier'] in {'shortlist', 'watchlist'} and not score['reject_reason']]
+        allowed = source_funds(db, row['company_id'], config)
+        if allowed is not None:
+            # The Sources tab's Funds column: a company found only by
+            # sources mapped to DSW is suggested for DSW, not for Outward.
+            scores = [score for score in scores if score['fund_key'] in allowed]
         if not scores:
             continue
         score_keys = ('fund_key', 'vehicle_key', 'tier', 'fund_fit_pct', 'discovery_edge',

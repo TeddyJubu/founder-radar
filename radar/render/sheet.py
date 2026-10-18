@@ -75,7 +75,7 @@ READ_RANGES: dict[str, str] = {
     FUND_CRITERIA: f"'{FUND_CRITERIA}'!A1:Q200",
     SCORING_WEIGHTS: f"'{SCORING_WEIGHTS}'!A1:I300",
     LISTS: f"'{LISTS}'!A1:L500",
-    SOURCES: f"'{SOURCES}'!A1:H200",
+    SOURCES: f"'{SOURCES}'!A1:J200",
     COMPANIES: f"'{COMPANIES}'!A1:AC5000",
 }
 
@@ -737,6 +737,88 @@ def build_companies(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
     return rows
 
 
+def today_cards(db: Any, cfg: Any) -> list[Any]:
+    """Today's checked, undecided cards in dashboard order (the QA queue)."""
+    from radar.qa.today import load_today_cards, qa_state
+
+    return [card for card in load_today_cards(db, cfg, limit=100_000)
+            if qa_state(db, card.company_id) == "pass"]
+
+
+def _score_for(db: Any, card: Any) -> Any | None:
+    config_hash = db.scalar(
+        "SELECT config_hash FROM config_snapshot WHERE is_last_good = 1 "
+        "ORDER BY created_at DESC LIMIT 1")
+    sql = "SELECT * FROM score WHERE company_id = ? AND fund_key = ?"
+    params: list[Any] = [card.company_id, card.fund_key]
+    if config_hash:
+        sql += " AND config_hash = ?"
+        params.append(config_hash)
+    return db.one(sql + " ORDER BY scored_at DESC, id DESC LIMIT 1", tuple(params))
+
+
+OVERVIEW = "Overview"
+#: v1 tabs nothing has written since the v1 scout was retired (29 Sep 2026).
+#: Companies and Fund Criteria replace them; they are hidden, not deleted.
+RETIRED_V1_TABS = ("Startups", "Fund Vehicles")
+OVERVIEW_ROWS, OVERVIEW_COLS = 40, 8
+
+
+def build_overview_grid(db: Any, cfg: Any, *, now: datetime | None = None) -> list[list[str]]:
+    """The workbook's front page, from the same numbers as the dashboard.
+
+    v1 wrote this tab and stopped when it was retired, so it sat at "93 leads,
+    Outward VC 68%" while the dashboard showed mostly DSW. It is now redrawn
+    from the Today queue on every sync, and the whole block is rewritten so no
+    v1 cell survives beside the live ones.
+    """
+    from radar.render.digest import FUND_NAMES, review_url
+
+    cards = today_cards(db, cfg)
+    tiers = {r["company_id"]: r["best"] for r in db.query(
+        "SELECT company_id, MIN(CASE tier WHEN 'shortlist' THEN 0 ELSE 1 END) best "
+        "FROM score WHERE tier IN ('shortlist', 'watchlist') GROUP BY company_id")}
+    short = sum(1 for c in cards if tiers.get(c.company_id) == 0)
+    by_fund: dict[str, int] = defaultdict(int)
+    for card in cards:
+        by_fund[card.fund_key or "unknown"] += 1
+    total = len(cards)
+    url = review_url() or "the Today page on the review site"
+    stamp = (now or datetime.now()).strftime("%d %b %Y %H:%M")
+    blank = [""] * OVERVIEW_COLS
+
+    def line(*cells: Any) -> list[str]:
+        out = [str(c) for c in cells][:OVERVIEW_COLS]
+        return out + [""] * (OVERVIEW_COLS - len(out))
+
+    grid = [
+        line("UK Founder Radar"),
+        line(f"Live from the radar · updated {stamp} · the same numbers as the dashboard"),
+        list(blank),
+        line("ON TODAY", "", "", "SHORTLIST", "", "", "WATCHLIST"),
+        line(total, "", "", short, "", "", total - short),
+        list(blank),
+        line("Checked, undecided companies", "", "", "Strongest fund fits", "", "", "Worth a look"),
+        list(blank),
+        line("Fund pipeline", "", "", "", "", "", "How to use this workbook"),
+        line("Fund", "On Today", "Share", "", "", "", f"1. Review companies on the dashboard: {url}"),
+    ]
+    steps = ["2. Keep or reject there (or in Telegram); this sheet follows.",
+             "3. Change Settings, Fund Criteria or Sources in the Control room (/admin).",
+             "4. Companies lists every company; Sources shows each source's health."]
+    for index, key in enumerate(_fund_order(cfg) or sorted(by_fund)):
+        n = by_fund.get(key, 0)
+        share = f"{round(100 * n / total)}%" if total else "0%"
+        grid.append(line(FUND_NAMES.get(key, key.title()), n, share, "", "", "",
+                         steps[index] if index < len(steps) else ""))
+    grid.append(list(blank))
+    grid.append(line("Startups and Fund Vehicles were the old (v1) tabs and are hidden; "
+                     "Companies and Fund Criteria replace them."))
+    while len(grid) < OVERVIEW_ROWS:
+        grid.append(list(blank))
+    return grid
+
+
 def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
                 *, today: date) -> list[Row]:
     """The tab Aryan opens: a summary band, then one block per company.
@@ -745,14 +827,18 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
     was hard to scan (07-interfaces tab 1).
     """
     views = _gather(db)
-    shortlisted = [v for v in views.values()
-                   if v.best is not None and v.best["tier"] == "shortlist"]
-    from radar.qa.today import is_withheld
-
-    # Same rule as the live Today page and the ping: rejected, or QA did not
-    # complete, means the card is not shown.
-    shortlisted = [v for v in shortlisted if not is_withheld(db, v.row["id"])]
-    shortlisted.sort(key=lambda v: -v.best["priority"])
+    # The same companies as the live Today page, in its order: the Today
+    # queue (undecided, not hidden by a Today rule) that passed its check.
+    # This tab used to list shortlist rows only — including companies already
+    # decided — so it and the dashboard never agreed (Oct 2026).
+    shortlisted = []
+    for card in today_cards(db, cfg):
+        view = views.get(card.company_id)
+        if view is None:
+            continue
+        view.best = _score_for(db, card) or view.best
+        if view.best is not None:
+            shortlisted.append(view)
     cap = int(getattr(cfg.settings, "daily_digest_max", 10)) if cfg else 10
     shortlisted = shortlisted[:cap]
 
@@ -774,7 +860,7 @@ def build_today(db: Any, cfg: Any, user: Mapping[str, Mapping[str, str]],
 
     rows: list[Row] = [
         Row("__summary__:1", 2, {"A": "", "B": f"Scanned {scanned}  →  {passed} passed the "
-                                              f"age & funding gates  →  {len(shortlisted)} shortlisted"}),
+                                              f"age & funding gates  →  {len(shortlisted)} on Today"}),
         Row("__summary__:2", 3, {"A": "", "B": f"Median age of today's shortlist: {median} months"}),
         Row("__summary__:3", 4, {"A": "", "B": breakdown}),
         Row("__summary__:4", 5, {"A": "", "B": ""}),
@@ -912,6 +998,8 @@ def build_sources(db: Any, cfg: Any, *, today: date) -> list[Row]:
             "F": average or "—",
             "G": status,
             "H": note,
+            "I": source.url if source else "",
+            "J": ", ".join(source.funds) if source else "",
         }))
     return rows
 
@@ -1311,7 +1399,7 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
                          columns_for(NEEDS_REVIEW),
                          hyperlink_cols=HYPERLINK_COLUMNS[NEEDS_REVIEW]))
     plan.extend(plan_tab(db, SOURCES, build_sources(db, cfg, today=today),
-                         ["A", "B", "C", "D", "E", "F", "G", "H"]))
+                         ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]))
     plan.extend(plan_tab(db, RUN_LOG, build_run_log(db), columns_for(RUN_LOG)))
     plan.extend(plan_tab(db, TUNING, build_tuning(db), columns_for(TUNING)))
     plan.extend(plan_tab(db, META, build_meta(db, cfg, counts), ["A", "B"]))
@@ -1336,6 +1424,16 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
         requests += status_format_requests(
             sheets, [(c.tab, c.column, c.row, c.is_error) for c in result.status_cells])
 
+    if OVERVIEW in sheets:
+        grid = build_overview_grid(db, cfg)
+        seed_writes.append(ValueRange(
+            a1(OVERVIEW, "A", 1, col_letter(OVERVIEW_COLS - 1), OVERVIEW_ROWS), grid))
+    hide_v1 = db.get_meta("sheet_v1_tabs_hidden") != "1"
+    if hide_v1:
+        requests += [{"updateSheetProperties": {
+            "properties": {"sheetId": sheets[tab], "hidden": True}, "fields": "hidden"}}
+            for tab in RETIRED_V1_TABS if tab in sheets]
+
     raw_writes = seed_writes + plan.raw
     calls = 0
     if raw_writes:
@@ -1349,6 +1447,8 @@ def sync_sheet(db: Any, *, gateway: SheetGateway | None = None,
         calls += 1
         db.set_meta("sheet_layout_version", LAYOUT_VERSION)
         db.set_meta("sheet_status_signature", status_signature)
+    if hide_v1:
+        db.set_meta("sheet_v1_tabs_hidden", "1")
 
     if plan.state:
         save_state(db, plan)

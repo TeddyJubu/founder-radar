@@ -339,3 +339,84 @@ def test_rescore_reports_the_same_config_hash_as_the_settings_view(admin):
     assert status == 200
     assert body["ok"] is True
     assert body["rescore"]["config_hash"] == view["config_hash"]
+
+
+# ------------------------------------------------- sources manager (Oct 2026)
+
+
+def test_a_feed_source_can_be_added_mapped_and_removed(admin, monkeypatch):
+    monkeypatch.setattr(admin_settings, "_check_feed", lambda key, url: None)
+    status, body = post(admin, "/api/admin/sources/add",
+                        {"name": "Sifted", "url": "https://sifted.eu/feed", "funds": ["outward"]})
+    assert status == 200, body
+    assert body["applied"] == {"feed_sifted": "added"}
+    _, view = get(admin, "/api/admin/settings")
+    added = next(s for s in view["sources"] if s["key"] == "feed_sifted")
+    assert added["url"] == "https://sifted.eu/feed" and added["funds"] == ["outward"]
+    assert added["removable"] is True and added["enabled"] is True
+
+    status, body = post(admin, "/api/admin/sources/funds",
+                        {"key": "feed_sifted", "funds": "outward, anticus"})
+    assert status == 200 and body["applied"] == {"feed_sifted": "outward, anticus"}
+
+    status, body = post(admin, "/api/admin/sources/remove", {"key": "feed_sifted"})
+    assert status == 200 and body["applied"] == {"feed_sifted": "removed"}
+    _, view = get(admin, "/api/admin/settings")
+    assert not any(s["key"] == "feed_sifted" for s in view["sources"])
+
+
+def test_bad_source_requests_are_refused_with_a_reason(admin, monkeypatch):
+    monkeypatch.setattr(admin_settings, "_check_feed", lambda key, url: None)
+    status, body = post(admin, "/api/admin/sources/add", {"name": "X", "url": "http://plain.test/feed"})
+    assert status == 400 and "https" in body["error"]
+    status, body = post(admin, "/api/admin/sources/funds", {"key": "uktn", "funds": "nosuchfund"})
+    assert status == 400 and "unknown fund" in body["error"]
+    status, body = post(admin, "/api/admin/sources/remove", {"key": "uktn"})
+    assert status == 400 and "switch it off" in body["error"]
+
+
+def test_every_setting_has_help_text_and_money_reads_in_pounds(admin):
+    _, view = get(admin, "/api/admin/settings")
+    assert all(s["help"] for s in view["settings"]), [s["key"] for s in view["settings"] if not s["help"]]
+    money = next(s for s in view["settings"] if s["key"] == "max_total_funding_gbp")
+    assert money["value"].startswith("£") and "," in money["value"]
+
+
+def test_a_pound_formatted_money_value_saves(admin):
+    status, body = post(admin, "/api/admin/settings",
+                        {"changes": {"max_total_funding_gbp": "£2,500,000"}})
+    assert status == 200, body
+    _, view = get(admin, "/api/admin/settings")
+    money = next(s for s in view["settings"] if s["key"] == "max_total_funding_gbp")
+    assert money["value"] == "£2,500,000"
+
+
+# ------------------------------------------------------ fund manager (Oct 2026)
+
+
+def test_fund_vehicles_are_listed_and_editable(admin):
+    status, view = get(admin, "/api/admin/funds")
+    assert status == 200 and view["vehicles"] and "seed" in view["stages"]
+    v = view["vehicles"][0]
+    status, body = post(admin, "/api/admin/funds", {
+        "fund_key": v["fund_key"], "vehicle_key": v["vehicle_key"],
+        "changes": {"cheque_max": "£3,000,000", "max_age_years": "4", "active": False}})
+    assert status == 200, body
+    _, view = get(admin, "/api/admin/funds")
+    after = next(x for x in view["vehicles"]
+                 if (x["fund_key"], x["vehicle_key"]) == (v["fund_key"], v["vehicle_key"]))
+    assert after["cheque_max"] == 3_000_000 and after["max_age_years"] == 4
+    assert after["active"] is False
+
+
+def test_bad_fund_edits_are_refused_per_field(admin):
+    _, view = get(admin, "/api/admin/funds")
+    v = view["vehicles"][0]
+    status, body = post(admin, "/api/admin/funds", {
+        "fund_key": v["fund_key"], "vehicle_key": v["vehicle_key"],
+        "changes": {"stage_min": "unicorn", "geo_values": "london", "max_age_years": "0"}})
+    assert status == 400
+    assert set(body["errors"]) == {"stage_min", "geo_values", "max_age_years"}
+    status, _ = post(admin, "/api/admin/funds", {
+        "fund_key": "nofund", "vehicle_key": "x", "changes": {"active": True}})
+    assert status == 404

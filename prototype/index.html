@@ -799,9 +799,27 @@ function evidenceLabel(sig) {
   return sig.headline ? sig.headline.slice(0, 52) : kind;
 }
 
+const SOURCE_NAMES = {
+  innovate_uk: "Innovate UK", ukri_gtr: "UKRI Gateway to Research", companies_house: "Companies House",
+  entrepreneur_first: "Entrepreneur First", founders_factory: "Founders Factory",
+  techstars_london: "Techstars London", conception_x: "Conception X", carbon13: "Carbon13",
+  oxford_innovation: "Oxford University Innovation", cambridge_enterprise: "Cambridge Enterprise",
+  ucl_ventures: "UCL Business", edinburgh_innovations: "Edinburgh Innovations",
+  sheffield: "University of Sheffield", uktn: "UKTN", businesscloud: "BusinessCloud",
+  bdaily_regional: "Bdaily", startups_magazine: "Startups Magazine", govuk_search: "GOV.UK",
+  techscaler_catalyst: "Techscaler", bethnal_green: "Bethnal Green Ventures", converge: "Converge",
+  vc_portfolios: "VC portfolios"
+};
 function sourceName(key) {
-  return (key || "source").replace(/_/g, " ")
+  if (SOURCE_NAMES[key]) return SOURCE_NAMES[key];
+  return (key || "source").replace(/^feed_/, "").replace(/_/g, " ")
     .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+function foundVia(c) {
+  if (!c.source_key) return "";
+  const when = c.found_on ? new Date(c.found_on + "T00:00:00")
+    .toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "";
+  return `Found via ${sourceName(c.source_key)}${when ? " · " + when : ""}`;
 }
 
 // Split where `explain.py` joined with ". ", and only when the next clause
@@ -1285,7 +1303,10 @@ function render() {
   if (c.city) metaBits.push(`<span>${esc(c.city)}</span>`);
   else if (c.region) metaBits.push(`<span>${esc(prettyLabel(c.region))}</span>`);
   if (c.sector) metaBits.push(`<span>${esc(prettyLabel(c.sector))}</span>`);
-  if (DISCOVERY[c.route]) metaBits.push(`<span>${esc(DISCOVERY[c.route])}</span>`);
+  // "Found via <source> · <month>" names the route too; one label, not two.
+  if (DISCOVERY[c.route] && !c.source_key) metaBits.push(`<span>${esc(DISCOVERY[c.route])}</span>`);
+  if (c.funding) metaBits.push(`<span data-testid="company-funding">${esc(c.funding)}</span>`);
+  if (c.source_key) metaBits.push(`<span data-testid="company-found-via">${esc(foundVia(c))}</span>`);
   metaBits.push(`<span class="age" data-testid="company-age" data-exact="${esc(c.age_exact || "")}" ${c.age_exact ? `title="${esc(c.age_exact)}"` : ""}>${esc(c.age_phrase)}</span>`);
 
   // The explanation sentence already names its own caveats. Repeating them

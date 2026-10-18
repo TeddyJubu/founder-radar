@@ -354,10 +354,7 @@ def with_default_sources(sources: Sequence[SourceConfig] | None) -> list[SourceC
     """
     from radar.config.defaults import DEFAULT_SOURCES
 
-    out = [
-        SourceConfig(key=s.key, track=s.track, enabled=s.enabled, note=s.note)
-        for s in (sources or [])
-    ]
+    out = [s.model_copy(deep=True) for s in (sources or [])]
     have = {s.key for s in out}
     for source in DEFAULT_SOURCES:
         if source.key not in have:
@@ -1261,8 +1258,10 @@ def parse_sources(grid: Sequence[Sequence[Any]]) -> list[SourceConfig]:
             enabled = coerce_bool(_cell(row, 2))
         except ValueError:
             enabled = True
+        funds = [f.strip().lower() for f in re.split(r"[,\s]+", _cell(row, 9) or "") if f.strip()]
         out.append(SourceConfig(key=key, track=track if track in {"A", "B"} else "A",
-                                enabled=enabled, note=_cell(row, 7)))
+                                enabled=enabled, note=_cell(row, 7),
+                                url=(_cell(row, 8) or "").strip(), funds=funds))
     return out
 
 

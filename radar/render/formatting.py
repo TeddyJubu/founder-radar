@@ -95,7 +95,7 @@ SETTINGS_HEADERS: tuple[str, ...] = ("Key", "Value", "Type", "Status", "What it 
 
 SOURCES_HEADERS: tuple[str, ...] = (
     "Source", "Track", "Enabled", "Last OK", "Items today", "7-day avg",
-    "Status", "Note",
+    "Status", "Note", "Feed URL", "Funds",
 )
 
 RUN_LOG_HEADERS: tuple[str, ...] = (

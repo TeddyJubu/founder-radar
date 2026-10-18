@@ -263,6 +263,10 @@ class SourceConfig(BaseModel):
     track: Literal["A", "B"] = "A"
     enabled: bool = True
     note: str = ""
+    #: Feed URL for a `feed_*` source added from the Control room.
+    url: str = ""
+    #: Funds this source's companies may be suggested for; empty means all.
+    funds: list[str] = Field(default_factory=list)
 
 
 class Config(BaseModel):

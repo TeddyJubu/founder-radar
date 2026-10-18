@@ -210,7 +210,8 @@ def enabled_adapters(cfg: Any, keys: Sequence[str] | None = None) -> list[Any]:
     # and a health column that never fills — the `oxford_university_innovation`
     # vs `oxford_innovation` bug. Surface it in the log instead of staying
     # silent: one warning line per run beats a source that cannot be disabled.
-    for key in sorted({s.key for s in configured} - set(REGISTRY)):
+    for key in sorted({s.key for s in configured
+                       if not s.key.startswith("feed_")} - set(REGISTRY)):
         log.warning(
             "configured source %r matches no registered adapter — "
             "its Enabled toggle has no effect", key,
@@ -231,6 +232,10 @@ def enabled_adapters(cfg: Any, keys: Sequence[str] | None = None) -> list[Any]:
         if key not in allow:
             continue
         out.append(adapter)
+    # Feed sources added from the Control room: no module, just a URL.
+    from radar.sources.feed import feed_adapters
+
+    out.extend(a for a in feed_adapters(configured) if a.key in allow)
     return out
 
 

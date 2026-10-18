@@ -1257,6 +1257,22 @@ def _fund_score_payload(
     return scores
 
 
+def _funding_phrase(gbp: Any, original: Any) -> str:
+    """`£3.0M raised`, or `$4.0M ≈ £3.0M raised` when converted (radar.fx)."""
+    from radar.fx import short_money
+
+    if gbp is None:
+        return ""
+    phrase = short_money(gbp, "GBP")
+    code, _, amount = str(original or "").partition(" ")
+    if code and amount:
+        try:
+            phrase = f"{short_money(float(amount), code)} ≈ {phrase}"
+        except ValueError:
+            pass
+    return phrase + " raised"
+
+
 def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = None) -> dict:
     config = _config(conn)
     vehicles = _vehicles(conn)
@@ -1295,7 +1311,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
                   c.hq_region, c.incorporated_on, c.sector, c.stage,
                   c.one_liner, c.discovery_route, c.companies_house_no,
                   c.hq_postcode, c.country_iso2, c.total_funding_gbp,
-                  c.on_vc_portfolio
+                  c.funding_original, c.on_vc_portfolio, c.first_seen
              FROM latest_scores s
              JOIN company c ON c.id = s.company_id
              JOIN (SELECT s2.company_id, MAX(s2.priority) best
@@ -1463,6 +1479,8 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
             "source_external_id": source["external_id"],
             "age_phrase": phrase,
             "age_exact": exact,
+            "funding": _funding_phrase(r["total_funding_gbp"], r["funding_original"]),
+            "found_on": str(r["first_seen"] or "")[:10] or None,
             "ch_verified": ch_verified,
             "fund": r["fund_key"],
             "fund_name": vehicle.get("fund"),
@@ -1704,6 +1722,9 @@ def admin_get(conn: sqlite3.Connection, path: str) -> tuple[int, dict]:
             return 200, build_flow(db.conn, active_config_hash=_active_config_hash(conn))
         if path == "/api/admin/settings":
             return 200, settings.settings_view(db)
+        if path == "/api/admin/funds":
+            from radar.config.models import STAGES
+            return 200, {"vehicles": settings.funds_view(db), "stages": list(STAGES)}
         if path == "/api/admin/changes":
             return 200, {"changes": settings.changes_view(db)}
         if path == "/api/admin/prompts":
@@ -1749,6 +1770,44 @@ def admin_post(conn: sqlite3.Connection, path: str, body: dict) -> tuple[int, di
                 return 200, settings.apply_source(db, key, enabled, note=note).as_dict()
             except settings.UnknownSource:
                 return 404, {"error": f"unknown source {key!r}"}
+            except settings.SheetUnavailable as exc:
+                log.warning("admin sources: sheet write failed: %s", exc)
+                return 502, {"error": "Google Sheet could not be updated; "
+                                      "nothing was changed"}
+        if path == "/api/admin/funds":
+            changes = body.get("changes")
+            fund_key, vehicle_key = body.get("fund_key"), body.get("vehicle_key")
+            if not isinstance(changes, dict) or not changes or not all(
+                    isinstance(x, str) for x in (fund_key, vehicle_key)):
+                return 400, {"error": "fund_key, vehicle_key and changes are required"}
+            try:
+                return 200, settings.apply_vehicle(
+                    db, fund_key, vehicle_key, changes, note=note).as_dict()
+            except settings.FundInvalid as exc:
+                return 400, {"error": "invalid fund criteria", "errors": exc.errors}
+            except settings.UnknownVehicle:
+                return 404, {"error": f"unknown vehicle {fund_key}/{vehicle_key}"}
+            except settings.SheetUnavailable as exc:
+                log.warning("admin funds: sheet write failed: %s", exc)
+                return 502, {"error": "Google Sheet could not be updated; "
+                                      "nothing was changed"}
+        if path in ("/api/admin/sources/add", "/api/admin/sources/remove",
+                    "/api/admin/sources/funds"):
+            try:
+                if path.endswith("/add"):
+                    applied = settings.add_feed_source(
+                        db, str(body.get("name") or ""), str(body.get("url") or ""),
+                        funds=body.get("funds"), note=note)
+                elif path.endswith("/remove"):
+                    applied = settings.remove_source(db, str(body.get("key") or ""), note=note)
+                else:
+                    applied = settings.set_source_funds(
+                        db, str(body.get("key") or ""), body.get("funds"), note=note)
+                return 200, applied.as_dict()
+            except settings.SourceInvalid as exc:
+                return 400, {"error": str(exc)}
+            except settings.UnknownSource:
+                return 404, {"error": f"unknown source {body.get('key')!r}"}
             except settings.SheetUnavailable as exc:
                 log.warning("admin sources: sheet write failed: %s", exc)
                 return 502, {"error": "Google Sheet could not be updated; "

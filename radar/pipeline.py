@@ -1142,8 +1142,17 @@ def _fields_from_extraction(extraction: Any, cfg: Any) -> dict[str, Any]:
         fields["incorporated_on"] = f"{int(extraction.founded_year):04d}-07-01"
         fields["age_source"] = "source_stated"
         fields["date_confidence"] = "stated"
+    currency = (extraction.amount_currency or "GBP").upper()
     if extraction.amount_raised_gbp is not None:
         fields["total_funding_gbp"] = extraction.amount_raised_gbp
+    elif extraction.amount_original is not None and currency != "GBP":
+        # "$4m seed" must meet the same £ thresholds as "£3m seed" (radar.fx).
+        from radar import fx
+
+        converted = fx.to_gbp(extraction.amount_original, currency)
+        if converted is not None:
+            fields["total_funding_gbp"] = converted
+            fields["funding_original"] = f"{currency} {extraction.amount_original:.0f}"
     if extraction.is_university_spinout is not None:
         fields["is_university_spinout"] = int(bool(extraction.is_university_spinout))
     if extraction.university_name:
@@ -1290,6 +1299,9 @@ def _run_pipeline(
     try:
         # ② fetch
         client = http or _make_http()
+        from radar import fx
+
+        fx.load_rates(db, client)
         items, fetch = fetch_stage(db, cfg, client, source_key=source_key,
                                    run_id=run_id, now=now, since=since)
         result.items_fetched = len(items)

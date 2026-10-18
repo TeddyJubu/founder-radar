@@ -177,7 +177,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 
 /* ───────────────────────────── tables (scroll inside themselves) */
 .table-wrap {
-  overflow-x: auto; -webkit-overflow-scrolling: touch; min-width: 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; min-width: 0; position: relative;
   background: var(--bg-3); border-radius: var(--r-card); box-shadow: var(--lift);
 }
 table { width: 100%; border-collapse: collapse; font-size: var(--subhead); }
@@ -196,7 +196,20 @@ td .empty { padding: var(--s4) 0; }
 .runs-table { min-width: 680px; }
 .src-table { min-width: 460px; }
 .changes-table { min-width: 720px; }
-.sources-table { min-width: 460px; }
+.sources-table { min-width: 560px; }
+.link-btn { border: 0; background: none; padding: 6px 0; min-height: 32px; color: var(--blue); font: inherit; cursor: pointer; text-align: left; }
+.link-btn.danger { color: var(--red); }
+.add-source { margin-top: 20px; }
+.vehicle { border-top: 1px solid var(--fill); padding: 14px 0; }
+.vehicle-head { margin-bottom: 8px; }
+.vehicle-head .cell-sub { display: block; }
+.vehicle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: end; margin-bottom: 8px; }
+.vehicle .btn { margin-top: 10px; }
+.section-sub { font-size: var(--headline); line-height: var(--headline-lh); margin: 0 0 4px; }
+.add-source-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 8px 0; }
+.fund-picks { border: 0; padding: 0; margin: 8px 0 12px; }
+.fund-pick { display: inline-flex; align-items: center; gap: 6px; margin: 4px 16px 4px 0; min-height: 32px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ───────────────────────────── flow: pipeline */
 .pipeline { list-style: none; margin: 0; padding: 0; min-width: 0; }
@@ -282,6 +295,10 @@ td .empty { padding: var(--s4) 0; }
 .setting-key code { font-weight: 600; font-size: var(--subhead); overflow-wrap: anywhere; color: var(--label-2); }
 .setting-desc { display: block; margin-top: 4px; font-size: var(--headline); line-height: var(--headline-lh); font-weight: 600; }
 .setting-type { color: var(--label-2); font-size: var(--footnote); margin-top: 2px; }
+.help-toggle { margin-top: 4px; min-width: 32px; min-height: 32px; padding: 0 8px; border: 0;
+  border-radius: var(--r-control); background: var(--fill); color: var(--label); font: inherit; cursor: pointer; }
+.help-toggle[aria-expanded="true"] { color: var(--blue); }
+.setting-help { margin: 6px 0 0; color: var(--label-2); font-size: var(--footnote); line-height: var(--footnote-lh); }
 .setting-control { min-width: 0; }
 .setting-default { color: var(--label-2); font-size: var(--footnote); margin-top: 6px; overflow-wrap: anywhere; }
 .row-error { grid-column: 1 / -1; margin: 0; color: var(--red); font-size: var(--footnote); font-weight: 600; }
@@ -439,14 +456,33 @@ td .empty { padding: var(--s4) 0; }
     </div>
 
     <h2 class="section-title">Sources</h2>
-    <p class="lede-sm">Turn a source on or off. You will be asked to confirm each change.</p>
+    <p class="lede-sm">Turn a source on or off, choose which funds it feeds (blank means every fund), or add a news or programme feed. You will be asked to confirm each change.</p>
     <div class="table-wrap">
       <table class="sources-table">
-        <thead><tr><th scope="col">Source</th><th scope="col">Track</th><th scope="col">Note</th><th scope="col">On</th></tr></thead>
+        <thead><tr><th scope="col">Source</th><th scope="col">Track</th><th scope="col">Feeds</th><th scope="col" title="Of the companies Aryan decided, how many he kept">Kept</th><th scope="col">Note</th><th scope="col">On</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
         <tbody id="sources-body"></tbody>
       </table>
     </div>
     <p class="msg" id="sources-msg" role="status" hidden></p>
+
+    <form class="add-source" id="add-source" data-testid="add-source">
+      <h3 class="section-sub">Add a feed</h3>
+      <p class="lede-sm">Any RSS or Atom feed: an accelerator's news, a university spinout blog, a startup news site. It is checked before it is added.</p>
+      <div class="add-source-grid">
+        <div><label class="field-label" for="src-name">Name</label>
+          <input id="src-name" class="field" type="text" maxlength="40" placeholder="e.g. Sifted" required autocomplete="off"></div>
+        <div><label class="field-label" for="src-url">Feed URL</label>
+          <input id="src-url" class="field" type="url" placeholder="https://…/feed/" required autocomplete="off"></div>
+      </div>
+      <fieldset class="fund-picks"><legend class="field-label">Feeds these funds (none ticked = all)</legend>
+        <span id="src-funds"></span></fieldset>
+      <button type="submit" class="btn" id="src-add" data-testid="source-add">Add source</button>
+    </form>
+
+    <h2 class="section-title">Funds</h2>
+    <p class="lede-sm">Each fund's vehicles and their rules. Untick Active to stop matching to a vehicle; untick all of a fund's vehicles to drop the fund. Geography and sector rules are edited in the Fund Criteria tab of the Sheet.</p>
+    <div id="funds-list" data-testid="funds-list"><p class="empty">Loading funds…</p></div>
+    <p class="msg" id="funds-msg" role="status" hidden></p>
   </section>
 
   <!-- ─────────────────────────────────────────────── 3. Prompts -->
@@ -831,6 +867,7 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       state.settings = d;
       renderSettingsForm(d);
       renderSources();
+      loadFunds();
       applyHighlight();
       return true;
     } catch (e) {
@@ -882,6 +919,10 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
             (s.stage ? '<span class="tag">' + esc(s.stage) + '</span>' : '') +
             '<span class="tag tag-changed" hidden>changed</span></div>' +
           '<label class="setting-desc" for="' + id + '">' + esc(s.description || '') + '</label>' +
+          (s.help ? ' <button type="button" class="help-toggle" data-action="help" aria-expanded="false" ' +
+            'aria-controls="' + id + '-help" aria-label="What ' + esc(s.key) + ' does" title="' + esc(s.help) +
+            '" data-testid="setting-help-' + esc(s.key) + '">ⓘ</button>' +
+            '<p class="setting-help" id="' + id + '-help" hidden>' + esc(s.help) + '</p>' : '') +
           '<div class="setting-type">' + esc(s.type || '') + '</div>' +
         '</div>' +
         '<div class="setting-control">' + control +
@@ -993,17 +1034,155 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     $('sources-body').innerHTML = list.map(function (s) {
       var t = String(s.track === null || s.track === undefined ? '' : s.track);
       var track = t ? (/^track/i.test(t) ? t : 'Track ' + t) : '—';
+      var funds = (s.funds || []).map(fundName).join(', ') || 'All funds';
       return '<tr data-testid="source-' + esc(s.key) + '">' +
-        '<td><code>' + esc(s.key) + '</code></td>' +
+        '<td><code>' + esc(s.key) + '</code>' + (s.url ? '<div class="cell-sub wrapcell">' + esc(s.url) + '</div>' : '') + '</td>' +
         '<td><span class="tag">' + esc(track) + '</span></td>' +
+        '<td><button type="button" class="link-btn" data-action="source-funds" data-key="' + esc(s.key) +
+          '" data-testid="source-funds-' + esc(s.key) + '">' + esc(funds) + '</button></td>' +
+        '<td data-testid="source-kept-' + esc(s.key) + '">' + (s.decided ? esc(s.kept + ' of ' + s.decided) +
+          ' <span class="cell-sub">' + Math.round(100 * s.kept / s.decided) + '%</span>' : '<span class="muted">—</span>') + '</td>' +
         '<td class="wrapcell">' + (s.note ? esc(s.note) : '<span class="muted">—</span>') + '</td>' +
         '<td><button type="button" class="switch" role="switch" data-action="source" data-key="' + esc(s.key) +
           '" aria-checked="' + (s.enabled ? 'true' : 'false') + '" aria-label="' + esc(s.key) +
           '" data-testid="source-toggle-' + esc(s.key) + '">' +
           '<span class="switch-track" aria-hidden="true"></span>' +
           '<span>' + (s.enabled ? 'On' : 'Off') + '</span></button></td>' +
+        '<td>' + (s.removable ? '<button type="button" class="link-btn danger" data-action="source-remove" data-key="' +
+          esc(s.key) + '" data-testid="source-remove-' + esc(s.key) + '">Remove</button>' : '') + '</td>' +
       '</tr>';
-    }).join('') || '<tr><td colspan="4" class="empty">No sources configured.</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="empty">No sources configured.</td></tr>';
+    var picks = $('src-funds');
+    if (picks && !picks.childElementCount) {
+      picks.innerHTML = ((state.settings && state.settings.fund_keys) || []).map(function (k) {
+        return '<label class="fund-pick"><input type="checkbox" value="' + esc(k) + '"> ' + esc(fundName(k)) + '</label>';
+      }).join('');
+    }
+  }
+
+  function money(v) { return v === null || v === undefined || v === '' ? '' : '£' + Number(v).toLocaleString('en-GB', { maximumFractionDigits: 0 }); }
+
+  async function loadFunds() {
+    try {
+      var d = await api('/api/admin/funds');
+      state.funds = d;
+      renderFunds();
+    } catch (e) {
+      notify($('funds-msg'), e.message, 'err');
+    }
+  }
+
+  function renderFunds() {
+    var d = state.funds || { vehicles: [], stages: [] };
+    var stageOpts = function (cur) {
+      return ['<option value="">any</option>'].concat((d.stages || []).map(function (st) {
+        return '<option value="' + esc(st) + '"' + (st === cur ? ' selected' : '') + '>' + esc(st.replace(/_/g, ' ')) + '</option>';
+      })).join('');
+    };
+    $('funds-list').innerHTML = (d.vehicles || []).map(function (v) {
+      var id = 'veh-' + v.fund_key + '-' + v.vehicle_key;
+      return '<form class="vehicle" data-fund="' + esc(v.fund_key) + '" data-vehicle="' + esc(v.vehicle_key) +
+          '" data-testid="vehicle-' + esc(v.fund_key) + '-' + esc(v.vehicle_key) + '">' +
+        '<div class="vehicle-head"><strong>' + esc(v.fund_name) + '</strong> · ' + esc(v.vehicle_name) +
+          ' <code>' + esc(v.fund_key + '/' + v.vehicle_key) + '</code>' +
+          '<span class="cell-sub">Geography ' + esc(v.geo_rule) + ': ' + esc((v.geo_values || []).join(', ') || 'any') + '</span></div>' +
+        '<div class="vehicle-grid">' +
+          '<label class="fund-pick"><input type="checkbox" name="active"' + (v.active ? ' checked' : '') + '> Active</label>' +
+          '<div><label class="field-label" for="' + id + '-smin">Stage from</label><select id="' + id + '-smin" class="field" name="stage_min">' + stageOpts(v.stage_min) + '</select></div>' +
+          '<div><label class="field-label" for="' + id + '-smax">Stage to</label><select id="' + id + '-smax" class="field" name="stage_max">' + stageOpts(v.stage_max) + '</select></div>' +
+          '<div><label class="field-label" for="' + id + '-cmin">Cheque min</label><input id="' + id + '-cmin" class="field" name="cheque_min" value="' + esc(money(v.cheque_min)) + '" inputmode="numeric" placeholder="£250,000"></div>' +
+          '<div><label class="field-label" for="' + id + '-cmax">Cheque max</label><input id="' + id + '-cmax" class="field" name="cheque_max" value="' + esc(money(v.cheque_max)) + '" inputmode="numeric" placeholder="£2,500,000"></div>' +
+          '<div><label class="field-label" for="' + id + '-age">Max age (years)</label><input id="' + id + '-age" class="field" name="max_age_years" value="' + esc(v.max_age_years === null || v.max_age_years === undefined ? '' : v.max_age_years) + '" inputmode="numeric"></div>' +
+        '</div>' +
+        '<div><label class="field-label" for="' + id + '-one">One-liner</label><input id="' + id + '-one" class="field" name="one_liner" value="' + esc(v.one_liner || '') + '" maxlength="200"></div>' +
+        '<p class="row-error" role="alert" hidden></p>' +
+        '<button type="submit" class="btn btn-secondary" aria-label="Save ' + esc(v.vehicle_name) + '" data-testid="vehicle-save-' + esc(v.fund_key) + '-' + esc(v.vehicle_key) + '">Save changes</button>' +
+      '</form>';
+    }).join('') || '<p class="empty">No funds configured.</p>';
+  }
+
+  async function saveVehicle(form) {
+    var v = (state.funds.vehicles || []).filter(function (x) {
+      return x.fund_key === form.getAttribute('data-fund') && x.vehicle_key === form.getAttribute('data-vehicle');
+    })[0];
+    if (!v) return;
+    var changes = {};
+    var active = form.querySelector('[name="active"]').checked;
+    if (active !== !!v.active) changes.active = active;
+    ['stage_min', 'stage_max', 'one_liner'].forEach(function (k) {
+      var val = form.querySelector('[name="' + k + '"]').value;
+      if (val !== String(v[k] === null || v[k] === undefined ? '' : v[k])) changes[k] = val;
+    });
+    ['cheque_min', 'cheque_max'].forEach(function (k) {
+      var val = form.querySelector('[name="' + k + '"]').value;
+      if (val !== money(v[k])) changes[k] = val;
+    });
+    var age = form.querySelector('[name="max_age_years"]').value;
+    if (age !== String(v.max_age_years === null || v.max_age_years === undefined ? '' : v.max_age_years)) changes.max_age_years = age;
+    var err = form.querySelector('.row-error');
+    err.hidden = true;
+    var msg = $('funds-msg');
+    if (!Object.keys(changes).length) { notify(msg, 'Nothing changed for ' + v.vehicle_name + '.', ''); return; }
+    if (!window.confirm('Save ' + Object.keys(changes).length + ' change(s) to ' + v.vehicle_name + '? Every company is rescored.')) return;
+    try {
+      var d = await api('/api/admin/funds', { method: 'POST', body: {
+        fund_key: v.fund_key, vehicle_key: v.vehicle_key, changes: changes, note: '' } });
+      await loadFunds();
+      notify(msg, v.vehicle_name + ' saved. Sheet: ' + fmtVal(d.sheet_sync) + '.' + (d.today_qa_needed ? QA_AGAIN : ''), 'ok');
+    } catch (e) {
+      var errs = e.body && e.body.errors;
+      err.textContent = errs ? Object.keys(errs).map(function (k) { return k + ': ' + errs[k]; }).join(' · ') : e.message;
+      err.hidden = false;
+    }
+  }
+
+  var FUND_NAMES = { dsw: 'DSW', northstar: 'Northstar', outward: 'Outward VC', anticus: 'Anticus' };
+  function fundName(k) { return FUND_NAMES[k] || k; }
+
+  async function sourceAction(path, body, okText) {
+    var msg = $('sources-msg');
+    try {
+      var d = await api(path, { method: 'POST', body: body });
+      await loadSettings(true);
+      notify(msg, okText + ' Sheet: ' + fmtVal(d.sheet_sync) + '.' + (d.today_qa_needed ? QA_AGAIN : ''), 'ok');
+      return true;
+    } catch (e) {
+      notify(msg, e.message, 'err');
+      return false;
+    }
+  }
+
+  async function editSourceFunds(key) {
+    var list = (state.settings && state.settings.sources) || [];
+    var src = list.filter(function (s) { return s.key === key; })[0];
+    if (!src) return;
+    var keys = ((state.settings && state.settings.fund_keys) || []).join(', ');
+    var answer = window.prompt('Which funds should "' + key + '" feed? Type fund keys separated by commas (' +
+      keys + '), or leave it empty for all funds.', (src.funds || []).join(', '));
+    if (answer === null) return;
+    await sourceAction('/api/admin/sources/funds', { key: key, funds: answer, note: '' },
+      'Source "' + key + '" now feeds ' + (answer.trim() || 'all funds') + '.');
+  }
+
+  async function removeSource(key) {
+    if (!window.confirm('Remove source "' + key + '"? Its companies stay; it stops being read.')) return;
+    await sourceAction('/api/admin/sources/remove', { key: key, note: '' }, 'Source "' + key + '" removed.');
+  }
+
+  async function addSource(e) {
+    e.preventDefault();
+    var funds = Array.prototype.map.call(
+      $('src-funds').querySelectorAll('input:checked'), function (i) { return i.value; });
+    var btn = $('src-add');
+    btn.disabled = true;
+    try {
+      var ok = await sourceAction('/api/admin/sources/add', {
+        name: $('src-name').value, url: $('src-url').value, funds: funds, note: ''
+      }, 'Source added — it is read from the next morning run.');
+      if (ok) { $('add-source').reset(); }
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function toggleSource(key) {
@@ -1240,12 +1419,27 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       setTab('prompts');
     }
     else if (action === 'source') toggleSource(el.getAttribute('data-key'));
+    else if (action === 'source-funds') editSourceFunds(el.getAttribute('data-key'));
+    else if (action === 'source-remove') removeSource(el.getAttribute('data-key'));
+    else if (action === 'help') {
+      var help = document.getElementById(el.getAttribute('aria-controls'));
+      var open = el.getAttribute('aria-expanded') !== 'true';
+      el.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (help) help.hidden = !open;
+    }
   });
 
   $('rescore-button').addEventListener('click', rescore);
   $('settings-form').addEventListener('input', onSettingInput);
   $('settings-form').addEventListener('change', onSettingInput);
   $('settings-save').addEventListener('click', saveSettings);
+  $('add-source').addEventListener('submit', addSource);
+  $('funds-list').addEventListener('submit', function (e) {
+    var form = e.target.closest && e.target.closest('form.vehicle');
+    if (!form) return;
+    e.preventDefault();
+    saveVehicle(form);
+  });
   $('prompt-text').addEventListener('input', function () { $('prompt-save').disabled = !promptDirty(); });
   $('prompt-save').addEventListener('click', savePrompt);
   $('prompt-reset').addEventListener('click', resetPrompt);
