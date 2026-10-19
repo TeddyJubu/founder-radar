@@ -221,6 +221,9 @@ def test_hermes_dashboard_wrapper_fails_without_a_binary(tmp_path):
 
 
 LIBEXEC_ACL = "/usr/local/libexec/founder-radar/hermes-acl.sh"
+LIBEXEC_ROLLBACK = "/usr/local/libexec/founder-radar/rollback.sh"
+LIBEXEC_GUARD = "/usr/local/libexec/founder-radar/rollback-guard.sh"
+ALLOWED_SUDO = {"$LIBEXEC/hermes-acl.sh", "$LIBEXEC/rollback.sh"}
 
 
 def test_root_only_runs_scripts_the_service_user_cannot_edit():
@@ -232,15 +235,22 @@ def test_root_only_runs_scripts_the_service_user_cannot_edit():
     installer = INSTALL_SH.read_text()
     assert 'LIBEXEC="${LIBEXEC:-/usr/local/libexec/founder-radar}"' in installer
     assert 'install -o root -g root -m 755 "$HERE/hermes-acl.sh" "$LIBEXEC/hermes-acl.sh"' in installer
+    assert 'install -o root -g root -m 755 "$HERE/rollback.sh" "$LIBEXEC/rollback.sh"' in installer
+    assert 'install -o root -g root -m 755 "$HERE/rollback-guard.sh" "$LIBEXEC/rollback-guard.sh"' in installer
 
     sudoers_lines = [ln for ln in installer.splitlines() if "NOPASSWD" in ln]
     assert sudoers_lines, "install.sh must own the sudoers rule"
     for line in sudoers_lines:
-        assert "$LIBEXEC/hermes-acl.sh" in line
         assert "$APP_DIR" not in line and "$HERE" not in line and "/app/" not in line
+        # Either a literal $LIBEXEC/… path or the loop variable that expands to one.
+        assert "$LIBEXEC/" in line or "$script" in line, line
+    for token in ALLOWED_SUDO:
+        assert token in installer, token
     assert "visudo -cf" in installer, "a broken sudoers file locks out sudo"
     # Root must run the installed copy, never the checkout's.
     assert 'bash "$HERE/hermes-acl.sh"' not in installer
+    assert "rollback-guard.conf" in installer
+    assert "ExecStart=$LIBEXEC/rollback-guard.sh" in installer
 
     scan = (DEPLOY_DIR / "founder-radar.service").read_text()
     pre = [ln for ln in scan.splitlines() if ln.startswith("ExecStartPre=+")]
@@ -250,6 +260,8 @@ def test_root_only_runs_scripts_the_service_user_cannot_edit():
         for line in unit.read_text().splitlines():
             if line.startswith(("ExecStartPre=+", "ExecStart=+", "ExecStartPost=+")):
                 assert "/opt/founder-radar/app" not in line, (unit.name, line)
+            if line.startswith("ExecStart=") and "rollback" in line:
+                assert LIBEXEC_GUARD.split("/")[-1] in line or "$LIBEXEC/rollback-guard.sh" in installer
 
 
 def test_the_runtime_looks_for_the_same_root_owned_copy():

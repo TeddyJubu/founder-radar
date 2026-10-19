@@ -55,7 +55,7 @@ MemoryMax=1G
 # Each QA call uses the narrowly permitted, root-owned ACL repair helper.
 # Hermes owner launches can clear the shared directory mask between cards.
 # NoNewPrivileges would silently prevent that sudo repair. The web service
-# retains NoNewPrivileges; the scan account has no general sudo permission.
+# likewise leaves it off so Control room rollback can sudo rollback.sh.
 NoNewPrivileges=false
 PrivateTmp=true
 ProtectSystem=strict

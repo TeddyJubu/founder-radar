@@ -40,13 +40,13 @@ RestartSec=5
 MemoryMax=256M
 Nice=5
 
-# Hardening. `data/` is writable because a verdict is a write — that is the
-# whole point of the surface. Everything else is read-only.
-NoNewPrivileges=true
+# Hardening. `data/` and `backups/` are writable (verdicts; safety copies before
+# a Control room restore). NoNewPrivileges is off so `radar` can sudo the
+# root-owned rollback.sh helper — the same narrow sudoers pattern as hermes-acl.
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs
+ReadWritePaths=/opt/founder-radar/data /opt/founder-radar/logs /opt/founder-radar/backups
 
 StandardOutput=append:/opt/founder-radar/logs/web.log
 StandardError=append:/opt/founder-radar/logs/web-error.log

@@ -1744,6 +1744,10 @@ def admin_get(conn: sqlite3.Connection, path: str) -> tuple[int, dict]:
                          "weekdays": list(focus_mod.WEEKDAYS)}
         if path == "/api/admin/changes":
             return 200, {"changes": settings.changes_view(db)}
+        if path == "/api/admin/backups":
+            from radar.admin import backups as backups_mod
+
+            return 200, backups_mod.list_view()
         if path == "/api/admin/prompts":
             return 200, {"prompts": prompts.list_view(db)}
         match = ADMIN_PROMPT_RE.match(path)
@@ -1862,6 +1866,15 @@ def admin_post(conn: sqlite3.Connection, path: str, body: dict) -> tuple[int, di
                     return 400, {"error": "prompt text is empty"}
                 eff = prompts.save_override(db, key, text, note)
             return 200, {"ok": True, "version": eff.version, "source": eff.source}
+        if path in ("/api/admin/backups/restore", "/api/admin/backups/rollback",
+                    "/api/admin/backups/release"):
+            from radar.admin import backups as backups_mod
+
+            action = path.rsplit("/", 1)[-1]
+            try:
+                return 200, backups_mod.apply_body(db, action, body)
+            except backups_mod.BackupError as exc:
+                return 400, {"error": str(exc)}
         return 404, {"error": "not found"}
     finally:
         db.close()

@@ -423,6 +423,7 @@ td .empty { padding: var(--s4) 0; }
     <button type="button" role="tab" class="tab" id="tab-settings" aria-controls="panel-settings" data-tab="settings" data-testid="tab-settings" aria-selected="false" tabindex="-1">Settings</button>
     <button type="button" role="tab" class="tab" id="tab-prompts" aria-controls="panel-prompts" data-tab="prompts" data-testid="tab-prompts" aria-selected="false" tabindex="-1">Prompts</button>
     <button type="button" role="tab" class="tab" id="tab-changes" aria-controls="panel-changes" data-tab="changes" data-testid="tab-changes" aria-selected="false" tabindex="-1">Changes</button>
+    <button type="button" role="tab" class="tab" id="tab-backups" aria-controls="panel-backups" data-tab="backups" data-testid="tab-backups" aria-selected="false" tabindex="-1">Backups</button>
   </div>
 
   <!-- ─────────────────────────────────────────────── 1. Flow -->
@@ -566,7 +567,37 @@ td .empty { padding: var(--s4) 0; }
     </div>
   </section>
 
-  <!-- ─────────────────────────────────────────────── 4. Changes -->
+  <!-- ─────────────────────────────────────────────── 4. Backups -->
+  <section class="panel" id="panel-backups" role="tabpanel" aria-labelledby="tab-backups" data-testid="panel-backups" hidden>
+    <h2 class="section-title">Backups</h2>
+    <p class="lede-sm">Nightly database snapshots and recent code on this server. Restoring a database does not change the code. Running an older commit does not change the database.</p>
+    <p class="lede-sm">After a database restore the Google Sheet is <strong>not</strong> synced. A sync would copy Sheet edits back into the database and undo the restored decisions.</p>
+    <div class="toolbar">
+      <button type="button" class="btn" id="backups-refresh" data-testid="backups-refresh">Refresh</button>
+      <button type="button" class="btn" id="backups-release" data-testid="backups-release" hidden>Return to latest</button>
+      <p class="msg toolbar-msg" id="backups-msg" role="status" hidden></p>
+    </div>
+    <p class="lede-sm" id="backups-hold" data-testid="backups-hold" hidden></p>
+
+    <h3 class="section-title">Database</h3>
+    <div class="table-wrap">
+      <table class="changes-table" data-testid="backups-db-table">
+        <thead><tr><th>Date</th><th>File</th><th>Size</th><th></th></tr></thead>
+        <tbody id="backups-db-body"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h3 class="section-title">Code</h3>
+    <p class="lede-sm">Checking out an older commit pauses the automatic update until you return to latest. If that commit is from before this tab existed, use SSH: <code id="backups-release-cmd">sudo /usr/local/libexec/founder-radar/rollback.sh release</code></p>
+    <div class="table-wrap">
+      <table class="changes-table" data-testid="backups-code-table">
+        <thead><tr><th>Commit</th><th>Date</th><th>Subject</th><th></th></tr></thead>
+        <tbody id="backups-code-body"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── 5. Changes -->
   <section class="panel" id="panel-changes" role="tabpanel" aria-labelledby="tab-changes" data-testid="panel-changes" hidden>
     <h2 class="section-title">Changes</h2>
     <p class="lede-sm">Every change, newest first. Nothing is removed, so you can always see what was done and when.</p>
@@ -594,7 +625,7 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
 (function () {
   'use strict';
 
-  var TABS = ['flow', 'settings', 'prompts', 'changes'];
+  var TABS = ['flow', 'settings', 'prompts', 'backups', 'changes'];
   var STATUS_CLASS = { ok: 'st-ok', success: 'st-ok', failed: 'st-fail', error: 'st-fail' };
 
   var state = {
@@ -606,7 +637,8 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     highlightFresh: false,   // scroll to the highlight only once, on request
     prompts: null,           // list from GET /api/admin/prompts
     promptKey: null,         // selected prompt key
-    prompt: null             // detail from GET /api/admin/prompts/<key>
+    prompt: null,            // detail from GET /api/admin/prompts/<key>
+    backups: null            // last GET /api/admin/backups
   };
 
   /* ───────────────────────────────────────── helpers */
@@ -716,6 +748,7 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     if (name === 'flow') loadFlow();
     else if (name === 'settings') loadSettings(false);
     else if (name === 'prompts') activatePrompts();
+    else if (name === 'backups') loadBackups();
     else if (name === 'changes') loadChanges();
   }
 
@@ -1430,7 +1463,134 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     $('prompt-default-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
-  /* ───────────────────────────────────────── 4. Changes */
+  /* ───────────────────────────────────────── 4. Backups */
+
+  function fmtBytes(n) {
+    var x = Number(n);
+    if (!isFinite(x) || x < 0) return '—';
+    if (x < 1024) return x + ' B';
+    if (x < 1048576) return (x / 1024).toFixed(1) + ' KB';
+    return (x / 1048576).toFixed(1) + ' MB';
+  }
+
+  async function loadBackups() {
+    var msg = $('backups-msg');
+    var dbBody = $('backups-db-body');
+    var codeBody = $('backups-code-body');
+    try {
+      var d = await api('/api/admin/backups');
+      state.backups = d;
+      if (d.release_command) $('backups-release-cmd').textContent = d.release_command;
+      var held = d.held_sha;
+      var holdEl = $('backups-hold');
+      var releaseBtn = $('backups-release');
+      if (held) {
+        holdEl.hidden = false;
+        holdEl.textContent = 'Updater paused at ' + held.slice(0, 7) + '. Return to latest clears the pause and pulls origin/main.';
+        releaseBtn.hidden = false;
+      } else {
+        holdEl.hidden = true;
+        holdEl.textContent = '';
+        releaseBtn.hidden = true;
+      }
+      var dbs = d.databases || [];
+      dbBody.innerHTML = dbs.length ? dbs.map(function (s) {
+        return '<tr>' +
+          '<td class="nowrap">' + esc(s.date) + '</td>' +
+          '<td><code>' + esc(s.filename) + '</code></td>' +
+          '<td class="num">' + esc(fmtBytes(s.size_bytes)) + '</td>' +
+          '<td><button type="button" class="btn" data-action="restore-db" data-filename="' + esc(s.filename) + '" data-date="' + esc(s.date) + '" data-testid="restore-db-' + esc(s.date) + '">Restore</button></td>' +
+        '</tr>';
+      }).join('') : '<tr><td colspan="4" class="empty">No nightly database snapshots yet.</td></tr>';
+      var commits = d.commits || [];
+      codeBody.innerHTML = commits.length ? commits.map(function (c) {
+        var mark = c.current ? ' <span class="pill p-det">running</span>' : '';
+        return '<tr>' +
+          '<td class="nowrap"><code title="' + esc(c.sha) + '">' + esc(c.short) + '</code>' + mark + '</td>' +
+          '<td class="nowrap">' + esc(c.date) + '</td>' +
+          '<td class="wrapcell">' + esc(c.subject) + '</td>' +
+          '<td>' + (c.current ? '<span class="muted">—</span>' :
+            '<button type="button" class="btn" data-action="rollback-code" data-sha="' + esc(c.sha) + '" data-short="' + esc(c.short) + '" data-testid="rollback-' + esc(c.short) + '">Run this</button>') +
+          '</td>' +
+        '</tr>';
+      }).join('') : '<tr><td colspan="4" class="empty">No commit history available.</td></tr>';
+      msg.hidden = true;
+    } catch (e) {
+      notify(msg, e.message, 'err');
+      dbBody.innerHTML = '<tr><td colspan="4" class="empty">Backups could not be loaded.</td></tr>';
+      codeBody.innerHTML = '<tr><td colspan="4" class="empty">Backups could not be loaded.</td></tr>';
+    }
+  }
+
+  async function restoreDatabase(filename, date) {
+    var msg = $('backups-msg');
+    var typed = window.prompt(
+      'Restore the database from ' + date + '?\n\n' +
+      'This replaces the live database. A safety copy is kept first.\n' +
+      'The Google Sheet will NOT be synced (a sync would undo restored decisions).\n\n' +
+      'Type the date ' + date + ' to confirm.'
+    );
+    if (typed === null) return;
+    if (String(typed).trim() !== date) {
+      notify(msg, 'Restore cancelled — the date did not match.', 'err');
+      return;
+    }
+    try {
+      var d = await api('/api/admin/backups/restore', {
+        method: 'POST',
+        body: { filename: filename, confirm: date }
+      });
+      notify(msg, 'Restored ' + (d.restored || filename) +
+        '. Safety copy: ' + (d.safety_copy || '—') +
+        '. Sheet sync skipped. Reload Today to see the restored data.', 'ok');
+      await loadBackups();
+    } catch (e) {
+      notify(msg, e.message, 'err');
+    }
+  }
+
+  async function rollbackCode(sha, shortId) {
+    var msg = $('backups-msg');
+    var release = (state.backups && state.backups.release_command) ||
+      'sudo /usr/local/libexec/founder-radar/rollback.sh release';
+    var typed = window.prompt(
+      'Run commit ' + shortId + ' on this server?\n\n' +
+      'The automatic updater pauses until you return to latest.\n' +
+      'If this commit is from before the Backups tab existed, the tab will disappear — return over SSH with:\n' +
+      release + '\n\n' +
+      'Type the commit id ' + shortId + ' to confirm.'
+    );
+    if (typed === null) return;
+    if (String(typed).trim().toLowerCase() !== String(shortId).toLowerCase() &&
+        String(typed).trim().toLowerCase() !== String(sha).toLowerCase()) {
+      notify(msg, 'Rollback cancelled — the commit id did not match.', 'err');
+      return;
+    }
+    try {
+      var d = await api('/api/admin/backups/rollback', {
+        method: 'POST',
+        body: { sha: sha, confirm: String(typed).trim() }
+      });
+      notify(msg, 'Checked out ' + (d.short || shortId) +
+        '. The site is restarting — reload this page in a few seconds. ' +
+        'To return to latest later: ' + (d.release_command || release), 'ok');
+    } catch (e) {
+      notify(msg, e.message, 'err');
+    }
+  }
+
+  async function releaseHold() {
+    var msg = $('backups-msg');
+    if (!window.confirm('Return this server to the latest origin/main and clear the updater pause?')) return;
+    try {
+      await api('/api/admin/backups/release', { method: 'POST', body: {} });
+      notify(msg, 'Returning to latest. Reload this page in a few seconds.', 'ok');
+    } catch (e) {
+      notify(msg, e.message, 'err');
+    }
+  }
+
+  /* ───────────────────────────────────────── 5. Changes */
 
   async function loadChanges() {
     var body = $('changes-body');
@@ -1495,9 +1655,17 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       el.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (help) help.hidden = !open;
     }
+    else if (action === 'restore-db') {
+      restoreDatabase(el.getAttribute('data-filename'), el.getAttribute('data-date'));
+    }
+    else if (action === 'rollback-code') {
+      rollbackCode(el.getAttribute('data-sha'), el.getAttribute('data-short'));
+    }
   });
 
   $('rescore-button').addEventListener('click', rescore);
+  $('backups-refresh').addEventListener('click', loadBackups);
+  $('backups-release').addEventListener('click', releaseHold);
   $('settings-form').addEventListener('input', onSettingInput);
   $('settings-form').addEventListener('change', onSettingInput);
   $('settings-save').addEventListener('click', saveSettings);
