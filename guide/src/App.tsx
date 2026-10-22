@@ -111,6 +111,12 @@ function Hero() {
           >
             Skip to morning practice
           </a>
+          <a
+            href="#use-video"
+            className="inline-flex h-10 items-center rounded-lg border border-border bg-card/80 px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Watch how to use it
+          </a>
         </motion.div>
       </div>
     </section>
