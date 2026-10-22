@@ -1,0 +1,1475 @@
+{
+  "name": "Founder Radar - scan and gated publish",
+  "nodes": [
+    {
+      "id": "65013c72-3d39-51d5-96ed-615cb9f1748e",
+      "name": "Read first",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        -600
+      ],
+      "parameters": {
+        "content": "## Founder Radar: authenticated API orchestration\nInactive export. Schedule is disabled. Manual execution only until explicitly configured.\nSet your HTTPS API origin and select a Bearer credential on all four HTTP nodes. Placeholder host cannot run. Never paste a token into this workflow.\nsend_telegram=false. A successful publish with send=false means checks completed, NOT a Telegram notification.\nSearch already writes SQLite, runs Today QA, and syncs the Sheet; it is NOT a dry run. Publish may heal/rescore, rerun QA, and sync changes even with send=false.\nOnly a done/exit-0 scan reaches optional gated publish. Partial, failed, interrupted, unknown, and timed-out states stop for review.\nNever enable this schedule beside founder-radar.timer. Scheduling/cutover is a separate approved operation.",
+        "height": 410,
+        "width": 840,
+        "color": 5
+      }
+    },
+    {
+      "id": "d48d0c52-4803-52e5-a3fb-f86b46f5be47",
+      "name": "Pipeline stays in Python",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -600
+      ],
+      "parameters": {
+        "content": "## Real boundary, not extra executable stages\nn8n = trigger, configuration, authenticated start, Wait/poll, status branching, result.\nPython search = source discovery \u2192 company extraction/identity \u2192 verification \u2192 deterministic fund gates/scoring \u2192 Today QA \u2192 SQLite/Sheet sync.\nPython publish = pre-publish gate/heal \u2192 Today QA \u2192 gate again \u2192 optional Telegram dashboard ping.\nThese internals are shown here only as an explanation. n8n does not recreate scoring, source adapters, QA, or state stores.\nThe checked-out base is 60f2067 (2026-09-30). An October 3 production QA-cache fix may not be in this branch. Reconcile production code before any deployment.",
+        "height": 320,
+        "width": 840,
+        "color": 4
+      }
+    },
+    {
+      "id": "5afd190d-5721-54ed-8a97-940a263784dc",
+      "name": "Retry and timeout safety",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        -600
+      ],
+      "parameters": {
+        "content": "## Check the same job before retrying\nHTTP retries use the same execution_key plus :search / :publish.\nA fresh Manual Trigger run recomputes its execution key and can start NEW work. n8n 2.42 retries normally retain completed Configure output; inspect that key and the original job instead of assuming every retry is equivalent.\nFirst inspect/poll the original job ID. For an approved retry of the same logical operation, replace Configure.execution_key with its exact original value and keep the same request body.\nThe polling budget and overall workflow timeout stop n8n waiting; they do not cancel the server-side job. Never assume timeout means no side effects.",
+        "height": 290,
+        "width": 840,
+        "color": 3
+      }
+    },
+    {
+      "id": "7d603504-12d0-5a17-b7e0-619490901aaa",
+      "name": "Manual start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "abc5e20f-a191-556b-b6fe-f85b9c8f2d2d",
+      "name": "06:30 London - DISABLED",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -620,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 30 6 * * *"
+            }
+          ]
+        }
+      },
+      "disabled": true,
+      "notes": "Keep disabled while systemd founder-radar.timer owns the morning scan.",
+      "notesInFlow": true
+    },
+    {
+      "id": "d46ad4d7-ca65-5b4e-a4e8-8a364f610345",
+      "name": "Configure",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -360,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f8997bba-1455-5096-9c7d-e9dcdba055e6",
+              "name": "api_base",
+              "value": "https://configure-your-actions-host.invalid",
+              "type": "string"
+            },
+            {
+              "id": "a8fd58e1-2f8e-508b-af4f-abf33efcb20e",
+              "name": "publish_enabled",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6a56e3d2-887d-524f-b604-f70f3ea6e37c",
+              "name": "send_telegram",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "b9f5411b-0d62-5a5d-a5ab-13b139ff6860",
+              "name": "no_llm",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "a195a4a7-3e28-56eb-96f2-6ca769b9fc1e",
+              "name": "scan_poll_seconds",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "d22c0605-4feb-5bf7-952b-d9f569bdacd3",
+              "name": "scan_max_polls",
+              "value": 140,
+              "type": "number"
+            },
+            {
+              "id": "32d81a81-54db-5d43-8f4c-a9657be1709b",
+              "name": "scan_timeout_seconds",
+              "value": 3900,
+              "type": "number"
+            },
+            {
+              "id": "7d622e48-1ca8-5bbb-a4c8-831c2671d57f",
+              "name": "publish_poll_seconds",
+              "value": 15,
+              "type": "number"
+            },
+            {
+              "id": "e7b7d94f-7605-54dd-bd29-86983280b2e1",
+              "name": "publish_max_polls",
+              "value": 60,
+              "type": "number"
+            },
+            {
+              "id": "beb552a3-2bd6-5bd5-af27-700c213adcc1",
+              "name": "publish_timeout_seconds",
+              "value": 900,
+              "type": "number"
+            },
+            {
+              "id": "8b634729-3088-591b-a6d7-f030892d9b20",
+              "name": "execution_key",
+              "value": "={{ 'founder-radar:' + $workflow.id + ':' + $execution.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "No API token here. send_telegram=false is the default. publish_enabled=false stops after a successful scan. To reconcile an approved retry, replace execution_key with the original execution value; new executions otherwise get new keys.",
+      "notesInFlow": true
+    },
+    {
+      "id": "a739e175-d140-53b0-9883-e38177a81f83",
+      "name": "Configuration is safe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -100,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4da7969e-1325-522f-a3b2-ebe6e4a3a7c1",
+              "leftValue": "={{ /^https:\\/\\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/.test($json.api_base) && !$json.api_base.includes('.invalid') && typeof $json.execution_key === 'string' && /^[A-Za-z0-9._:-]{1,120}$/.test($json.execution_key) && typeof $json.send_telegram === 'boolean' && typeof $json.publish_enabled === 'boolean' && $json.scan_max_polls >= 1 && $json.scan_max_polls <= 240 && $json.publish_max_polls >= 1 && $json.publish_max_polls <= 120 && $json.scan_poll_seconds >= 1 && $json.scan_poll_seconds <= 60 && $json.publish_poll_seconds >= 1 && $json.publish_poll_seconds <= 60 && $json.scan_timeout_seconds >= 1 && $json.scan_timeout_seconds <= 7200 && $json.publish_timeout_seconds >= 1 && $json.publish_timeout_seconds <= 1800 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c96d1189-86db-5837-bcdb-bef46f46160d",
+      "name": "Configuration blocked",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -100,
+        360
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"configuration_blocked\", message: \"Configure a valid API origin and bounded polling settings before running. The mock permits only literal 127.0.0.1 and send=false.\"})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "1054417c-3d39-5543-9062-bc697a33ea99",
+      "name": "Start scan job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        180,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configure').first().json.api_base + '/v1/jobs/search' }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({no_llm: $('Configure').first().json.no_llm}) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Configure').first().json.execution_key + ':search' }}"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_WITH_LOCAL_BEARER_CREDENTIAL_ID",
+          "name": "Founder Radar Actions - select your Bearer credential"
+        }
+      }
+    },
+    {
+      "id": "9a516fb9-7d9b-5047-a976-c391a2c4ca2d",
+      "name": "Scan accepted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "58b99924-c53e-56e5-84f9-200ef2abdb1b",
+              "leftValue": "={{ $json.ok === true && $json.accepted === true && /^[a-f0-9]{32}$/.test($json.job_id || '') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a5ad9052-0d64-53a0-85b9-cab1372a9eb0",
+      "name": "Scan poll clock",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        700,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a88f1c49-a76c-5e17-89d7-ef20573b765e",
+              "name": "job_id",
+              "value": "={{ $json.job_id }}",
+              "type": "string"
+            },
+            {
+              "id": "4906812b-857f-5598-91f7-83cc5df0ba5b",
+              "name": "deadline_ms",
+              "value": "={{ Date.now() + $('Configure').first().json.scan_timeout_seconds * 1000 }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "02baa4e4-89fd-5f42-bc66-13cf56da0306",
+      "name": "Wait for scan",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": "={{ $('Configure').first().json.scan_poll_seconds }}",
+        "unit": "seconds"
+      },
+      "webhookId": "49cee117-f89f-5091-aef0-bf31c9ac63da"
+    },
+    {
+      "id": "4b8b23d6-eb6d-5132-ac54-630ff620b61c",
+      "name": "Poll scan job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configure').first().json.api_base + '/v1/jobs/' + $('Scan poll clock').first().json.job_id }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_WITH_LOCAL_BEARER_CREDENTIAL_ID",
+          "name": "Founder Radar Actions - select your Bearer credential"
+        }
+      }
+    },
+    {
+      "id": "9375050c-5fab-51f9-bef2-2a46e208e40c",
+      "name": "Scan done?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5f67d8d2-2e67-52ff-88a0-9b0f7b8cb5ed",
+              "leftValue": "={{ $json.ok === true && $json.job?.status === 'done' && $json.job?.exit_code === 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b232586d-78b1-588f-abd8-80b6c7decb81",
+      "name": "Scan partial?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1480,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9452ff74-90c3-51d3-af5a-98cfe5532869",
+              "leftValue": "={{ $json.job?.status === 'partial' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "df7098f1-af48-53d4-a2c7-f84e6baaf56d",
+      "name": "Scan failed or interrupted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1480,
+        440
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "533119e1-95ed-5905-8c5d-b756380e59b9",
+              "leftValue": "={{ ['failed','interrupted'].includes($json.job?.status) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ce01ea1c-0706-570e-880e-08a15c74ac48",
+      "name": "Scan pending within limits?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1220,
+        660
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "34df6a14-a86d-5701-a0d6-a43ff0981bc2",
+              "leftValue": "={{ $json.ok === true && ['queued','running'].includes($json.job?.status) && $runIndex + 1 < $('Configure').first().json.scan_max_polls && Date.now() < $('Scan poll clock').first().json.deadline_ms }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0b15e3ea-215f-5e0a-83e8-0a65574ca179",
+      "name": "Scan partial - review",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1780,
+        220
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"scan_partial\", message: \"Scan finished partially. Stop and inspect the returned job output/dashboard; no automatic continuation or resubmission.\", job: $json.job || {}, dashboard_url: $json.job?.dashboard_url || null, telegram_requested: false, scan_job_id: $('Scan poll clock').first().json.job_id})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "8f8e7ca9-5ebd-520d-8591-f79690952532",
+      "name": "Scan failed - review",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1780,
+        440
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"scan_failed_or_interrupted\", message: \"Scan failed or was interrupted. Inspect job.error/stdout/stderr. An interrupted mutation may have had side effects; do not automatically submit a new job.\", job: $json.job || {}, dashboard_url: $json.job?.dashboard_url || null, telegram_requested: false, scan_job_id: $('Scan poll clock').first().json.job_id})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b544571b-8585-5801-9800-36ed3490b9de",
+      "name": "Scan polling stopped",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        940,
+        880
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"scan_polling_stopped\", message: \"Polling limit reached or the response/status is invalid. The server job may still be running; stopping this workflow does not cancel it. Check this same job before taking any further action.\", job: $json.job || {}, dashboard_url: $json.job?.dashboard_url || null, telegram_requested: false, scan_job_id: $('Scan poll clock').first().json.job_id})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "274a75cc-c05d-50b2-9c14-0d3bca03177b",
+      "name": "Scan response invalid",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        880
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"scan_acceptance_invalid\", message: \"The start response did not contain a valid accepted job. Inspect the start HTTP output; do not infer completion or automatically create a fresh job.\"})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "59bdc4fc-eb36-5572-858b-3749ed019e64",
+      "name": "Run publish checks?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1780,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cd9b740b-c7ba-5f68-8c4f-26963b473791",
+              "leftValue": "={{ $('Configure').first().json.publish_enabled === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "da34a802-832e-5552-9154-b037113fb525",
+      "name": "Scan only - dashboard",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2050,
+        -220
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"scan_done_publish_skipped\", message: \"Scan finished successfully. Publish checks were disabled. No Telegram send was requested.\", job: $json.job || {}, dashboard_url: $json.job?.dashboard_url || null, telegram_requested: false, scan_job_id: $('Scan poll clock').first().json.job_id})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "93b956dd-d76d-55a7-a0ac-1d4d7cd07833",
+      "name": "Start gated publish job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2050,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configure').first().json.api_base + '/v1/jobs/publish' }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({send: $('Configure').first().json.send_telegram}) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Configure').first().json.execution_key + ':publish' }}"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_WITH_LOCAL_BEARER_CREDENTIAL_ID",
+          "name": "Founder Radar Actions - select your Bearer credential"
+        }
+      }
+    },
+    {
+      "id": "982cabc6-58f0-5e31-97a8-e8230dec133a",
+      "name": "Publish accepted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2310,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0500f4c2-4440-5dd7-b0a4-c0ad492b6978",
+              "leftValue": "={{ $json.ok === true && $json.accepted === true && /^[a-f0-9]{32}$/.test($json.job_id || '') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8546920c-da17-5a6a-a23e-c79197b70748",
+      "name": "Publish poll clock",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2570,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2bf9961b-4b27-59d3-8aa8-27ad3911ebde",
+              "name": "job_id",
+              "value": "={{ $json.job_id }}",
+              "type": "string"
+            },
+            {
+              "id": "541c492e-f5f3-5fdf-bbff-f92dcee3c05c",
+              "name": "deadline_ms",
+              "value": "={{ Date.now() + $('Configure').first().json.publish_timeout_seconds * 1000 }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "62352a91-e405-55bc-9250-871b6d164d4d",
+      "name": "Wait for publish",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2830,
+        0
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": "={{ $('Configure').first().json.publish_poll_seconds }}",
+        "unit": "seconds"
+      },
+      "webhookId": "38f59ab5-b19b-53d5-8485-899e069721ea"
+    },
+    {
+      "id": "bcafa977-56ee-513c-8df0-40c3f08c4e58",
+      "name": "Poll publish job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3090,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configure').first().json.api_base + '/v1/jobs/' + $('Publish poll clock').first().json.job_id }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_WITH_LOCAL_BEARER_CREDENTIAL_ID",
+          "name": "Founder Radar Actions - select your Bearer credential"
+        }
+      }
+    },
+    {
+      "id": "c77f049e-1296-5fd7-b8e9-2cb55cbecb59",
+      "name": "Publish done?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3350,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "22252315-5a4a-51fb-9759-474158c836df",
+              "leftValue": "={{ $json.ok === true && $json.job?.status === 'done' && $json.job?.exit_code === 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d65daf79-ea8d-56d9-8a73-297143800158",
+      "name": "Publish partial?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3350,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3cf66d1e-be40-5dc3-815a-d0fdf64ea77e",
+              "leftValue": "={{ $json.job?.status === 'partial' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2b8a73b7-2831-5d1f-a6bd-ebeb3831b0c2",
+      "name": "Publish failed or interrupted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3350,
+        440
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2b526a9c-6816-5a4f-be68-362f829e7526",
+              "leftValue": "={{ ['failed','interrupted'].includes($json.job?.status) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7ff8982e-9c63-5a76-9445-e87b33b33b3a",
+      "name": "Publish pending within limits?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3090,
+        660
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f189413c-4051-5b57-a077-925877ffc92d",
+              "leftValue": "={{ $json.ok === true && ['queued','running'].includes($json.job?.status) && $runIndex + 1 < $('Configure').first().json.publish_max_polls && Date.now() < $('Publish poll clock').first().json.deadline_ms }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4209e481-b042-5f05-9349-056367af8031",
+      "name": "Publish partial - review",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3650,
+        220
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"publish_partial\", message: \"Publish finished partially. Stop and inspect the returned job output/dashboard; no automatic continuation or resubmission.\", job: $json.job || {}, dashboard_url: $json.job?.dashboard_url || null, telegram_requested: $('Configure').first().json.send_telegram, scan_job_id: $('Scan poll clock').first().json.job_id})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "4145e907-d8f6-5b77-b73d-8904bd1c0476",
+      "name": "Publish failed - review",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3650,
+        440
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"publish_failed_or_interrupted\", message: \"Publish failed or was interrupted. Inspect job.error/stdout/stderr. An interrupted mutation may have had side effects; do not automatically submit a new job.\", job: $json.job || {}, dashboard_url: $json.job?.dashboard_url || null, telegram_requested: $('Configure').first().json.send_telegram, scan_job_id: $('Scan poll clock').first().json.job_id})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c0ba2d1b-eded-5a39-a71a-10c010609ed3",
+      "name": "Publish polling stopped",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2810,
+        880
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"publish_polling_stopped\", message: \"Polling limit reached or the response/status is invalid. The server job may still be running; stopping this workflow does not cancel it. Check this same job before taking any further action.\", job: $json.job || {}, dashboard_url: $json.job?.dashboard_url || null, telegram_requested: $('Configure').first().json.send_telegram, scan_job_id: $('Scan poll clock').first().json.job_id})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f5bad7de-0568-584c-b359-49de764a9d26",
+      "name": "Publish response invalid",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2310,
+        880
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(({outcome: \"publish_acceptance_invalid\", message: \"The start response did not contain a valid accepted job. Inspect the start HTTP output; do not infer completion or automatically create a fresh job.\"})) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "9167072c-f6df-5e79-9d4a-1daae43e2619",
+      "name": "Result and dashboard",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3650,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({outcome: $('Configure').first().json.send_telegram ? 'publish_completed_send_requested' : 'publish_checks_passed_no_telegram',message: $('Configure').first().json.send_telegram ? 'Publish completed with send requested. See the returned CLI output for delivery confirmation.' : 'Publish checks completed successfully. No Telegram notification was requested.',scan_job_id: $('Scan poll clock').first().json.job_id, publish_job_id: $json.job.id,dashboard_url: $json.job.dashboard_url || null, telegram_requested: $('Configure').first().json.send_telegram,job: $json.job}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b561c0c7-af9b-52a4-abde-6c4b52d89a12",
+      "name": "Stop - operator review",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        1180
+      ],
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "={{ JSON.stringify($json) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Manual start": {
+      "main": [
+        [
+          {
+            "node": "Configure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "06:30 London - DISABLED": {
+      "main": [
+        [
+          {
+            "node": "Configure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure": {
+      "main": [
+        [
+          {
+            "node": "Configuration is safe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration is safe?": {
+      "main": [
+        [
+          {
+            "node": "Start scan job",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Configuration blocked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start scan job": {
+      "main": [
+        [
+          {
+            "node": "Scan accepted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan accepted?": {
+      "main": [
+        [
+          {
+            "node": "Scan poll clock",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scan response invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan poll clock": {
+      "main": [
+        [
+          {
+            "node": "Wait for scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for scan": {
+      "main": [
+        [
+          {
+            "node": "Poll scan job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll scan job": {
+      "main": [
+        [
+          {
+            "node": "Scan done?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan done?": {
+      "main": [
+        [
+          {
+            "node": "Run publish checks?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scan partial?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan partial?": {
+      "main": [
+        [
+          {
+            "node": "Scan partial - review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scan failed or interrupted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan failed or interrupted?": {
+      "main": [
+        [
+          {
+            "node": "Scan failed - review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scan pending within limits?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan pending within limits?": {
+      "main": [
+        [
+          {
+            "node": "Wait for scan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scan polling stopped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run publish checks?": {
+      "main": [
+        [
+          {
+            "node": "Start gated publish job",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scan only - dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start gated publish job": {
+      "main": [
+        [
+          {
+            "node": "Publish accepted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish accepted?": {
+      "main": [
+        [
+          {
+            "node": "Publish poll clock",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish response invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish poll clock": {
+      "main": [
+        [
+          {
+            "node": "Wait for publish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for publish": {
+      "main": [
+        [
+          {
+            "node": "Poll publish job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll publish job": {
+      "main": [
+        [
+          {
+            "node": "Publish done?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish done?": {
+      "main": [
+        [
+          {
+            "node": "Result and dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish partial?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish partial?": {
+      "main": [
+        [
+          {
+            "node": "Publish partial - review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish failed or interrupted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish failed or interrupted?": {
+      "main": [
+        [
+          {
+            "node": "Publish failed - review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish pending within limits?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish pending within limits?": {
+      "main": [
+        [
+          {
+            "node": "Wait for publish",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish polling stopped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration blocked": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan partial - review": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan failed - review": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan polling stopped": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan response invalid": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish partial - review": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish failed - review": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish polling stopped": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish response invalid": {
+      "main": [
+        [
+          {
+            "node": "Stop - operator review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/London",
+    "executionTimeout": 9000,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}

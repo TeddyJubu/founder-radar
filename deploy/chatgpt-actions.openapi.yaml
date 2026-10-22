@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: UK Founder Radar — ChatGPT Actions
-  version: "1.0.0"
+  version: "1.1.0"
   description: |
     Authenticated product-ops API for the UK Founder Radar Custom GPT.
     Wraps allowlisted `founder-radar` CLI commands only.
@@ -9,7 +9,10 @@ info:
     Hard rules for the GPT:
     - Never invent Fit/Edge scores or company lists — return CLI output only.
     - For today / search, prefer the dashboard URL over dumping companies into chat.
-    - Poll async jobs until status is done or failed.
+    - Poll until done, partial, failed, or interrupted; only done is full success.
+    - Supply a stable Idempotency-Key for every async operation and its retries.
+    - Never replay an interrupted operation automatically or publish after partial search.
+    - Search already writes SQLite and syncs the Google Sheet.
     - Out of scope: systemd, deploy, git, `.env` edits, `forget`, `db restore`.
 servers:
   - url: https://actions.srv1821489.hstgr.cloud
@@ -144,6 +147,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CliResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+
   /v1/publish-check:
     post:
       operationId: publishCheck
@@ -155,21 +163,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CliResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+
   /v1/publish:
     post:
       operationId: publish
-      summary: Publish path; only endpoint that may Telegram-ping when send=true
+      summary: Legacy synchronous publish; prefer startPublish for retry-safe automation
       requestBody:
         required: false
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
                 send:
                   type: boolean
                   default: false
-                  description: When true, push the dashboard ping to Telegram
+                  description: Strict JSON boolean. When true, push the dashboard ping only if the CLI publish gate passes
       responses:
         "200":
           description: Publish result
@@ -177,6 +191,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CliResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+
   /v1/today-qa:
     post:
       operationId: todayQa
@@ -188,16 +207,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CliResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+
   /v1/jobs/search:
     post:
       operationId: startSearch
       summary: Start an async scan (poll /v1/jobs/{id}; prefer dashboard URL)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: false
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
                 fund:
                   type: string
@@ -206,6 +233,12 @@ paths:
                   type: string
                 since:
                   type: string
+                fund_key:
+                  type: string
+                  description: Alias of fund; when both are present they must agree
+                source_key:
+                  type: string
+                  description: Alias of source; when both are present they must agree
                 no_llm:
                   type: boolean
                   default: false
@@ -216,21 +249,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobAccepted"
+        "200":
+          $ref: "#/components/responses/JobReused"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+        "503":
+          $ref: "#/components/responses/JobStoreUnavailable"
+
   /v1/jobs/rescore:
     post:
       operationId: startRescore
       summary: Start an async rescore (optional --all)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: false
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
                 all:
                   type: boolean
                   default: false
                   description: Pass --all to founder-radar rescore
+                all_companies:
+                  type: boolean
+                  description: Alias of all; when both are present they must agree
       responses:
         "202":
           description: Job accepted
@@ -238,10 +286,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobAccepted"
+        "200":
+          $ref: "#/components/responses/JobReused"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+        "503":
+          $ref: "#/components/responses/JobStoreUnavailable"
+
+  /v1/jobs/publish:
+    post:
+      operationId: startPublish
+      summary: Async existing CLI publish gate and Today QA; Telegram send defaults false
+      description: No flags bypass the CLI gate. May update SQLite/Sheet even when send is false.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                send:
+                  type: boolean
+                  default: false
+                  description: Strict JSON boolean; strings, numbers, and null are rejected
+      responses:
+        "202":
+          description: New job accepted or existing active job reused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "200":
+          $ref: "#/components/responses/JobReused"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+        "503":
+          $ref: "#/components/responses/JobStoreUnavailable"
   /v1/jobs/{id}:
     get:
       operationId: jobStatus
-      summary: Poll async job until done or failed
+      summary: Poll until done, partial, failed, or interrupted
       parameters:
         - name: id
           in: path
@@ -264,6 +355,45 @@ paths:
         "404":
           description: Unknown job id
 components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Required for retry-safe automation. Reuse the same key for retries of
+        one normalized operation. Different commands/arguments with the same
+        key return 409. Omitted keys retain legacy fresh-job behavior.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
+  responses:
+    JobReused:
+      description: Existing terminal job reused; poll its result, never start a new key automatically
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/JobAccepted"
+    BadRequest:
+      description: Invalid parameters; boolean strings/numbers/null, conflicting aliases, and unknown fields are rejected
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    JobConflict:
+      description: idempotency_conflict or mutation_in_progress; a busy rejection does not create a job
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    JobStoreUnavailable:
+      description: Stored state is unreadable; fail closed and request operator review
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
   securitySchemes:
     bearerAuth:
       type: http
@@ -273,6 +403,21 @@ components:
         `/opt/founder-radar/.env`. Header name Authorization,
         value `Bearer <key>`.
   schemas:
+    ApiError:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: string
+        message:
+          type: string
+        job_id:
+          type: string
+          description: Active job id when known for mutation_in_progress
+        poll:
+          type: string
     CliResult:
       type: object
       properties:
@@ -302,10 +447,13 @@ components:
           type: boolean
         accepted:
           type: boolean
+        reused:
+          type: boolean
         job_id:
           type: string
         status:
           type: string
+          enum: [queued, running, done, partial, failed, interrupted]
         dashboard_url:
           type: string
           nullable: true
@@ -315,6 +463,7 @@ components:
           type: string
     Job:
       type: object
+      description: Outer ok reports request success; job.status and exit_code report command outcome. Search exit 1 is partial; interrupted jobs are never replayed.
       properties:
         id:
           type: string
@@ -322,7 +471,7 @@ components:
           type: string
         status:
           type: string
-          enum: [queued, running, done, failed]
+          enum: [queued, running, done, partial, failed, interrupted]
         created_at:
           type: number
         updated_at:
@@ -342,3 +491,8 @@ components:
           nullable: true
         message:
           type: string
+        result:
+          description: Parsed CLI stdout JSON when available; absent for non-JSON output. The CLI exit code remains authoritative.
+        meta:
+          type: object
+          additionalProperties: true

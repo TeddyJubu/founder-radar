@@ -12,10 +12,11 @@ from radar.chatgpt_actions import auth, jobs, runner, server
 
 
 @pytest.fixture(autouse=True)
-def _api_key(monkeypatch):
+def _api_key(monkeypatch, tmp_path):
     monkeypatch.setenv("RADAR_CHATGPT_API_KEY", "test-secret-key-32chars-xxxxxx")
     monkeypatch.setenv("RADAR_WEB_DOMAIN", "radar.example.test")
     monkeypatch.setenv("RADAR_BIN", "founder-radar")
+    monkeypatch.setenv("RADAR_CHATGPT_JOBS_DIR", str(tmp_path / "jobs"))
 
 
 def test_auth_fail_closed_when_key_unset(monkeypatch):
@@ -209,22 +210,22 @@ def test_rescore_job_respects_all_flag(monkeypatch, tmp_path: Path):
     headers = {"Authorization": "Bearer test-secret-key-32chars-xxxxxx"}
     seen = {}
 
-    def fake_runner(job):
-        seen["argv"] = list(job.argv)
-        job.status = "done"
-        job.exit_code = 0
-        job.stdout = "{}"
-        jobs.save_job(job)
-        return job
+    def fake_runner(argv, **kwargs):
+        seen["argv"] = list(argv)
+        return runner.RunResult(list(argv), 0, "{}", "")
 
-    monkeypatch.setattr(jobs, "spawn_job", lambda job, **k: fake_runner(job) or job)
+    monkeypatch.setattr(jobs, "run_argv", fake_runner)
 
     status, body, _ = server.handle_request(
         "POST", "/v1/jobs/rescore", headers, body={"all": True}
     )
     assert status == 202
+    job_id = json.loads(body)["job_id"]
+    deadline = time.monotonic() + 5
+    while jobs.load_job(job_id).status not in jobs.TERMINAL_STATUSES and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert jobs.load_job(job_id).status == "done"
     assert "--all" in seen["argv"]
-    assert json.loads(body)["job_id"]
 
 
 def test_job_not_found():
