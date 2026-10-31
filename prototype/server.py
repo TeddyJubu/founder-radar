@@ -1273,7 +1273,7 @@ def _funding_phrase(gbp: Any, original: Any) -> str:
     return phrase + " raised"
 
 
-def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = None) -> dict:
+def build_today(conn: sqlite3.Connection, limit: int = 100, fund: str | None = None) -> dict:
     config = _config(conn)
     vehicles = _vehicles(conn)
     today = date.today()
@@ -1387,18 +1387,21 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
         fund = None                       # "show all funds" overrides a focus
     elif fund is None and focus is not None:
         fund = focus.fund                 # a focus narrows Today by default
+    focused_ids = None
     if fund:
         # `?fund=outward` (the link a Telegram fund scan replies with): only
         # companies with a live shortlist/watchlist match for that fund, even
-        # when another fund is their best fit.
+        # when another fund is their best fit. The name list stays complete
+        # so the "N ready to review" count can be opened in full.
         sql = ("SELECT DISTINCT company_id FROM score WHERE fund_key = ? "
                "AND tier IN (?, ?)" + (" AND config_hash = ?" if config_hash else ""))
-        fits = {r["company_id"] for r in conn.execute(
+        focused_ids = {r["company_id"] for r in conn.execute(
             sql, (fund, *REVIEWABLE, *((config_hash,) if config_hash else ())))}
-        passing = [r for r in passing if r["company_id"] in fits]
 
     out = []
-    for r in passing[: max(0, int(limit))]:
+    directory = []
+    cap = max(0, int(limit))
+    for r in passing:
         vehicle = vehicles.get(r["vehicle_key"] or "", {})
         phrase, exact = _age_phrase(r["incorporated_on"], today)
 
@@ -1443,7 +1446,15 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
                  FROM company_source WHERE company_id = ?
                 ORDER BY first_seen DESC""",
             (r["company_id"],)) if _is_http_url(s["source_url"])]
-        source = next(
+        def _workbook(url: str) -> bool:
+            path = str(url or "").lower().split("?", 1)[0].split("#", 1)[0]
+            return path.endswith(".xlsx")
+
+        pages = [
+            item for item in sources
+            if item["source_key"] != "companies_house" and not _workbook(item["source_url"])
+        ]
+        source = pages[0] if pages else next(
             (item for item in sources if item["source_key"] != "companies_house"),
             sources[0] if sources else None,
         )
@@ -1452,6 +1463,22 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
             # malformed values such as `https://` without leaking a card that
             # cannot be verified by a human.
             continue
+        from radar.sources.innovate_uk import page_url
+
+        directory.append({
+            "company_id": r["company_id"],
+            "name": r["canonical_name"],
+            "fund": r["fund_key"],
+            "one_liner": r["one_liner"] or "",
+        })
+        if focused_ids is not None and r["company_id"] not in focused_ids:
+            continue
+        if len(out) >= cap:
+            continue
+        source = dict(source)
+        source["open_url"] = page_url(source["source_url"], source.get("external_id"))
+        for item in sources:
+            item["open_url"] = page_url(item["source_url"], item.get("external_id"))
 
         components = [dict(c) for c in conn.execute(
             """SELECT key, label, sub_score, weight, contribution, evidence
@@ -1544,6 +1571,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 20, fund: str | None = No
     return {
         "date": today.isoformat(),
         "companies": out,
+        "directory": directory,
         "ready_company_ids": sorted(ready),
         "totals": {
             "reviewable": len(out),
@@ -1737,10 +1765,10 @@ def admin_get(conn: sqlite3.Connection, path: str) -> tuple[int, dict]:
             from radar import focus as focus_mod
 
             current = focus_mod.active(db)
+            cfg, _ = settings.current_config(db)
             return 200, {"active": current.as_dict() if current else None,
                          "rotation": focus_mod.rotation(db),
-                         "funds": [{"key": k, "name": focus_mod.FUND_NAMES[k]}
-                                   for k in focus_mod.FUND_KEYS],
+                         "funds": [{"key": f.key, "name": f.name} for f in cfg.funds],
                          "weekdays": list(focus_mod.WEEKDAYS)}
         if path == "/api/admin/changes":
             return 200, {"changes": settings.changes_view(db)}
@@ -1795,6 +1823,35 @@ def admin_post(conn: sqlite3.Connection, path: str, body: dict) -> tuple[int, di
                 log.warning("admin sources: sheet write failed: %s", exc)
                 return 502, {"error": "Google Sheet could not be updated; "
                                       "nothing was changed"}
+        if path == "/api/admin/funds/pause":
+            fund_key, paused = body.get("fund_key"), body.get("paused")
+            if not isinstance(fund_key, str) or not isinstance(paused, bool):
+                return 400, {"error": "fund_key and paused (true/false) are required"}
+            try:
+                return 200, settings.set_fund_paused(db, fund_key, paused, note=note).as_dict()
+            except settings.UnknownVehicle:
+                return 404, {"error": f"unknown fund {fund_key!r}"}
+            except settings.SheetUnavailable as exc:
+                log.warning("admin fund pause: sheet write failed: %s", exc)
+                return 502, {"error": "Google Sheet could not be updated; nothing was changed"}
+        if path == "/api/admin/funds/add":
+            try:
+                return 200, settings.add_fund(
+                    db, str(body.get("name") or ""),
+                    stage_min=body.get("stage_min"), stage_max=body.get("stage_max"),
+                    cheque_min=body.get("cheque_min"), cheque_max=body.get("cheque_max"),
+                    geo_rule=str(body.get("geo_rule") or "HARD"),
+                    geo_values=body.get("geo_values"),
+                    sectors_plus=body.get("sectors_plus"),
+                    sectors_minus=body.get("sectors_minus"),
+                    one_liner=str(body.get("one_liner") or ""),
+                    note=note,
+                ).as_dict()
+            except settings.FundInvalid as exc:
+                return 400, {"error": "invalid fund", "errors": exc.errors}
+            except settings.SheetUnavailable as exc:
+                log.warning("admin add fund: sheet write failed: %s", exc)
+                return 502, {"error": "Google Sheet could not be updated; nothing was changed"}
         if path == "/api/admin/funds":
             changes = body.get("changes")
             fund_key, vehicle_key = body.get("fund_key"), body.get("vehicle_key")
@@ -1816,16 +1873,18 @@ def admin_post(conn: sqlite3.Connection, path: str, body: dict) -> tuple[int, di
             from radar import focus as focus_mod
 
             try:
+                live, _ = settings.current_config(db)
+                allowed = [{"key": f.key, "name": f.name} for f in live.funds]
                 if path.endswith("/rotation"):
                     plan = body.get("plan")
                     if not isinstance(plan, dict):
                         return 400, {"error": "plan must be an object of weekday → fund"}
-                    focus_mod.set_rotation(db, plan, note=note)
+                    focus_mod.set_rotation(db, plan, note=note, allowed=allowed)
                 elif body.get("clear"):
                     focus_mod.clear_focus(db, note=note)
                 else:
                     focus_mod.set_focus(db, str(body.get("fund") or ""),
-                                        body.get("days", 7), note=note)
+                                        body.get("days", 7), note=note, allowed=allowed)
             except focus_mod.FocusInvalid as exc:
                 return 400, {"error": str(exc)}
             current = focus_mod.active(db)
@@ -2009,8 +2068,13 @@ def make_handler(conn: sqlite3.Connection):
                 with write_lock:
                     self._undo(body)
             elif route == "admin":
-                with write_lock:
-                    code, payload = admin_post(conn, urlsplit(self.path).path, body)
+                try:
+                    with write_lock:
+                        code, payload = admin_post(conn, urlsplit(self.path).path, body)
+                except Exception as exc:  # noqa: BLE001 - a dropped connection becomes a blank 502
+                    log.exception("admin write failed")
+                    self._json(500, {"error": f"Could not save that ({type(exc).__name__})."})
+                    return
                 self._send(code, json.dumps(payload, default=str).encode(),
                            "application/json")
             else:

@@ -134,6 +134,22 @@ def _shown(key: str, type_hint: str, value: Any) -> str:
     return _display(value)
 
 
+def source_health_view(db: Any) -> dict[str, dict[str, str]]:
+    """Latest health row per source, so a failure is not the only description."""
+    seen: dict[str, dict[str, str]] = {}
+    try:
+        rows = db.query(
+            "SELECT source_key, status, note FROM source_health ORDER BY observed_on DESC")
+    except Exception:  # noqa: BLE001 - older databases have no health table
+        return seen
+    for row in rows:
+        seen.setdefault(row["source_key"], {
+            "status": row["status"] or "",
+            "note": row["note"] or "",
+        })
+    return seen
+
+
 def source_quality(db: Any) -> dict[str, dict[str, int]]:
     """Per source: companies Aryan decided, and how many he kept.
 
@@ -164,6 +180,7 @@ def settings_view(db: Any) -> dict[str, Any]:
     stages = _stage_of()
     builtin = {s.key for s in DEFAULT_SOURCES}
     quality = source_quality(db)
+    health = source_health_view(db)
     return {
         "config_hash": cfg.hash(),
         "config_source": source,
@@ -184,10 +201,12 @@ def settings_view(db: Any) -> dict[str, Any]:
         "sources": [
             {"key": s.key, "track": s.track, "enabled": s.enabled, "note": s.note,
              "url": s.url, "funds": list(s.funds), "removable": s.key not in builtin,
+             "health": health.get(s.key),
              **quality.get(s.key, {"decided": 0, "kept": 0})}
             for s in cfg.sources
         ],
-        "fund_keys": list(FUND_KEYS),
+        "fund_keys": [f.key for f in cfg.funds] or list(FUND_KEYS),
+        "funds": [{"key": f.key, "name": f.name} for f in cfg.funds],
     }
 
 
@@ -410,15 +429,16 @@ class SourceInvalid(ValueError):
 FUND_KEYS = ("dsw", "northstar", "outward", "anticus")
 
 
-def _clean_funds(funds: Any) -> list[str]:
+def _clean_funds(funds: Any, known: Any = None) -> list[str]:
+    allowed = tuple(known) if known else FUND_KEYS
     raw = funds if isinstance(funds, (list, tuple)) else re.split(r"[,\s]+", str(funds or ""))
     out = []
     for f in raw:
         f = str(f).strip().lower()
         if not f:
             continue
-        if f not in FUND_KEYS:
-            raise SourceInvalid(f"unknown fund {f!r} — use {', '.join(FUND_KEYS)}")
+        if f not in allowed:
+            raise SourceInvalid(f"unknown fund {f!r} — use {', '.join(allowed)}")
         if f not in out:
             out.append(f)
     return out
@@ -476,11 +496,13 @@ def add_feed_source(db: Any, name: str, url: str, *, funds: Any = None,
     url = (url or "").strip()
     if not re.match(r"^https://[^\s/]+\.[^\s]+$", url):
         raise SourceInvalid("the feed URL must start with https://")
-    fund_list = _clean_funds(funds)
     cfg, _ = current_config(db)
+    fund_list = _clean_funds(funds, [f.key for f in cfg.funds])
     if any(s.key == key for s in cfg.sources):
         raise SourceInvalid(f"a source called {key} already exists")
-    (check or _check_feed)(key, url)
+    resolved = (check or _check_feed)(key, url)
+    if isinstance(resolved, str) and resolved.startswith("https://"):
+        url = resolved
 
     from radar.config.models import SourceConfig
 
@@ -496,20 +518,63 @@ def add_feed_source(db: Any, name: str, url: str, *, funds: Any = None,
     return Applied({key: "added"}, digest, sheet_sync, summary, qa_needed)
 
 
-def _check_feed(key: str, url: str) -> None:
-    from radar.fetch.http import HttpClient
+_FEED_LINK = re.compile(
+    r"<link\b[^>]*rel=[\"']alternate[\"'][^>]*>",
+    re.I,
+)
+_HREF = re.compile(r"href=[\"']([^\"']+)[\"']", re.I)
+_TYPE = re.compile(r"type=[\"']([^\"']+)[\"']", re.I)
+
+
+def _feed_link(html: str, page: str) -> str:
+    """The RSS/Atom href on an ordinary web page, if the page declares one."""
+    from urllib.parse import urljoin
+
+    for tag in _FEED_LINK.findall(html or ""):
+        kind = (_TYPE.search(tag).group(1) if _TYPE.search(tag) else "").lower()
+        href = _HREF.search(tag)
+        if not href:
+            continue
+        if kind and "rss" not in kind and "atom" not in kind and "xml" not in kind:
+            continue
+        found = urljoin(page, href.group(1).strip())
+        if found.startswith("https://") and found != page:
+            return found
+    return ""
+
+
+def _check_feed(key: str, url: str, *, _depth: int = 0) -> str:
+    """Fetch `url` and return the feed URL that actually parsed.
+
+    A company or programme page is not a feed. When it points at one, that
+    feed is what gets saved. Anything else is a plain error, not a 502.
+    """
+    from radar.fetch.http import HttpClient, RobotsDenied
     from radar.sources._common import rss_feed
 
-    with HttpClient(timeout=10, max_retries=0) as http:
-        resp = http.get(url)
+    try:
+        with HttpClient(timeout=10, max_retries=0) as http:
+            resp = http.get(url)
+    except RobotsDenied as exc:
+        raise SourceInvalid(
+            f"that site asks crawlers not to read this page ({exc})") from exc
+    except Exception as exc:  # noqa: BLE001 - the Control room must say why, not 502
+        raise SourceInvalid(f"could not open that URL ({type(exc).__name__})") from exc
     if not resp.ok:
-        raise SourceInvalid(f"the feed answered HTTP {resp.status}")
+        raise SourceInvalid(f"the page answered HTTP {resp.status}")
     try:
         entries, _ = rss_feed(resp.text, key)
     except Exception as exc:  # noqa: BLE001
-        raise SourceInvalid(f"that URL is not a readable RSS/Atom feed ({exc})") from exc
+        alt = _feed_link(resp.text, url) if _depth < 1 else ""
+        if alt:
+            return _check_feed(key, alt, _depth=_depth + 1)
+        raise SourceInvalid(
+            "that page is not an RSS or Atom feed. Paste the feed address "
+            "itself — it often ends in /feed/ or /rss.xml."
+        ) from exc
     if not entries:
         raise SourceInvalid("the feed has no entries")
+    return url
 
 
 def remove_source(db: Any, key: str, *, note: str | None = None,
@@ -543,7 +608,7 @@ def set_source_funds(db: Any, key: str, funds: Any, *, note: str | None = None,
     index = next((i for i, s in enumerate(sources) if s.key == key), None)
     if index is None:
         raise UnknownSource(key)
-    fund_list = _clean_funds(funds)
+    fund_list = _clean_funds(funds, [f.key for f in cfg.funds])
     before = sources[index]
     if list(before.funds) == fund_list:
         return Applied({}, cfg.hash(), "skipped", {}, False)
@@ -564,7 +629,8 @@ FUND_CRITERIA_TAB = "Fund Criteria"
 #: is held (never loosened) by the loader's own validation.
 VEHICLE_FIELDS: dict[str, str] = {
     "active": "E", "stage_min": "F", "stage_max": "G", "cheque_min": "H",
-    "cheque_max": "I", "max_age_years": "L", "one_liner": "P",
+    "cheque_max": "I", "geo_rule": "J", "geo_values": "K", "max_age_years": "L",
+    "sectors_plus": "N", "sectors_minus": "O", "one_liner": "P",
 }
 
 
@@ -608,6 +674,27 @@ def _vehicle_value(field: str, raw: Any) -> tuple[Any, str]:
         if float(value) != int(value) or not 0 < int(value) <= 30:
             raise ValueError("must be a whole number of years, 1–30")
         return int(value), str(int(value))
+    if field == "geo_rule":
+        rule = (text or "HARD").upper()
+        if rule not in {"HARD", "SOFT"}:
+            raise ValueError("must be HARD or SOFT")
+        return rule, rule
+    if field in ("geo_values", "sectors_plus", "sectors_minus"):
+        from radar.config.models import GATE_ONLY_GEOS, GEOGRAPHIES, SECTORS
+
+        allowed = GEOGRAPHIES + GATE_ONLY_GEOS if field == "geo_values" else SECTORS
+        items = [p.strip().lower().replace(" ", "_") for p in re.split(r"[,;\n]+", text) if p.strip()]
+        canon: list[str] = []
+        bad: list[str] = []
+        for item in items:
+            mapped = canon_enum(item, allowed)
+            if mapped is None:
+                bad.append(item)
+            else:
+                canon.append(mapped)
+        if bad:
+            raise ValueError("unknown value(s): " + ", ".join(bad))
+        return canon, ", ".join(canon)
     return text, text            # one_liner
 
 
@@ -618,7 +705,9 @@ def funds_view(db: Any) -> list[dict[str, Any]]:
          "vehicle_name": v.vehicle_name, "active": v.active, "stage_min": v.stage_min,
          "stage_max": v.stage_max, "cheque_min": v.cheque_min, "cheque_max": v.cheque_max,
          "max_age_years": v.max_age_years, "geo_rule": v.geo_rule,
-         "geo_values": list(v.geo_values), "one_liner": v.one_liner}
+         "geo_values": list(v.geo_values), "sectors_plus": list(v.sectors_plus),
+         "sectors_minus": list(v.sectors_minus),
+         "hard_rejects": dict(v.hard_rejects), "one_liner": v.one_liner}
         for v in cfg.all_vehicles()
     ]
 
@@ -672,6 +761,8 @@ def apply_vehicle(db: Any, fund_key: str, vehicle_key: str, changes: Mapping[str
     if (merged.stage_min and merged.stage_max
             and STAGES.index(merged.stage_min) > STAGES.index(merged.stage_max)):
         errors["stage_min"] = "is later than stage_max"
+    if merged.geo_rule == "HARD" and not merged.geo_values:
+        errors["geo_values"] = "a HARD geography rule needs at least one place"
     if errors:
         raise FundInvalid(errors)
     if not updates:
@@ -689,6 +780,147 @@ def apply_vehicle(db: Any, fund_key: str, vehicle_key: str, changes: Mapping[str
         note=note, sheet_sync=sheet_sync)
     return Applied({f"{label}.{k}": _display(v) for k, v in updates.items()},
                    digest, sheet_sync, summary, qa_needed)
+
+
+def _copy_weights(weights: Any, new_key: str, template: str = "outward") -> Any:
+    """A new fund scores with the template fund's weights until they're edited."""
+    matrix: dict[str, dict[str, dict[str, int]]] = {}
+    for attr, values in weights.matrix.items():
+        matrix[attr] = {}
+        for value, by_fund in values.items():
+            copied = dict(by_fund)
+            if new_key not in copied:
+                copied[new_key] = int(copied.get(template, next(iter(copied.values()), 1)))
+            matrix[attr][value] = copied
+    importance: dict[str, dict[str, int]] = {}
+    for attr, by_fund in weights.importance.items():
+        copied = dict(by_fund)
+        if new_key not in copied:
+            copied[new_key] = int(copied.get(template, 1))
+        importance[attr] = copied
+    return weights.model_copy(update={"matrix": matrix, "importance": importance})
+
+
+def _fund_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (name or "").strip().lower()).strip("_")[:40]
+
+
+def set_fund_paused(db: Any, fund_key: str, paused: bool, *, note: str | None = None,
+                    gateway: Any = AUTO) -> Applied:
+    """Pause or resume every vehicle of a fund. Pausing does not delete it."""
+    cfg, _ = current_config(db)
+    fund = next((f for f in cfg.funds if f.key == fund_key), None)
+    if fund is None:
+        raise UnknownVehicle(fund_key)
+    active = not bool(paused)
+    changed = [v for v in fund.vehicles if v.active != active]
+    if not changed:
+        return Applied({}, cfg.hash(), "skipped", {}, False)
+
+    def write(gw: Any) -> bool:
+        ok = True
+        for vehicle in changed:
+            wrote = _write_vehicle_cells(
+                gw, vehicle.fund_key, vehicle.vehicle_key,
+                {"E": "TRUE" if active else "FALSE"})
+            ok = wrote and ok
+        return ok
+
+    sheet_sync = _sheet_write(gateway, write)
+    funds = [f.model_copy(deep=True) for f in cfg.funds]
+    target = next(f for f in funds if f.key == fund_key)
+    target.vehicles = [
+        v.model_copy(update={"active": active}) for v in target.vehicles
+    ]
+    new_cfg = cfg.model_copy(update={"funds": funds}, deep=True)
+    word = "paused" if paused else "on"
+    digest, summary, qa_needed = _commit(
+        db, new_cfg, kind="fund",
+        rows=[(f"{fund_key}.active", "on" if paused else "paused", word)],
+        note=note, sheet_sync=sheet_sync)
+    return Applied({fund_key: word}, digest, sheet_sync, summary, qa_needed)
+
+
+def add_fund(db: Any, name: str, *, stage_min: str | None = None, stage_max: str | None = None,
+             cheque_min: Any = None, cheque_max: Any = None, geo_rule: str = "HARD",
+             geo_values: Any = None, sectors_plus: Any = None, sectors_minus: Any = None,
+             one_liner: str = "", note: str | None = None, gateway: Any = AUTO) -> Applied:
+    """Add a fund and one vehicle. There is no cap on how many funds exist."""
+    from radar.config.models import Fund, Vehicle
+
+    cfg, _ = current_config(db)
+    label = (name or "").strip()
+    key = _fund_slug(label)
+    errors: dict[str, str] = {}
+    if not key:
+        errors["name"] = "give the fund a name"
+    elif any(f.key == key for f in cfg.funds):
+        errors["name"] = "a fund with that name already exists"
+    fields = {
+        "stage_min": stage_min, "stage_max": stage_max,
+        "cheque_min": cheque_min, "cheque_max": cheque_max,
+        "geo_rule": geo_rule, "geo_values": geo_values,
+        "sectors_plus": sectors_plus, "sectors_minus": sectors_minus,
+        "one_liner": one_liner,
+    }
+    parsed: dict[str, Any] = {}
+    sheet: dict[str, str] = {}
+    for field, raw in fields.items():
+        try:
+            value, text = _vehicle_value(field, raw)
+        except ValueError as exc:
+            errors[field] = str(exc)
+            continue
+        parsed[field] = value
+        sheet[VEHICLE_FIELDS[field]] = text
+    if parsed.get("geo_rule", "HARD") == "HARD" and not parsed.get("geo_values"):
+        errors["geo_values"] = "say where this fund invests, for example yorkshire or uk_wide"
+    if (parsed.get("cheque_min") is not None and parsed.get("cheque_max") is not None
+            and parsed["cheque_min"] > parsed["cheque_max"]):
+        errors["cheque_min"] = "is above cheque_max"
+    if (parsed.get("stage_min") and parsed.get("stage_max")
+            and STAGES.index(parsed["stage_min"]) > STAGES.index(parsed["stage_max"])):
+        errors["stage_min"] = "is later than stage_max"
+    if errors:
+        raise FundInvalid(errors)
+
+    vehicle_key = "main"
+    vehicle = Vehicle(
+        fund_key=key, vehicle_key=vehicle_key, fund_name=label, vehicle_name=label,
+        active=True, stage_min=parsed.get("stage_min"), stage_max=parsed.get("stage_max"),
+        cheque_min=parsed.get("cheque_min"), cheque_max=parsed.get("cheque_max"),
+        geo_rule=parsed.get("geo_rule") or "HARD", geo_values=parsed.get("geo_values") or [],
+        sectors_plus=parsed.get("sectors_plus") or [],
+        sectors_minus=parsed.get("sectors_minus") or [],
+        one_liner=parsed.get("one_liner") or "",
+    )
+    row = {
+        "A": key, "B": vehicle_key, "C": label, "D": label, "E": "TRUE",
+        **sheet,
+    }
+
+    def write(gw: Any) -> bool:
+        from radar.render.sheet import ValueRange
+
+        letters = list("ABCDEFGHIJKLMNOP")
+        values = [row.get(col, "") for col in letters]
+        tab = _quote(FUND_CRITERIA_TAB)
+        grid = gw.batch_get([f"{tab}!A1:A300"]).get(f"{tab}!A1:A300", [])
+        row_no = max(len(grid) + 1, 2)
+        gw.batch_set([ValueRange(f"{tab}!A{row_no}:P{row_no}", [values])], "USER_ENTERED")
+        return True
+
+    sheet_sync = _sheet_write(gateway, write)
+    funds = [f.model_copy(deep=True) for f in cfg.funds]
+    funds.append(Fund(key=key, name=label, vehicles=[vehicle]))
+    new_cfg = cfg.model_copy(update={
+        "funds": funds,
+        "weights": _copy_weights(cfg.weights, key),
+    }, deep=True)
+    digest, summary, qa_needed = _commit(
+        db, new_cfg, kind="fund", rows=[(key, "", "added")],
+        note=note, sheet_sync=sheet_sync)
+    return Applied({key: "added"}, digest, sheet_sync, summary, qa_needed)
 
 
 def rescore_now(db: Any, *, note: str | None = None) -> dict[str, Any]:
@@ -713,7 +945,8 @@ def rescore_now(db: Any, *, note: str | None = None) -> dict[str, Any]:
 __all__ = [
     "AUTO", "Applied", "SettingsInvalid", "SheetUnavailable", "SourceInvalid",
     "UnknownSource", "add_feed_source", "apply_settings", "apply_source",
-    "FundInvalid", "UnknownVehicle", "apply_vehicle", "funds_view",
+    "FundInvalid", "UnknownVehicle", "add_fund", "apply_vehicle", "funds_view",
+    "set_fund_paused",
     "changes_view", "current_config", "remove_source", "rescore_now",
     "set_source_funds", "settings_view",
 ]

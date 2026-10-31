@@ -504,7 +504,27 @@ td .empty { padding: var(--s4) 0; }
     </form>
 
     <h2 class="section-title">Funds</h2>
-    <p class="lede-sm">Each fund's vehicles and their rules. Untick Active to stop matching to a vehicle; untick all of a fund's vehicles to drop the fund. Geography and sector rules are edited in the Fund Criteria tab of the Sheet.</p>
+    <p class="lede-sm">Add a fund, or pause one you are not working with. A paused fund stays here and can be turned back on. There is no limit on how many funds you can keep. The fields below are what the matcher uses: stage, cheque, geography, and sectors. Hard rejects stay fixed.</p>
+    <form class="add-source" id="add-fund" data-testid="add-fund">
+      <h3 class="section-sub">Add a fund</h3>
+      <div class="add-source-grid">
+        <div><label class="field-label" for="fund-name">Name</label>
+          <input id="fund-name" class="field" type="text" maxlength="80" required autocomplete="off" placeholder="e.g. Outward VC"></div>
+        <div><label class="field-label" for="fund-geo">Where it invests</label>
+          <input id="fund-geo" class="field" type="text" required autocomplete="off" placeholder="yorkshire, uk_wide"></div>
+      </div>
+      <div class="vehicle-grid">
+        <div><label class="field-label" for="fund-geo-rule">Geography rule</label>
+          <select id="fund-geo-rule" class="field"><option value="HARD">HARD</option><option value="SOFT">SOFT</option></select></div>
+        <div><label class="field-label" for="fund-sectors">Sectors it wants</label>
+          <input id="fund-sectors" class="field" type="text" autocomplete="off" placeholder="fintech, health"></div>
+        <div><label class="field-label" for="fund-avoid">Sectors it avoids</label>
+          <input id="fund-avoid" class="field" type="text" autocomplete="off"></div>
+        <div><label class="field-label" for="fund-one">One-liner</label>
+          <input id="fund-one" class="field" type="text" maxlength="200" autocomplete="off"></div>
+      </div>
+      <button type="submit" class="btn" id="fund-add" data-testid="fund-add">Add fund</button>
+    </form>
     <div id="funds-list" data-testid="funds-list"><p class="empty">Loading funds…</p></div>
     <p class="msg" id="funds-msg" role="status" hidden></p>
   </section>
@@ -1099,7 +1119,8 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
           '" data-testid="source-funds-' + esc(s.key) + '">' + esc(funds) + '</button></td>' +
         '<td data-testid="source-kept-' + esc(s.key) + '">' + (s.decided ? esc(s.kept + ' of ' + s.decided) +
           ' <span class="cell-sub">' + Math.round(100 * s.kept / s.decided) + '%</span>' : '<span class="muted">—</span>') + '</td>' +
-        '<td class="wrapcell">' + (s.note ? esc(s.note) : '<span class="muted">—</span>') + '</td>' +
+        '<td class="wrapcell">' + (s.note ? esc(s.note) : '<span class="muted">—</span>') +
+          (s.health && s.health.note ? '<span class="cell-sub">' + esc((s.health.status ? s.health.status + ': ' : '') + s.health.note) + '</span>' : '') + '</td>' +
         '<td><button type="button" class="switch" role="switch" data-action="source" data-key="' + esc(s.key) +
           '" aria-checked="' + (s.enabled ? 'true' : 'false') + '" aria-label="' + esc(s.key) +
           '" data-testid="source-toggle-' + esc(s.key) + '">' +
@@ -1110,7 +1131,9 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       '</tr>';
     }).join('') || '<tr><td colspan="7" class="empty">No sources configured.</td></tr>';
     var picks = $('src-funds');
-    if (picks && !picks.childElementCount) {
+    var keys = ((state.settings && state.settings.fund_keys) || []).join(',');
+    if (picks && picks.getAttribute('data-keys') !== keys) {
+      picks.setAttribute('data-keys', keys);
       picks.innerHTML = ((state.settings && state.settings.fund_keys) || []).map(function (k) {
         return '<label class="fund-pick"><input type="checkbox" value="' + esc(k) + '"> ' + esc(fundName(k)) + '</label>';
       }).join('');
@@ -1180,13 +1203,29 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
         return '<option value="' + esc(st) + '"' + (st === cur ? ' selected' : '') + '>' + esc(st.replace(/_/g, ' ')) + '</option>';
       })).join('');
     };
-    $('funds-list').innerHTML = (d.vehicles || []).map(function (v) {
+    var groups = {};
+    (d.vehicles || []).forEach(function (v) {
+      (groups[v.fund_key] = groups[v.fund_key] || []).push(v);
+    });
+    var pause = Object.keys(groups).map(function (key) {
+      var rows = groups[key];
+      var on = rows.some(function (v) { return v.active; });
+      return '<div class="vehicle-head"><strong>' + esc(rows[0].fund_name) + '</strong> ' +
+        '<button type="button" class="switch" role="switch" data-action="fund-pause" data-fund="' + esc(key) +
+        '" data-paused="' + (on ? 'false' : 'true') + '" aria-checked="' + (on ? 'true' : 'false') +
+        '" data-testid="fund-pause-' + esc(key) + '"><span class="switch-track" aria-hidden="true"></span>' +
+        '<span>' + (on ? 'On' : 'Paused') + '</span></button>' +
+        '<span class="cell-sub">The matcher uses the vehicles below. Hard rejects are fixed.</span></div>';
+    }).join('');
+    $('funds-list').innerHTML = pause + ((d.vehicles || []).map(function (v) {
       var id = 'veh-' + v.fund_key + '-' + v.vehicle_key;
+      var rejects = Object.keys(v.hard_rejects || {}).map(function (k) {
+        return k + ': ' + v.hard_rejects[k];
+      }).join(' · ') || 'none';
       return '<form class="vehicle" data-fund="' + esc(v.fund_key) + '" data-vehicle="' + esc(v.vehicle_key) +
           '" data-testid="vehicle-' + esc(v.fund_key) + '-' + esc(v.vehicle_key) + '">' +
         '<div class="vehicle-head"><strong>' + esc(v.fund_name) + '</strong> · ' + esc(v.vehicle_name) +
-          ' <code>' + esc(v.fund_key + '/' + v.vehicle_key) + '</code>' +
-          '<span class="cell-sub">Geography ' + esc(v.geo_rule) + ': ' + esc((v.geo_values || []).join(', ') || 'any') + '</span></div>' +
+          ' <code>' + esc(v.fund_key + '/' + v.vehicle_key) + '</code></div>' +
         '<div class="vehicle-grid">' +
           '<label class="fund-pick"><input type="checkbox" name="active"' + (v.active ? ' checked' : '') + '> Active</label>' +
           '<div><label class="field-label" for="' + id + '-smin">Stage from</label><select id="' + id + '-smin" class="field" name="stage_min">' + stageOpts(v.stage_min) + '</select></div>' +
@@ -1194,12 +1233,19 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
           '<div><label class="field-label" for="' + id + '-cmin">Cheque min</label><input id="' + id + '-cmin" class="field" name="cheque_min" value="' + esc(money(v.cheque_min)) + '" inputmode="numeric" placeholder="£250,000"></div>' +
           '<div><label class="field-label" for="' + id + '-cmax">Cheque max</label><input id="' + id + '-cmax" class="field" name="cheque_max" value="' + esc(money(v.cheque_max)) + '" inputmode="numeric" placeholder="£2,500,000"></div>' +
           '<div><label class="field-label" for="' + id + '-age">Max age (years)</label><input id="' + id + '-age" class="field" name="max_age_years" value="' + esc(v.max_age_years === null || v.max_age_years === undefined ? '' : v.max_age_years) + '" inputmode="numeric"></div>' +
+          '<div><label class="field-label" for="' + id + '-geo-rule">Geography rule</label><select id="' + id + '-geo-rule" class="field" name="geo_rule">' +
+            '<option value="HARD"' + (v.geo_rule === 'HARD' ? ' selected' : '') + '>HARD</option>' +
+            '<option value="SOFT"' + (v.geo_rule === 'SOFT' ? ' selected' : '') + '>SOFT</option></select></div>' +
+          '<div><label class="field-label" for="' + id + '-geo">Places</label><input id="' + id + '-geo" class="field" name="geo_values" value="' + esc((v.geo_values || []).join(', ')) + '"></div>' +
+          '<div><label class="field-label" for="' + id + '-plus">Sectors it wants</label><input id="' + id + '-plus" class="field" name="sectors_plus" value="' + esc((v.sectors_plus || []).join(', ')) + '"></div>' +
+          '<div><label class="field-label" for="' + id + '-minus">Sectors it avoids</label><input id="' + id + '-minus" class="field" name="sectors_minus" value="' + esc((v.sectors_minus || []).join(', ')) + '"></div>' +
         '</div>' +
+        '<p class="cell-sub">Hard rejects: ' + esc(rejects) + '</p>' +
         '<div><label class="field-label" for="' + id + '-one">One-liner</label><input id="' + id + '-one" class="field" name="one_liner" value="' + esc(v.one_liner || '') + '" maxlength="200"></div>' +
         '<p class="row-error" role="alert" hidden></p>' +
         '<button type="submit" class="btn btn-secondary" aria-label="Save ' + esc(v.vehicle_name) + '" data-testid="vehicle-save-' + esc(v.fund_key) + '-' + esc(v.vehicle_key) + '">Save changes</button>' +
       '</form>';
-    }).join('') || '<p class="empty">No funds configured.</p>';
+    }).join('') || '<p class="empty">No funds configured.</p>');
   }
 
   async function saveVehicle(form) {
@@ -1210,13 +1256,18 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     var changes = {};
     var active = form.querySelector('[name="active"]').checked;
     if (active !== !!v.active) changes.active = active;
-    ['stage_min', 'stage_max', 'one_liner'].forEach(function (k) {
+    ['stage_min', 'stage_max', 'one_liner', 'geo_rule'].forEach(function (k) {
       var val = form.querySelector('[name="' + k + '"]').value;
       if (val !== String(v[k] === null || v[k] === undefined ? '' : v[k])) changes[k] = val;
     });
     ['cheque_min', 'cheque_max'].forEach(function (k) {
       var val = form.querySelector('[name="' + k + '"]').value;
       if (val !== money(v[k])) changes[k] = val;
+    });
+    ['geo_values', 'sectors_plus', 'sectors_minus'].forEach(function (k) {
+      var val = form.querySelector('[name="' + k + '"]').value;
+      var current = (v[k] || []).join(', ');
+      if (val !== current) changes[k] = val;
     });
     var age = form.querySelector('[name="max_age_years"]').value;
     if (age !== String(v.max_age_years === null || v.max_age_years === undefined ? '' : v.max_age_years)) changes.max_age_years = age;
@@ -1238,7 +1289,48 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
   }
 
   var FUND_NAMES = { dsw: 'DSW', northstar: 'Northstar', outward: 'Outward VC', anticus: 'Anticus' };
-  function fundName(k) { return FUND_NAMES[k] || k; }
+  function fundName(k) {
+    var funds = (state.settings && state.settings.funds) || (state.focus && state.focus.funds) || [];
+    var hit = funds.filter(function (f) { return f.key === k; })[0];
+    return (hit && hit.name) || FUND_NAMES[k] || k;
+  }
+
+  async function pauseFund(key, turnOn) {
+    var word = turnOn ? 'Turn on' : 'Pause';
+    if (!window.confirm(word + ' ' + fundName(key) + '? It stays in the list either way.')) return;
+    try {
+      var d = await api('/api/admin/funds/pause', { method: 'POST', body: { fund_key: key, paused: !turnOn, note: '' } });
+      await loadFunds();
+      notify($('funds-msg'), fundName(key) + ' is ' + (turnOn ? 'on' : 'paused') + '. Sheet: ' + fmtVal(d.sheet_sync) + '.', 'ok');
+    } catch (e) {
+      notify($('funds-msg'), e.message, 'err');
+    }
+  }
+
+  async function addFund(e) {
+    e.preventDefault();
+    var btn = $('fund-add');
+    btn.disabled = true;
+    try {
+      var d = await api('/api/admin/funds/add', { method: 'POST', body: {
+        name: $('fund-name').value,
+        geo_rule: $('fund-geo-rule').value,
+        geo_values: $('fund-geo').value,
+        sectors_plus: $('fund-sectors').value,
+        sectors_minus: $('fund-avoid').value,
+        one_liner: $('fund-one').value,
+        note: ''
+      } });
+      $('add-fund').reset();
+      await loadFunds();
+      notify($('funds-msg'), 'Fund added. Sheet: ' + fmtVal(d.sheet_sync) + '.', 'ok');
+    } catch (e) {
+      var errs = e.body && e.body.errors;
+      notify($('funds-msg'), errs ? Object.keys(errs).map(function (k) { return k + ': ' + errs[k]; }).join(' · ') : e.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
 
   async function sourceAction(path, body, okText) {
     var msg = $('sources-msg');
@@ -1649,6 +1741,7 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     else if (action === 'source') toggleSource(el.getAttribute('data-key'));
     else if (action === 'source-funds') editSourceFunds(el.getAttribute('data-key'));
     else if (action === 'source-remove') removeSource(el.getAttribute('data-key'));
+    else if (action === 'fund-pause') pauseFund(el.getAttribute('data-fund'), el.getAttribute('data-paused') === 'true');
     else if (action === 'help') {
       var help = document.getElementById(el.getAttribute('aria-controls'));
       var open = el.getAttribute('aria-expanded') !== 'true';
@@ -1685,6 +1778,7 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     });
     focusPost('/api/admin/rotation', { plan: plan, note: '' }, 'Weekly rotation saved.');
   });
+  $('add-fund').addEventListener('submit', addFund);
   $('funds-list').addEventListener('submit', function (e) {
     var form = e.target.closest && e.target.closest('form.vehicle');
     if (!form) return;

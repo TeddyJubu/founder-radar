@@ -42,7 +42,7 @@ import zipfile
 from datetime import date, timedelta
 from typing import Iterable, Iterator
 from html import unescape
-from urllib.parse import urljoin, urlsplit, quote
+from urllib.parse import urljoin, urlsplit, quote, parse_qs
 from xml.etree import ElementTree as ET
 
 from radar.sources._common import (
@@ -214,8 +214,23 @@ def citation_url(url: str, reference: str, company: str) -> str:
     Cite the actual downloaded workbook (or official publication for an offline
     capture) and retain the participant/project lookup in a descriptive fragment.
     The fragment is a human lookup aid, not a claimed XLSX deep-link feature.
+    The card opens `page_url` instead, so a click does not download the file.
     """
     return f"{url.split('#', 1)[0]}#project={quote(reference, safe='')}&participant={quote(company, safe='')}"
+
+
+def page_url(url: str, external_id: str | None = None) -> str:
+    """A page a person can open. Workbook links download the whole spreadsheet."""
+    text = (url or "").strip()
+    parts = urlsplit(text)
+    if not parts.path.lower().endswith(".xlsx"):
+        return text
+    ref = (parse_qs(parts.fragment).get("project") or [""])[0]
+    if not ref and external_id:
+        ref = str(external_id).split(":", 1)[0]
+    if ref and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{1,40}", ref):
+        return f"https://gtr.ukri.org/projects?ref={quote(ref, safe='')}"
+    return PUBLICATION
 
 
 # ---------------------------------------------------------------- xlsx reading

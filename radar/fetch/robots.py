@@ -29,6 +29,19 @@ class RobotsEntry:
     reachable: bool = True
 
 
+def _reuse(previous: RobotsEntry, now: float) -> RobotsEntry:
+    """Keep the last real policy, but don't refetch robots.txt on every URL."""
+    return RobotsEntry(previous.parser, previous.allow_all, now, reachable=True)
+
+
+def _looks_like_robots(body: str) -> bool:
+    """True for a robots file. An HTML challenge page is not one."""
+    text = (body or "").lstrip().lower()
+    if not text or text.startswith("<!") or text.startswith("<html") or text.startswith("<head"):
+        return False
+    return True
+
+
 def robots_url(url: str) -> str:
     parts = urlsplit(url)
     return urlunsplit((parts.scheme or "https", parts.netloc, "/robots.txt", "", ""))
@@ -80,18 +93,26 @@ class RobotsCache:
         if entry is not None and self._clock() - entry.fetched_at < self._ttl:
             return entry
 
+        previous = entry
         if self._client is None:
             entry = RobotsEntry(None, allow_all=True, fetched_at=self._clock())
         else:
             try:
                 r = self._client.get(robots_url(url), timeout=10.0)
             except httpx.HTTPError:
-                entry = RobotsEntry(None, False, self._clock(), reachable=False)
+                # A blip must not wipe a policy we already read. Fail closed
+                # only when this host has never told us anything.
+                entry = _reuse(previous, self._clock()) if previous and previous.reachable else RobotsEntry(
+                    None, False, self._clock(), reachable=False)
             else:
                 if r.status_code >= 500:
-                    entry = RobotsEntry(None, False, self._clock(), reachable=False)
+                    entry = _reuse(previous, self._clock()) if previous and previous.reachable else RobotsEntry(
+                        None, False, self._clock(), reachable=False)
                 elif r.status_code >= 400:
                     # No robots.txt published means no restriction.
+                    entry = RobotsEntry(None, allow_all=True, fetched_at=self._clock())
+                elif not _looks_like_robots(r.text):
+                    # A challenge page or HTML error is not a disallow-all.
                     entry = RobotsEntry(None, allow_all=True, fetched_at=self._clock())
                 else:
                     entry = RobotsEntry(self._parse(r.text), allow_all=not r.text.strip(),

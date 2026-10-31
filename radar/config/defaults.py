@@ -498,7 +498,10 @@ LISTS: dict[str, Any] = {
 DEFAULT_SOURCES = [
     SourceConfig(key="techscaler_catalyst", track="A",
                  note="Official named Catalyst cohorts; identity, HQ and funding require separate evidence"),
-    SourceConfig(key="companies_house", track="B", note="The register sweep — Track B"),
+    # A company registration is not a startup: anyone can file one. The sweep
+    # stays available as a switch, off unless Aryan turns it back on.
+    SourceConfig(key="companies_house", track="B", enabled=False,
+                 note="Off — registering a company is not a startup"),
     SourceConfig(key="northern_accelerator", track="A"),
     SourceConfig(key="cambridge_enterprise", track="A"),
     # Registry key, not a display name: the Sources-tab Enabled toggle and the
@@ -539,6 +542,13 @@ DEFAULT_SOURCES = [
     SourceConfig(key="bdaily_regional", track="A", note="Bdaily North East regional RSS"),
     SourceConfig(key="startups_magazine", track="A", note="Startups Magazine WordPress feed"),
     SourceConfig(key="converge", track="A", note="Converge challenge / spinout news"),
+    # Regional feeds Aryan asked for (Oct 2026). Leeds, York and the North East
+    # universities do not publish a working RSS feed; Northern Accelerator and
+    # Sheffield already cover those communities. These two do.
+    SourceConfig(key="fintech_north", track="A", funds=["anticus"],
+                 note="Yorkshire fintech news — Anticus"),
+    SourceConfig(key="ukspa", track="A", funds=["anticus", "northstar"],
+                 note="Science parks and their startup communities"),
 ]
 
 

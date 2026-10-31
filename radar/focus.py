@@ -89,13 +89,35 @@ def _log(db: Any, key: str, old: str, new: str, note: str | None) -> None:
         pass
 
 
-def fund_key(raw: str) -> str:
-    """'Outward VC' / 'outward' / 'OUTWARD' → 'outward'; anything else raises."""
+def fund_key(raw: str, allowed: Any = None) -> str:
+    """'Outward VC' / 'outward' / 'OUTWARD' → 'outward'; anything else raises.
+
+    `allowed` is the live fund list, so a fund added in the Control room
+    can be focused without being one of the original four.
+    """
     text = str(raw or "").strip().lower()
-    for key in FUND_KEYS:
-        if text == key or text.startswith(key) or FUND_NAMES[key].lower() == text:
+    names = dict(FUND_NAMES)
+    keys = list(FUND_KEYS)
+    if allowed:
+        for item in allowed:
+            if isinstance(item, str):
+                keys.append(item)
+                names.setdefault(item, item)
+            else:
+                key = item.get("key") or ""
+                if key:
+                    keys.append(key)
+                    names[key] = item.get("name") or names.get(key, key)
+    seen: list[str] = []
+    for key in keys:
+        if key in seen:
+            continue
+        seen.append(key)
+        if text == key or text == names.get(key, key).lower():
             return key
-    raise FocusInvalid(f"unknown fund {raw!r} — use {', '.join(FUND_KEYS)}")
+        if key in FUND_KEYS and (text.startswith(key) or names.get(key, "").lower() == text):
+            return key
+    raise FocusInvalid(f"unknown fund {raw!r} — use {', '.join(seen)}")
 
 
 # --------------------------------------------------------------------- reads
@@ -132,8 +154,8 @@ def active(db: Any, today: date | None = None) -> Focus | None:
 
 
 def set_focus(db: Any, fund: str, days: int = 7, *, note: str | None = None,
-              today: date | None = None) -> Focus:
-    key = fund_key(fund)
+              today: date | None = None, allowed: Any = None) -> Focus:
+    key = fund_key(fund, allowed)
     try:
         days = int(days)
     except (TypeError, ValueError) as exc:
@@ -145,7 +167,7 @@ def set_focus(db: Any, fund: str, days: int = 7, *, note: str | None = None,
     _set(db, _FUND, key)
     _set(db, _UNTIL, until.isoformat())
     _log(db, "focus", before.describe() if before else "none",
-         f"{FUND_NAMES[key]} until {until.isoformat()}", note)
+         f"{FUND_NAMES.get(key, key)} until {until.isoformat()}", note)
     return Focus(key, "focus", until)
 
 
@@ -175,11 +197,12 @@ def parse_rotation(text: str) -> dict[str, str | None]:
     return out
 
 
-def set_rotation(db: Any, plan: dict[str, Any], *, note: str | None = None) -> dict[str, str | None]:
+def set_rotation(db: Any, plan: dict[str, Any], *, note: str | None = None,
+                 allowed: Any = None) -> dict[str, str | None]:
     clean: dict[str, str | None] = {}
     for day in WEEKDAYS:
         value = plan.get(day)
-        clean[day] = fund_key(value) if value else None
+        clean[day] = fund_key(value, allowed) if value else None
     before = rotation(db)
     _set(db, _ROTATION, json.dumps(clean))
     _log(db, "rotation", describe_rotation(before), describe_rotation(clean), note)
@@ -187,5 +210,5 @@ def set_rotation(db: Any, plan: dict[str, Any], *, note: str | None = None) -> d
 
 
 def describe_rotation(plan: dict[str, str | None]) -> str:
-    days = [f"{day.title()} {FUND_NAMES[f]}" for day, f in plan.items() if f]
+    days = [f"{day.title()} {FUND_NAMES.get(f, f)}" for day, f in plan.items() if f]
     return ", ".join(days) if days else "no rotation (all funds every day)"

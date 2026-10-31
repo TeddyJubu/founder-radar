@@ -361,6 +361,7 @@ def with_default_sources(sources: Sequence[SourceConfig] | None) -> list[SourceC
             out.append(SourceConfig(
                 key=source.key, track=source.track,
                 enabled=source.enabled, note=source.note,
+                url=source.url, funds=list(source.funds),
             ))
     return out
 
@@ -518,6 +519,60 @@ def _with_legacy_qualifier_strips(cfg: Config, db: Any = None) -> Config:
     return cfg
 
 
+_RUNTIME_NOTE = re.compile(
+    r"^(?:RobotsDenied|SourceBlocked|LayoutChanged|HTTP \d{3})\b"
+)
+
+
+def _configured_note(key: str, raw: str) -> str:
+    """Column H is also where a failed run writes its error. That is not the description."""
+    if not _RUNTIME_NOTE.match(raw or ""):
+        return raw
+    from radar.config.defaults import DEFAULT_SOURCES
+
+    return next((s.note for s in DEFAULT_SOURCES if s.key == key), "")
+
+
+def _retire_companies_house(db: Any, cfg: Config, gateway: Any) -> Config:
+    """Turn the register sweep off once. A later switch in the Control room sticks.
+
+    Registering a company is not evidence of a startup. The morning run used
+    to keep reading Companies House because the sheet still said TRUE.
+    """
+    if db is None:
+        return cfg
+    try:
+        done = db.one("SELECT value FROM _meta WHERE key = ?", ("companies_house_retired",))
+    except Exception:  # noqa: BLE001 - a database without _meta cannot record this
+        return cfg
+    if done:
+        return cfg
+    source = next((s for s in cfg.sources if s.key == "companies_house"), None)
+    if source is None or not source.enabled:
+        try:
+            db.execute(
+                "INSERT OR REPLACE INTO _meta(key, value) VALUES (?, ?)",
+                ("companies_house_retired", "1"),
+            )
+            if hasattr(db, "commit"):
+                db.commit()
+        except Exception:  # noqa: BLE001
+            pass
+        return cfg
+    from radar.admin.settings import apply_source
+
+    try:
+        apply_source(
+            db, "companies_house", False,
+            note="Off — registering a company is not a startup",
+            gateway=gateway if gateway is not None else None,
+        )
+    except Exception:  # noqa: BLE001 - try again next run; don't hide the old config
+        return cfg
+    fresh = load_last_good(db)
+    return fresh or cfg
+
+
 def sheet_credentials_present() -> bool:
     sheet_id = os.environ.get("SHEET_ID") or os.environ.get("RADAR_SHEET_ID")
     return bool(sheet_id and os.environ.get("GOOGLE_SA_JSON"))
@@ -560,7 +615,7 @@ def load_runtime_config(
             warnings.extend(
                 f"{key}: {text}" for key, text in loaded.warnings.items()
             )
-            return cfg, gw, warnings
+            return _retire_companies_house(db, cfg, gw), gw, warnings
         except Exception as exc:  # noqa: BLE001 — fall through to last-good
             warnings.append(f"sheet not read: {type(exc).__name__}: {exc}")
     cfg = load_last_good(db)
@@ -584,11 +639,11 @@ def load_runtime_config(
         healed = _with_legacy_qualifier_strips(healed, db)
         if db is not None:
             save_snapshot(db, healed, is_last_good=True)
-        return healed, gw, warnings
+        return _retire_companies_house(db, healed, gw), gw, warnings
     if cfg is not None:
         cfg = _with_legacy_qualifier_strips(cfg, db)
-        return cfg, gw, warnings
-    return default_config(), gw, warnings
+        return _retire_companies_house(db, cfg, gw), gw, warnings
+    return _retire_companies_house(db, default_config(), gw), gw, warnings
 
 
 # ------------------------------------------------------------- tab parsers
@@ -1260,7 +1315,7 @@ def parse_sources(grid: Sequence[Sequence[Any]]) -> list[SourceConfig]:
             enabled = True
         funds = [f.strip().lower() for f in re.split(r"[,\s]+", _cell(row, 9) or "") if f.strip()]
         out.append(SourceConfig(key=key, track=track if track in {"A", "B"} else "A",
-                                enabled=enabled, note=_cell(row, 7),
+                                enabled=enabled, note=_configured_note(key, _cell(row, 7)),
                                 url=(_cell(row, 8) or "").strip(), funds=funds))
     return out
 

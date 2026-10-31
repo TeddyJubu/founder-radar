@@ -63,10 +63,27 @@ h1 {
    and were hard to track across a ~10-company pass; the count names it. */
 .progress-count {
   flex: none; white-space: nowrap;
-  font-size: var(--footnote); line-height: var(--footnote-lh);
+  font: inherit; font-size: var(--footnote); line-height: var(--footnote-lh);
   color: var(--label-2); font-variant-numeric: tabular-nums;
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit;
 }
 .progress-count:empty { display: none; }
+.directory {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,.45); display: flex; justify-content: flex-end;
+}
+.directory[hidden] { display: none; }
+.directory-panel {
+  width: min(420px, 100%); height: 100%; overflow: auto;
+  background: var(--bg); padding: var(--s4); box-shadow: -8px 0 24px rgba(0,0,0,.18);
+}
+.directory-list { list-style: none; margin: 0; padding: 0; }
+.directory-list button {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  border-bottom: 1px solid var(--sep, rgba(255,255,255,.08));
+  padding: 10px 0; cursor: pointer; color: inherit; font: inherit;
+}
+.directory-list .sub { display: block; color: var(--label-2); font-size: var(--footnote); }
 
 /* ─────────────────────────────────────────────────────────── card */
 
@@ -726,7 +743,14 @@ button.no  { color: var(--red); }
     <a class="help dashboard-link" href="/admin" data-testid="nav-admin" title="Control room: daily flow, settings, prompts and change log">Control room</a>
     <a class="help kept-link" href="/kept" data-testid="nav-kept" title="Companies you've kept">Kept<span class="kept-badge" id="kept-badge" data-testid="kept-badge" data-count="0"></span></a>
     <a class="help" href="/onboarding" data-testid="nav-onboarding" title="How this works">?</a>
-    <div class="progress-count" id="progress" data-testid="progress"></div>
+    <button type="button" class="progress-count" id="progress" data-testid="progress"></button>
+    <div id="directory" class="directory" hidden>
+      <div class="directory-panel" role="dialog" aria-labelledby="directory-title">
+        <button type="button" id="directory-close">Close</button>
+        <h2 id="directory-title">Ready to review</h2>
+        <ul class="directory-list" id="directory-list"></ul>
+      </div>
+    </div>
   </header>
   <div class="fund-filter" id="fund-filter" data-testid="fund-filter" hidden>
     <span id="fund-filter-text"></span> · <a href="/?fund=all" data-testid="fund-filter-all">Show all funds</a>
@@ -1156,6 +1180,19 @@ function safeUrl(value) {
 // for every mention, so it is the fallback that guarantees a link whenever
 // one exists. Registry companies legitimately have neither: Companies House
 // is not an article, and inventing a link to it would be worse than no button.
+function openableUrl(url, externalId) {
+  // A workbook link downloads the whole spreadsheet. Open the project page.
+  try {
+    const u = new URL(url, location.origin);
+    if (!u.pathname.toLowerCase().endsWith(".xlsx")) return url;
+    const ref = new URLSearchParams(u.hash.slice(1)).get("project")
+      || String(externalId || "").split(":")[0];
+    if (/^[A-Za-z0-9][A-Za-z0-9_-]{1,40}$/.test(ref))
+      return "https://gtr.ukri.org/projects?ref=" + encodeURIComponent(ref);
+    return "https://www.ukri.org/publications/innovate-uk-funded-projects-since-2004/";
+  } catch { return url; }
+}
+
 function sourceCitationLabel(key, url, externalId) {
   if (key === "innovate_uk") {
     let project = "";
@@ -1173,7 +1210,7 @@ function articleLinks(c) {
   if (c.source_url && !seen.has(c.source_url)) {
     seen.add(c.source_url);
     out.push({
-      url: c.source_url,
+      url: c.open_url || openableUrl(c.source_url, c.source_external_id),
       label: `Found at ${sourceCitationLabel(c.source_key, c.source_url, c.source_external_id)}`,
       kind: "source",
     });
@@ -1181,12 +1218,16 @@ function articleLinks(c) {
   for (const s of c.signals || []) {
     if (!s.source_url || seen.has(s.source_url)) continue;
     seen.add(s.source_url);
-    out.push({ url: s.source_url, label: evidenceLabel(s), kind: s.kind || "" });
+    out.push({ url: s.open_url || openableUrl(s.source_url, s.external_id), label: evidenceLabel(s), kind: s.kind || "" });
   }
   for (const s of c.sources || []) {
     if (!s.source_url || seen.has(s.source_url)) continue;
     seen.add(s.source_url);
-    out.push({ url: s.source_url, label: sourceCitationLabel(s.source_key, s.source_url, s.external_id), kind: "source" });
+    out.push({
+      url: s.open_url || openableUrl(s.source_url, s.external_id),
+      label: sourceCitationLabel(s.source_key, s.source_url, s.external_id),
+      kind: "source",
+    });
   }
   return out;
 }
@@ -1546,7 +1587,41 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+function showDirectory() {
+  const list = $("#directory-list");
+  const names = data?.directory?.length ? data.directory : (data?.companies || []).map(c => ({
+    company_id: c.company_id, name: c.name, fund: c.fund, one_liner: c.one_liner || "",
+  }));
+  list.innerHTML = names.map(row =>
+    `<li><button type="button" data-company="${esc(row.company_id)}">` +
+    `<strong>${esc(row.name)}</strong>` +
+    `<span class="sub">${esc(row.fund || "")}${row.one_liner ? " — " + esc(row.one_liner) : ""}</span>` +
+    `</button></li>`).join("") || "<li>Nothing is ready to review.</li>";
+  $("#directory").hidden = false;
+}
+
+async function jumpToCompany(id) {
+  $("#directory").hidden = true;
+  let index = (data?.companies || []).findIndex(c => c.company_id === id);
+  if (index < 0) {
+    try {
+      const next = await (await fetch("/api/today?fund=all", {cache: "no-store"})).json();
+      data = next;
+      i = 0; history = []; sessionReviewed = new Set(); reviewedAtTotals = 0;
+      index = (data.companies || []).findIndex(c => c.company_id === id);
+    } catch { toast("Couldn't open that company"); return; }
+  }
+  if (index >= 0) i = index;
+  render();
+}
+
 document.addEventListener("click", (e) => {
+  if (e.target.closest("#progress")) { showDirectory(); return; }
+  if (e.target.closest("#directory-close") || e.target.id === "directory") {
+    $("#directory").hidden = true; return;
+  }
+  const pick = e.target.closest("#directory-list button[data-company]");
+  if (pick) { jumpToCompany(pick.dataset.company); return; }
   const again = e.target.closest("button[data-testid=\"review-again\"]");
   if (again) return reviewAgain();
   const b = e.target.closest("button[data-v]");
