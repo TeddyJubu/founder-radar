@@ -59,6 +59,8 @@ if [ -z "$home" ] || [ ! -d "$home/.hermes" ]; then
   echo "hermes-as-owner: no Hermes home for $HERMES_USER" >&2
   exit 2
 fi
+# The caller cwd is often a directory the operator cannot see. Hermes rejects that.
+cd "$home"
 
 exec runuser -u "$HERMES_USER" -- env \
   HOME="$home" \
