@@ -10,6 +10,7 @@ from radar.config.defaults import default_config
 from radar.config.loader import parse_sources
 from radar.fetch.robots import RobotsCache
 from radar.sources.fintech_north import FintechNorthAdapter
+from radar.sources.nexus_leeds import NexusLeedsAdapter
 from radar.sources.innovate_uk import page_url
 from radar.sources.ukspa import UkspaAdapter
 from tests.fakes import seed_companies
@@ -132,6 +133,23 @@ def test_html_robots_and_a_later_outage_do_not_block_the_site():
     assert cache.allowed("https://gtr.ukri.org/api/search/project", agent) is True
 
 
+def test_hermes_qa_runs_as_the_profile_owner(monkeypatch, tmp_path):
+    from radar.qa.today import hermes_argv
+
+    home = tmp_path / "op"
+    hermes = home / ".hermes"
+    hermes.mkdir(parents=True)
+    wrapper = tmp_path / "hermes-as-owner.sh"
+    wrapper.write_text("#!/bin/sh\n")
+    wrapper.chmod(0o755)
+    monkeypatch.setattr("radar.qa.today.HERMES_AS_OWNER", wrapper)
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setattr("radar.qa.today.os.geteuid", lambda: 106)
+    argv = hermes_argv("/home/aryan/.local/bin/hermes", ["chat", "-Q", "--query-file", "-"])
+    assert argv[:4] == ["sudo", "-n", str(wrapper), "/home/aryan/.local/bin/hermes"]
+    assert argv[4:] == ["chat", "-Q", "--query-file", "-"]
+
+
 def test_new_regional_feeds_parse():
     payload = """<?xml version="1.0"?><rss version="2.0"><channel>
       <item><title>Leeds firm raises seed</title>
@@ -141,3 +159,5 @@ def test_new_regional_feeds_parse():
     assert item.title == "Leeds firm raises seed" and item.source_url.startswith("https://")
     items = UkspaAdapter().parse(payload.replace("fintechnorth.uk", "www.ukspa.org.uk"))
     assert items and items[0].source_url.startswith("https://")
+    nexus = NexusLeedsAdapter().parse(payload.replace("fintechnorth.uk", "nexusleeds.co.uk"))
+    assert nexus and nexus[0].source_url.startswith("https://nexusleeds.co.uk")

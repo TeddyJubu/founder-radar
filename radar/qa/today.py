@@ -440,6 +440,31 @@ def _argv_for_log(argv: list[str]) -> list[str]:
     return [part if len(part) < 64 else f"<{len(part)} chars>" for part in argv[1:]]
 
 
+HERMES_AS_OWNER = Path("/usr/local/libexec/founder-radar/hermes-as-owner.sh")
+
+
+def _needs_owner_launch() -> bool:
+    """Hermes rejects a profile owned by a uid other than the process."""
+    raw = (os.environ.get("HERMES_HOME") or "").strip()
+    if not raw or not HERMES_AS_OWNER.is_file() or not os.access(HERMES_AS_OWNER, os.X_OK):
+        return False
+    path = Path(raw)
+    if path.name != ".hermes":
+        path = path / ".hermes"
+    try:
+        owner = path.stat().st_uid
+    except OSError:
+        return False
+    return owner != os.geteuid()
+
+
+def hermes_argv(binary: str, args: list[str]) -> list[str]:
+    """Argv for one Hermes one-shot. Radar goes through the owner wrapper."""
+    if _needs_owner_launch():
+        return ["sudo", "-n", str(HERMES_AS_OWNER), binary, *args]
+    return [binary, *args]
+
+
 def resolve_hermes_binary() -> str | None:
     """Prefer `HERMES_BIN` (hermes.env / systemd); fall back to PATH."""
     env_bin = (os.environ.get("HERMES_BIN") or "").strip()
@@ -511,9 +536,9 @@ class HermesSubagent:
     def _query(self, binary: str, prompt: str) -> str:
         # stdin=True means the prompt is the query body; otherwise it is argv.
         attempts: list[tuple[list[str], bool]] = [
-            ([binary, "chat", "-Q", "--query-file", "-"], True),
-            ([binary, "chat", "-Q", "-q", prompt], False),
-            ([binary, "-z", prompt], False),
+            (hermes_argv(binary, ["chat", "-Q", "--query-file", "-"]), True),
+            (hermes_argv(binary, ["chat", "-Q", "-q", prompt]), False),
+            (hermes_argv(binary, ["-z", prompt]), False),
         ]
         last: str | None = None
         env = _hermes_subprocess_env()

@@ -547,6 +547,8 @@ DEFAULT_SOURCES = [
     # Sheffield already cover those communities. These two do.
     SourceConfig(key="fintech_north", track="A", funds=["anticus"],
                  note="Yorkshire fintech news — Anticus"),
+    SourceConfig(key="nexus_leeds", track="A", funds=["anticus"],
+                 note="University of Leeds Nexus startup community"),
     SourceConfig(key="ukspa", track="A", funds=["anticus", "northstar"],
                  note="Science parks and their startup communities"),
 ]

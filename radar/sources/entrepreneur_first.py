@@ -153,7 +153,7 @@ class EntrepreneurFirstAdapter:
                 break
         website = None
         for node in card.css("a[href]"):
-            link = node.attributes.get("href", "")
+            link = node.attributes.get("href") or ""
             host = (urlsplit(link).hostname or '').lower()
             social = any(host == h or host.endswith('.'+h) for h in
                          ('linkedin.com','twitter.com','x.com','facebook.com','instagram.com'))

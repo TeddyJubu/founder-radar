@@ -187,6 +187,7 @@ say "environment file mode: $(stat -c '%a %U:%G' "$ENV_FILE")"
 say "root-owned helpers"
 install -d -o root -g root -m 755 "$(dirname "$LIBEXEC")" "$LIBEXEC"
 install -o root -g root -m 755 "$HERE/hermes-acl.sh" "$LIBEXEC/hermes-acl.sh"
+install -o root -g root -m 755 "$HERE/hermes-as-owner.sh" "$LIBEXEC/hermes-as-owner.sh"
 install -o root -g root -m 755 "$HERE/update-from-main.sh" "$LIBEXEC/update-from-main.sh"
 install -o root -g root -m 755 "$HERE/rollback.sh" "$LIBEXEC/rollback.sh"
 install -o root -g root -m 755 "$HERE/rollback-guard.sh" "$LIBEXEC/rollback-guard.sh"
@@ -195,6 +196,7 @@ install -d -o root -g root -m 755 /etc/founder-radar
 if command -v visudo >/dev/null 2>&1 && [ -d "$SUDOERS_DIR" ]; then
   for rule in \
       "hermes-acl:$LIBEXEC/hermes-acl.sh:founder-radar-hermes-acl:restore Hermes ACLs" \
+      "hermes-owner:$LIBEXEC/hermes-as-owner.sh:founder-radar-hermes-owner:run Hermes as its owner" \
       "rollback:$LIBEXEC/rollback.sh:founder-radar-rollback:Control room rollback"; do
     IFS=: read -r _label script dest purpose <<<"$rule"
     sudoers_tmp="$(mktemp)"

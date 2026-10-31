@@ -74,6 +74,7 @@ TIER_2_MODULES: dict[str, str] = {
     "techstars_london": "radar.sources.techstars_london",
     "fintech_north": "radar.sources.fintech_north",
     "ukspa": "radar.sources.ukspa",
+    "nexus_leeds": "radar.sources.nexus_leeds",
 }
 
 TIER_2_SOURCES: tuple[str, ...] = tuple(TIER_2_MODULES)

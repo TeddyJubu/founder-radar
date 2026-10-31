@@ -136,7 +136,7 @@ def _ensure_hermes_acl() -> None:
 def _run_hermes_publish_check(payload: dict[str, Any], *, brief: str | None = None,
                               ) -> tuple[str, str, str]:
     """Return (verdict, summary, actions). verdict in {pass, block, skip}."""
-    from radar.qa.today import HermesUnavailable, resolve_hermes_binary
+    from radar.qa.today import HermesUnavailable, hermes_argv, resolve_hermes_binary
 
     binary = resolve_hermes_binary()
     if not binary:
@@ -162,9 +162,9 @@ def _run_hermes_publish_check(payload: dict[str, Any], *, brief: str | None = No
             env.pop("HERMES_HOME", None)
 
     attempts: list[tuple[list[str], bool]] = [
-        ([binary, "chat", "-Q", "--query-file", "-"], True),
-        ([binary, "chat", "-Q", "-q", body], False),
-        ([binary, "-z", body], False),
+        (hermes_argv(binary, ["chat", "-Q", "--query-file", "-"]), True),
+        (hermes_argv(binary, ["chat", "-Q", "-q", body]), False),
+        (hermes_argv(binary, ["-z", body]), False),
     ]
     last = "hermes returned nothing"
     try:
