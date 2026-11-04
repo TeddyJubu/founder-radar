@@ -98,8 +98,22 @@ install -d -o "$APP_USER" -g "$APP_USER" -m 700 "$SECRETS_DIR"
 # ---------------------------------------------------------------- 2. runtime
 
 say "system packages"
-apt-get update -qq
-apt-get install -y -qq python3 python3-venv git sqlite3 logrotate
+# BEGIN system packages
+# Touch apt only when something is missing. A third-party repository being down
+# must not block a code deploy that installs nothing: on 10 Oct 2026 Caddy's
+# Cloudsmith repo answered "402 Payment Required", `apt-get update` exited 100,
+# and set -e stopped the install with the new code checked out but not installed.
+missing=""
+for pkg in python3 python3-venv git sqlite3 logrotate; do
+  dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" \
+    || missing="$missing $pkg"
+done
+if [ -n "$missing" ]; then
+  apt-get update -qq || say "warning: apt-get update reported errors; installing from the lists it has"
+  # shellcheck disable=SC2086  # word-splitting the package list is intended
+  apt-get install -y -qq $missing
+fi
+# END system packages
 
 # The clock the timers run against. OnCalendar carries an explicit Europe/London
 # suffix as well, so this is belt and braces rather than the only defence.
