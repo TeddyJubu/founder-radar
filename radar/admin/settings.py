@@ -200,7 +200,9 @@ def settings_view(db: Any) -> dict[str, Any]:
         ],
         "sources": [
             {"key": s.key, "track": s.track, "enabled": s.enabled, "note": s.note,
-             "url": s.url, "funds": list(s.funds), "removable": s.key not in builtin,
+             "url": s.url, "funds": list(s.funds),
+             "ignore_robots": bool(s.ignore_robots),
+             "removable": s.key not in builtin,
              "health": health.get(s.key),
              **quality.get(s.key, {"decided": 0, "kept": 0})}
             for s in cfg.sources
@@ -462,7 +464,7 @@ def _write_source_row(gw: Any, key: str, cells: Mapping[str, str] | None) -> boo
             return False
         row_no = max(len(grid) + 1, 2)
     if cells is None:
-        gw.batch_set([ValueRange(f"{tab}!A{row_no}:J{row_no}", [[""] * 10])], "USER_ENTERED")
+        gw.batch_set([ValueRange(f"{tab}!A{row_no}:K{row_no}", [[""] * 11])], "USER_ENTERED")
         return True
     gw.batch_set([ValueRange(f"{tab}!{col}{row_no}:{col}{row_no}", [[value]])
                   for col, value in cells.items()], "USER_ENTERED")
@@ -480,12 +482,14 @@ def _sheet_write(gateway: Any, fn) -> str:
 
 
 def add_feed_source(db: Any, name: str, url: str, *, funds: Any = None,
-                    note: str | None = None, gateway: Any = AUTO,
-                    check: Any = None) -> Applied:
+                    note: str | None = None, ignore_robots: bool = False,
+                    gateway: Any = AUTO, check: Any = None) -> Applied:
     """Add an RSS/Atom feed as a source (`feed_<name>`), on, feeding `funds`.
 
     The feed is fetched and parsed once first (`check`), so a URL that is not
     a feed is refused here rather than failing every morning.
+    `ignore_robots` is an explicit operator override for robots.txt only —
+    it does not bypass HTTP 403 or turn an HTML page into a feed.
     """
     from radar.sources.feed import PREFIX
 
@@ -500,7 +504,11 @@ def add_feed_source(db: Any, name: str, url: str, *, funds: Any = None,
     fund_list = _clean_funds(funds, [f.key for f in cfg.funds])
     if any(s.key == key for s in cfg.sources):
         raise SourceInvalid(f"a source called {key} already exists")
-    resolved = (check or _check_feed)(key, url)
+    override = bool(ignore_robots)
+    if check is not None:
+        resolved = check(key, url)
+    else:
+        resolved = _check_feed(key, url, ignore_robots=override)
     if isinstance(resolved, str) and resolved.startswith("https://"):
         url = resolved
 
@@ -508,13 +516,17 @@ def add_feed_source(db: Any, name: str, url: str, *, funds: Any = None,
 
     sheet_sync = _sheet_write(gateway, lambda gw: _write_source_row(gw, key, {
         "A": key, "B": "A", "C": "TRUE", "H": (note or "").strip(), "I": url,
-        "J": ", ".join(fund_list)}))
+        "J": ", ".join(fund_list),
+        "K": "TRUE" if override else "FALSE"}))
     source = SourceConfig(key=key, track="A", enabled=True, note=(note or "").strip(),
-                          url=url, funds=fund_list)
+                          url=url, funds=fund_list, ignore_robots=override)
     new_cfg = cfg.model_copy(update={"sources": [*cfg.sources, source]}, deep=True)
+    audit_note = (note or "").strip()
+    if override:
+        audit_note = (audit_note + "; " if audit_note else "") + "ignore_robots=true"
     digest, summary, qa_needed = _commit(
         db, new_cfg, kind="source", rows=[(key, "", f"added {url}")],
-        note=note, sheet_sync=sheet_sync)
+        note=audit_note or None, sheet_sync=sheet_sync)
     return Applied({key: "added"}, digest, sheet_sync, summary, qa_needed)
 
 
@@ -543,23 +555,39 @@ def _feed_link(html: str, page: str) -> str:
     return ""
 
 
-def _check_feed(key: str, url: str, *, _depth: int = 0) -> str:
+def _check_feed(key: str, url: str, *, ignore_robots: bool = False,
+                _depth: int = 0) -> str:
     """Fetch `url` and return the feed URL that actually parsed.
 
     A company or programme page is not a feed. When it points at one, that
     feed is what gets saved. Anything else is a plain error, not a 502.
+    `ignore_robots` skips robots.txt for this check only; HTTP 403 still fails.
     """
     from radar.fetch.http import HttpClient, RobotsDenied
     from radar.sources._common import rss_feed
 
     try:
-        with HttpClient(timeout=10, max_retries=0) as http:
-            resp = http.get(url)
+        with HttpClient(timeout=10, max_retries=0,
+                        obey_robots=not ignore_robots) as http:
+            # Only pass check_robots when overriding — keep the default path
+            # identical so simple test doubles of get(url) still work.
+            if ignore_robots:
+                resp = http.get(url, check_robots=False)
+            else:
+                resp = http.get(url)
     except RobotsDenied as exc:
         raise SourceInvalid(
-            f"that site asks crawlers not to read this page ({exc})") from exc
+            f"that site asks crawlers not to read this page ({exc}). "
+            "Tick Ignore robots only if you have permission to override."
+        ) from exc
     except Exception as exc:  # noqa: BLE001 - the Control room must say why, not 502
         raise SourceInvalid(f"could not open that URL ({type(exc).__name__})") from exc
+    if resp.status in (401, 403, 429, 451):
+        raise SourceInvalid(
+            f"the page answered HTTP {resp.status} — the site is blocking this "
+            "crawler. Contact the publisher or ask them to allowlist the radar "
+            "User-Agent; ignoring robots.txt does not fix an HTTP block."
+        )
     if not resp.ok:
         raise SourceInvalid(f"the page answered HTTP {resp.status}")
     try:
@@ -567,10 +595,12 @@ def _check_feed(key: str, url: str, *, _depth: int = 0) -> str:
     except Exception as exc:  # noqa: BLE001
         alt = _feed_link(resp.text, url) if _depth < 1 else ""
         if alt:
-            return _check_feed(key, alt, _depth=_depth + 1)
+            return _check_feed(key, alt, ignore_robots=ignore_robots,
+                               _depth=_depth + 1)
         raise SourceInvalid(
-            "that page is not an RSS or Atom feed. Paste the feed address "
-            "itself — it often ends in /feed/ or /rss.xml."
+            "that page is HTML, not an RSS or Atom feed. Paste the feed "
+            "address itself — it often ends in /feed/ or /rss.xml. Ignoring "
+            "robots will not turn a web page into a feed."
         ) from exc
     if not entries:
         raise SourceInvalid("the feed has no entries")
@@ -623,10 +653,40 @@ def set_source_funds(db: Any, key: str, funds: Any, *, note: str | None = None,
     return Applied({key: ", ".join(fund_list) or "all"}, digest, sheet_sync, summary, qa_needed)
 
 
+def set_source_ignore_robots(db: Any, key: str, ignore_robots: bool, *,
+                             note: str | None = None,
+                             gateway: Any = AUTO) -> Applied:
+    """Toggle Sources column K — operator override for robots.txt only."""
+    cfg, _ = current_config(db)
+    sources = list(cfg.sources)
+    index = next((i for i, s in enumerate(sources) if s.key == key), None)
+    if index is None:
+        raise UnknownSource(key)
+    before = sources[index]
+    override = bool(ignore_robots)
+    if before.ignore_robots == override:
+        return Applied({}, cfg.hash(), "skipped", {}, False)
+    sheet_sync = _sheet_write(gateway, lambda gw: _write_source_row(
+        gw, key, {"K": "TRUE" if override else "FALSE"}))
+    sources[index] = before.model_copy(update={"ignore_robots": override})
+    new_cfg = cfg.model_copy(update={"sources": sources}, deep=True)
+    word = "on" if override else "off"
+    audit_note = (note or "").strip()
+    if override:
+        audit_note = (audit_note + "; " if audit_note else "") + "ignore_robots=true"
+    digest, summary, qa_needed = _commit(
+        db, new_cfg, kind="source",
+        rows=[(f"{key}.ignore_robots", "on" if before.ignore_robots else "off", word)],
+        note=audit_note or None, sheet_sync=sheet_sync)
+    return Applied({key: word}, digest, sheet_sync, summary, qa_needed)
+
+
 FUND_CRITERIA_TAB = "Fund Criteria"
 #: Vehicle fields the Control room may edit → Fund Criteria column.
-#: Geography and sector rules stay in the Sheet: a HARD geography typo there
-#: is held (never loosened) by the loader's own validation.
+#: Geography and sectors are editable here too (Oct 2026): every value is run
+#: through `canon_enum` against the same GEOGRAPHIES/SECTORS the loader uses,
+#: and a HARD geography rule may not be left without places, so a typo is
+#: refused here rather than reaching the morning run.
 VEHICLE_FIELDS: dict[str, str] = {
     "active": "E", "stage_min": "F", "stage_max": "G", "cheque_min": "H",
     "cheque_max": "I", "geo_rule": "J", "geo_values": "K", "max_age_years": "L",
@@ -948,5 +1008,5 @@ __all__ = [
     "FundInvalid", "UnknownVehicle", "add_fund", "apply_vehicle", "funds_view",
     "set_fund_paused",
     "changes_view", "current_config", "remove_source", "rescore_now",
-    "set_source_funds", "settings_view",
+    "set_source_funds", "set_source_ignore_robots", "settings_view",
 ]

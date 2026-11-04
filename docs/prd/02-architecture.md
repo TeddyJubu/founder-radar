@@ -321,7 +321,7 @@ Also required, and cheap:
 - A retention rule: purge founder records for companies rejected more than 12 months ago
 - The Google Sheet restricted to named accounts, link-sharing off
 
-**Crawler conduct.** Honest User-Agent with a working contact URL. robots.txt obeyed via Protego. Crawl-delay obeyed, with a 1-second floor even when the site is silent. Never scrape behind a login, never bypass a paywall, never solve an anti-bot challenge — a challenge page is an explicit statement that automation is unwelcome, and the correct engineering response is to drop that source.
+**Crawler conduct.** Honest User-Agent with a working contact URL. robots.txt obeyed via Protego by default. Crawl-delay obeyed, with a 1-second floor even when the site is silent. Never scrape behind a login, never bypass a paywall, never solve an anti-bot challenge — a challenge page is an explicit statement that automation is unwelcome, and the correct engineering response is to drop that source. An operator may set **Ignore robots** on a single source from the Control room (logged in `admin_change`) when they have permission to override that site's robots.txt; this does not spoof the User-Agent, does not bypass HTTP 403/WAF blocks, and does not turn an HTML page into a feed.
 
 ---
 

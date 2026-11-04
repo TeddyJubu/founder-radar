@@ -483,7 +483,7 @@ td .empty { padding: var(--s4) 0; }
     <p class="lede-sm">Turn a source on or off, choose which funds it feeds (blank means every fund), or add a news or programme feed. You will be asked to confirm each change.</p>
     <div class="table-wrap">
       <table class="sources-table">
-        <thead><tr><th scope="col">Source</th><th scope="col">Track</th><th scope="col">Feeds</th><th scope="col" title="Of the companies Aryan decided, how many he kept">Kept</th><th scope="col">Note</th><th scope="col">On</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+        <thead><tr><th scope="col">Source</th><th scope="col">Track</th><th scope="col">Feeds</th><th scope="col" title="Of the companies Aryan decided, how many he kept">Kept</th><th scope="col">Note</th><th scope="col">On</th><th scope="col" title="Skip robots.txt for this source only">Ignore robots</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
         <tbody id="sources-body"></tbody>
       </table>
     </div>
@@ -500,6 +500,10 @@ td .empty { padding: var(--s4) 0; }
       </div>
       <fieldset class="fund-picks"><legend class="field-label">Feeds these funds (none ticked = all)</legend>
         <span id="src-funds"></span></fieldset>
+      <label class="fund-pick" for="src-ignore-robots">
+        <input id="src-ignore-robots" type="checkbox" data-testid="source-ignore-robots">
+        Ignore robots.txt for this feed (only if you have permission)
+      </label>
       <button type="submit" class="btn" id="src-add" data-testid="source-add">Add source</button>
     </form>
 
@@ -1106,6 +1110,9 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     }
   }
 
+  var ROBOTS_OVERRIDE_CONFIRM =
+    'This site asks crawlers not to read this page. Override only if you have permission.';
+
   function renderSources() {
     var list = (state.settings && state.settings.sources) || [];
     $('sources-body').innerHTML = list.map(function (s) {
@@ -1126,10 +1133,16 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
           '" data-testid="source-toggle-' + esc(s.key) + '">' +
           '<span class="switch-track" aria-hidden="true"></span>' +
           '<span>' + (s.enabled ? 'On' : 'Off') + '</span></button></td>' +
+        '<td><button type="button" class="switch" role="switch" data-action="source-ignore-robots" data-key="' + esc(s.key) +
+          '" aria-checked="' + (s.ignore_robots ? 'true' : 'false') +
+          '" aria-label="Ignore robots for ' + esc(s.key) +
+          '" data-testid="source-ignore-robots-' + esc(s.key) + '">' +
+          '<span class="switch-track" aria-hidden="true"></span>' +
+          '<span>' + (s.ignore_robots ? 'On' : 'Off') + '</span></button></td>' +
         '<td>' + (s.removable ? '<button type="button" class="link-btn danger" data-action="source-remove" data-key="' +
           esc(s.key) + '" data-testid="source-remove-' + esc(s.key) + '">Remove</button>' : '') + '</td>' +
       '</tr>';
-    }).join('') || '<tr><td colspan="7" class="empty">No sources configured.</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="empty">No sources configured.</td></tr>';
     var picks = $('src-funds');
     var keys = ((state.settings && state.settings.fund_keys) || []).join(',');
     if (picks && picks.getAttribute('data-keys') !== keys) {
@@ -1280,7 +1293,8 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       var d = await api('/api/admin/funds', { method: 'POST', body: {
         fund_key: v.fund_key, vehicle_key: v.vehicle_key, changes: changes, note: '' } });
       await loadFunds();
-      notify(msg, v.vehicle_name + ' saved. Sheet: ' + fmtVal(d.sheet_sync) + '.' + (d.today_qa_needed ? QA_AGAIN : ''), 'ok');
+      if (state.tab === 'changes') loadChanges();
+      notify(msg, v.vehicle_name + ' saved. Logged in Changes. Sheet: ' + fmtVal(d.sheet_sync) + '.' + (d.today_qa_needed ? QA_AGAIN : ''), 'ok');
     } catch (e) {
       var errs = e.body && e.body.errors;
       err.textContent = errs ? Object.keys(errs).map(function (k) { return k + ': ' + errs[k]; }).join(' · ') : e.message;
@@ -1301,7 +1315,9 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     try {
       var d = await api('/api/admin/funds/pause', { method: 'POST', body: { fund_key: key, paused: !turnOn, note: '' } });
       await loadFunds();
-      notify($('funds-msg'), fundName(key) + ' is ' + (turnOn ? 'on' : 'paused') + '. Sheet: ' + fmtVal(d.sheet_sync) + '.', 'ok');
+      if (state.tab === 'changes') loadChanges();
+      notify($('funds-msg'), fundName(key) + ' is ' + (turnOn ? 'on' : 'paused') +
+        '. Logged in Changes. Sheet: ' + fmtVal(d.sheet_sync) + '.', 'ok');
     } catch (e) {
       notify($('funds-msg'), e.message, 'err');
     }
@@ -1323,7 +1339,8 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
       } });
       $('add-fund').reset();
       await loadFunds();
-      notify($('funds-msg'), 'Fund added. Sheet: ' + fmtVal(d.sheet_sync) + '.', 'ok');
+      if (state.tab === 'changes') loadChanges();
+      notify($('funds-msg'), 'Fund added. Logged in Changes. Sheet: ' + fmtVal(d.sheet_sync) + '.', 'ok');
     } catch (e) {
       var errs = e.body && e.body.errors;
       notify($('funds-msg'), errs ? Object.keys(errs).map(function (k) { return k + ': ' + errs[k]; }).join(' · ') : e.message, 'err');
@@ -1366,16 +1383,31 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     e.preventDefault();
     var funds = Array.prototype.map.call(
       $('src-funds').querySelectorAll('input:checked'), function (i) { return i.value; });
+    var ignoreRobots = !!($('src-ignore-robots') && $('src-ignore-robots').checked);
+    if (ignoreRobots && !window.confirm(ROBOTS_OVERRIDE_CONFIRM)) return;
     var btn = $('src-add');
     btn.disabled = true;
     try {
       var ok = await sourceAction('/api/admin/sources/add', {
-        name: $('src-name').value, url: $('src-url').value, funds: funds, note: ''
+        name: $('src-name').value, url: $('src-url').value, funds: funds,
+        ignore_robots: ignoreRobots, note: ''
       }, 'Source added — it is read from the next morning run.');
       if (ok) { $('add-source').reset(); }
     } finally {
       btn.disabled = false;
     }
+  }
+
+  async function toggleIgnoreRobots(key) {
+    var list = (state.settings && state.settings.sources) || [];
+    var src = list.filter(function (s) { return s.key === key; })[0];
+    if (!src) return;
+    var turnOn = !src.ignore_robots;
+    if (turnOn && !window.confirm(ROBOTS_OVERRIDE_CONFIRM)) return;
+    if (!turnOn && !window.confirm('Stop ignoring robots.txt for "' + key + '"?')) return;
+    await sourceAction('/api/admin/sources/ignore-robots', {
+      key: key, ignore_robots: turnOn, note: ''
+    }, 'Ignore robots for "' + key + '" is now ' + (turnOn ? 'on' : 'off') + '.');
   }
 
   async function toggleSource(key) {
@@ -1740,6 +1772,7 @@ var QA_AGAIN = ' Today now waits for the Hermes check again — run `founder-rad
     }
     else if (action === 'source') toggleSource(el.getAttribute('data-key'));
     else if (action === 'source-funds') editSourceFunds(el.getAttribute('data-key'));
+    else if (action === 'source-ignore-robots') toggleIgnoreRobots(el.getAttribute('data-key'));
     else if (action === 'source-remove') removeSource(el.getAttribute('data-key'));
     else if (action === 'fund-pause') pauseFund(el.getAttribute('data-fund'), el.getAttribute('data-paused') === 'true');
     else if (action === 'help') {

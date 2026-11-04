@@ -226,14 +226,14 @@ That is the whole error-reporting strategy. Aryan never reads a log.
 
 *(Client, 24 July: "I don't think we need the Source Failed section. I'd probably just leave that out." It moves here.)*
 
-| Source | Track | Enabled | Last OK | Items today | 7-day avg | Status | Note |
-|---|---|---|---|---|---|---|---|
-| Companies House | B | TRUE | 07 Aug 06:31 | 412 | 388 | ✅ | |
-| Northern Accelerator | A | TRUE | 07 Aug 06:32 | 2 | 1.4 | ✅ | |
-| Conception X | A | TRUE | 05 Aug 06:33 | 0 | 0.2 | ⚠️ | 0 items for 3 days |
-| Antler UK | A | FALSE | — | — | — | ⏸ | Disabled — robots restricts the cohort page |
+| Source | Track | Enabled | Last OK | Items today | 7-day avg | Status | Note | Feed URL | Funds | Ignore robots |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Companies House | B | TRUE | 07 Aug 06:31 | 412 | 388 | ✅ | | | | FALSE |
+| Northern Accelerator | A | TRUE | 07 Aug 06:32 | 2 | 1.4 | ✅ | | | | FALSE |
+| Conception X | A | TRUE | 05 Aug 06:33 | 0 | 0.2 | ⚠️ | 0 items for 3 days | | | FALSE |
+| Antler UK | A | FALSE | — | — | — | ⏸ | Disabled — robots restricts the cohort page | | | FALSE |
 
-`Enabled` is user-editable, so Aryan can switch a noisy source off himself.
+`Enabled` is user-editable, so Aryan can switch a noisy source off himself. **Ignore robots** is an explicit per-source operator override (Control room confirm + `admin_change` note); default remains obey. It does not bypass HTTP 403 or turn an HTML page into a feed.
 
 ---
 

@@ -144,11 +144,16 @@ def collect_source_links(db, http, *, budget, limit=20, company_ids=()):
     return result
 
 
-def verify_missing_crns(db, http, *, api_key, budget, limit=20, base_url=CH_API_BASE, company_ids=()):
+def verify_missing_crns(db, http, *, api_key, budget, limit=20, base_url=CH_API_BASE,
+                        company_ids=(), attach_ch_source: bool = False):
     """Retry after 24h; at most 20 companies and 4 site pages each per run.
 
     All HTTP calls consume the shared enrichment budget. No credentials means
     no site calls. Evidence and reasons persist without altering verdicts.
+
+    When ``attach_ch_source`` is false (Companies House discovery off), the
+    CRN / age / verification observations are still written, but no discovery
+    ``company_source`` row is attached for ``companies_house``.
     """
     result = dict(attempted=0, verified=0, review=0, skipped=0, verified_company_ids=[], outcomes=[])
     if not api_key or budget.exhausted:
@@ -228,10 +233,20 @@ def verify_missing_crns(db, http, *, api_key, budget, limit=20, base_url=CH_API_
                 if current['companies_house_no'] or (current['country_iso2'] and current['country_iso2'] != 'GB'):
                     raise ValueError('company identity changed; manual review')
                 from radar.resolve.match import Record
-                from radar.resolve.merge import attach
+                from radar.resolve.merge import add_identifier, attach
                 registry_url = CH_PROFILE_URL.format(number)
-                attach(db, cid, Record(name=row['canonical_name'], ch_number=number), source_key='companies_house',
-                       source_type='registry', source_url=registry_url, external_id=number)
+                if attach_ch_source:
+                    attach(db, cid, Record(name=row['canonical_name'], ch_number=number),
+                           source_key='companies_house', source_type='registry',
+                           source_url=registry_url, external_id=number)
+                else:
+                    # Verification only — do not register Companies House as discovery.
+                    db.execute(
+                        'UPDATE company SET companies_house_no=COALESCE(companies_house_no,?), '
+                        'updated_at=? WHERE id=?',
+                        (number, now_iso(), cid),
+                    )
+                    add_identifier(db, cid, 'ch', number, source_key='company_site')
                 # Registered office establishes legal jurisdiction, never operational HQ.
                 observe(db, cid, 'registered_office_address', profile.get('registered_office_address') or {},
                         source_key='companies_house', source_type='registry', source_url=registry_url)

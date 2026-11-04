@@ -475,7 +475,7 @@ def _watchlist_row(db, company, *, source_key, source_url, priority, fund="dsw")
     return cid
 
 
-def test_today_qa_checks_registry_watchlist_with_a_share_issue(db):
+def test_today_qa_checks_registry_watchlist_with_a_share_issue(db, companies_house_on):
     from tests.factories import registry_company
 
     cid = _watchlist_row(
@@ -496,7 +496,7 @@ def test_today_qa_checks_registry_watchlist_with_a_share_issue(db):
     assert cid in shown
 
 
-def test_today_qa_skips_registry_shells_without_a_venture_signal(db):
+def test_today_qa_skips_registry_shells_without_a_venture_signal(db, companies_house_on):
     from tests.factories import registry_company
 
     cid = _watchlist_row(

@@ -88,6 +88,25 @@ def config():
 
 
 @pytest.fixture
+def companies_house_on(monkeypatch):
+    """Turn Companies House discovery on for registry Today / QA path tests.
+
+    Default config leaves ``companies_house`` disabled so registry-only cards
+    stay off Today; tests that exercise the CH-on venture-signal path opt in.
+    """
+    from radar import selection
+
+    real = selection.source_enabled
+
+    def _enabled(config, key, *, default=False):
+        if key == "companies_house":
+            return True
+        return real(config, key, default=default)
+
+    monkeypatch.setattr(selection, "source_enabled", _enabled)
+
+
+@pytest.fixture
 def fixtures_dir() -> Path:
     return FIXTURES
 

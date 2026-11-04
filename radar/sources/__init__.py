@@ -295,7 +295,14 @@ def fetch_all(
         except SourceError as exc:
             status, error = "failed", str(exc)
         except Exception as exc:                         # noqa: BLE001 — isolation
-            status, error = "failed", f"{type(exc).__name__}: {exc}"
+            from radar.fetch.http import RobotsDenied
+
+            if isinstance(exc, RobotsDenied):
+                # Same posture as SourceBlocked: non-overridden robots denials
+                # must not hard-fail the morning run.
+                status, error = "degraded", str(exc)
+            else:
+                status, error = "failed", f"{type(exc).__name__}: {exc}"
 
         elapsed = int((time.monotonic() - started) * 1000)
         run = SourceRun(key=key, status=status, items=len(got),

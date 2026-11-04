@@ -150,7 +150,7 @@ def refresh_innovate_receipts(db,http,company_ids,*,apply=False):
     by_identity = {}
     for cid in ids:
         co = _identity(db, cid)
-        key, url = _http_source(db, cid)
+        key, url, _external_id = _http_source(db, cid)
         aid = lookup(url) if key == 'innovate_uk' else {}
         if co and aid.get('project') and _number(co['companies_house_no']):
             targets[cid] = aid

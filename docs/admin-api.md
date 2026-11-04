@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS prompt_override (
 CREATE TABLE IF NOT EXISTS admin_change (
   id          INTEGER PRIMARY KEY,
   at          TEXT NOT NULL,
-  kind        TEXT NOT NULL,          -- setting | source | prompt | rescore
+  kind        TEXT NOT NULL,          -- setting | source | prompt | rescore | fund | focus | backup
   key         TEXT,
   old_value   TEXT,
   new_value   TEXT,
@@ -145,7 +145,18 @@ Body `{"key": "...", "note": "..."}` → `{"ok": true, "version": "...",
 
 ### GET /api/admin/changes
 `{"changes": [{"id", "at", "kind", "key", "old_value", "new_value", "note",
-"sheet_sync"}]}` latest 100 desc.
+"sheet_sync"}]}` latest 100 desc. `kind` is one of `setting`, `source`,
+`prompt`, `rescore`, `fund`, `focus`, `backup`.
+
+### POST /api/admin/sources/add
+Body `{"name": "Sifted", "url": "https://…/feed", "funds": ["outward"],
+"ignore_robots": false, "note": "…"}`. `ignore_robots` is an explicit
+operator override for robots.txt only (logged in the change note); it does
+not bypass HTTP 403.
+
+### POST /api/admin/sources/ignore-robots
+Body `{"key": "feed_sifted", "ignore_robots": true, "note": "…"}` → toggles
+Sources column K for an existing source (built-in or feed).
 
 ### POST /api/admin/rescore
 Body `{}` → `{"ok": true, "rescore": {"scored": n, "shortlisted": n,

@@ -451,8 +451,8 @@ def _watchlist_row(db, company, *, source_key, source_url, priority, fund="dsw")
     return cid
 
 
-def test_today_hides_companies_house_shells(db):
-    """Incorporation plus a CH URL is not enough to occupy Today."""
+def test_today_hides_companies_house_shells(db, companies_house_on):
+    """Incorporation plus a CH URL is not enough to occupy Today (CH on)."""
     from tests.factories import registry_company
 
     cid = _watchlist_row(
@@ -473,7 +473,7 @@ def test_today_hides_companies_house_shells(db):
     assert reasons["registry_without_venture_signal"] == 1
 
 
-def test_today_shows_registry_with_a_share_issue(db):
+def test_today_shows_registry_with_a_share_issue(db, companies_house_on):
     from tests.factories import registry_company
 
     cid = _watchlist_row(
@@ -508,7 +508,7 @@ def test_today_shows_track_a_with_unknown_age(db):
     assert payload["companies"][0]["source_key"] == "innovate_uk"
 
 
-def test_today_ranks_track_a_ahead_of_registry(db):
+def test_today_ranks_track_a_ahead_of_registry(db, companies_house_on):
     from tests.factories import C, registry_company
 
     registry_id = _watchlist_row(

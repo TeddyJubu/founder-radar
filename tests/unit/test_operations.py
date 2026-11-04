@@ -1067,7 +1067,7 @@ def test_today_requires_verified_age_and_uk_presence(db):
     assert diagnostics["shown"] == 2
     assert diagnostics["excluded"] == 5
     assert {row["key"]: row["count"] for row in diagnostics["reasons"]} == {
-        "age_unknown": 1,
+        "companies_house_disabled": 1,
         "max_company_age_months": 1,
         "max_total_funding_gbp": 1,
         "min_uk_presence": 1,

@@ -76,6 +76,16 @@ def article_links(payload, source_key, base_url):
 SKIPPED = 'skipped: '
 
 
+def _source_ignores_robots(ctx, source_key: str) -> bool:
+    """True when the operator set Ignore robots on this source."""
+    sources = getattr(getattr(ctx, 'config', None), 'sources', None) or []
+    return any(
+        getattr(s, 'key', None) == source_key
+        and bool(getattr(s, 'ignore_robots', False))
+        for s in sources
+    )
+
+
 def _is_noindex(exc):
     from radar.fetch.http import RobotsDenied
     return isinstance(exc, RobotsDenied) or 'noindex' in str(exc)
@@ -109,8 +119,11 @@ def hydrate_articles(items, ctx, *, kind, limit=MAX_ARTICLES):
                 _public(current, resolve=hasattr(ctx.http, '_client'))
                 if item.source_key == 'uktn' and (urlsplit(current).query or urlsplit(current).fragment):
                     raise ValueError('UKTN query/fragment prohibited')
-                resp = ctx.http.get(current, timeout=ARTICLE_TIMEOUT,
-                                    max_retries=0, follow_redirects=False)
+                get_kw = dict(timeout=ARTICLE_TIMEOUT, max_retries=0,
+                              follow_redirects=False)
+                if _source_ignores_robots(ctx, item.source_key):
+                    get_kw['check_robots'] = False
+                resp = ctx.http.get(current, **get_kw)
                 if resp.status in (301, 302, 303, 307, 308):
                     location = resp.headers.get('location')
                     if not location:
@@ -118,9 +131,8 @@ def hydrate_articles(items, ctx, *, kind, limit=MAX_ARTICLES):
                     current = urljoin(current, location)
                     continue
                 if resp.status == 304:
-                    resp = ctx.http.get(current, headers={'Cache-Control': 'no-cache'},
-                                        timeout=ARTICLE_TIMEOUT, max_retries=0,
-                                        follow_redirects=False)
+                    resp = ctx.http.get(
+                        current, headers={'Cache-Control': 'no-cache'}, **get_kw)
                     if resp.status in (301, 302, 303, 307, 308):
                         current = urljoin(current, resp.headers.get('location', ''))
                         continue

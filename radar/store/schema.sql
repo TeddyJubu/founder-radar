@@ -400,7 +400,7 @@ CREATE INDEX IF NOT EXISTS ix_prompt_override_key
 CREATE TABLE IF NOT EXISTS admin_change (
   id          INTEGER PRIMARY KEY,
   at          TEXT NOT NULL,
-  kind        TEXT NOT NULL,      -- setting | source | prompt | rescore
+  kind        TEXT NOT NULL,      -- setting | source | prompt | rescore | fund | focus | backup
   key         TEXT,
   old_value   TEXT,
   new_value   TEXT,

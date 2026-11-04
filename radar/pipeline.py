@@ -1227,8 +1227,12 @@ def enrich_stage(db: Db, cfg: Any, http: Any, *, api_key: str | None = None,
     from radar.enrich import RequestBudget
 
     from radar.enrich.website_identity import verify_missing_crns
+    from radar.selection import source_enabled
     budget = RequestBudget(budget_limit)
-    verification = verify_missing_crns(db, http, api_key=key, budget=budget)
+    verification = verify_missing_crns(
+        db, http, api_key=key, budget=budget,
+        attach_ch_source=source_enabled(cfg, "companies_house"),
+    )
     result = enrich_companies(
         db, http, api_key=key, budget=budget,
         base_url=CH_API_BASE,

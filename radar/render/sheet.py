@@ -75,7 +75,7 @@ READ_RANGES: dict[str, str] = {
     FUND_CRITERIA: f"'{FUND_CRITERIA}'!A1:Q200",
     SCORING_WEIGHTS: f"'{SCORING_WEIGHTS}'!A1:I300",
     LISTS: f"'{LISTS}'!A1:L500",
-    SOURCES: f"'{SOURCES}'!A1:J200",
+    SOURCES: f"'{SOURCES}'!A1:K200",
     COMPANIES: f"'{COMPANIES}'!A1:AC5000",
 }
 
@@ -646,6 +646,8 @@ def _gather(db: Any) -> dict[str, CompanyView]:
         if row["company_id"] in views:
             views[row["company_id"]].founders.append(row["name"])
 
+    from radar.links import openable_url, prefer_evidence_sources
+
     for row in db.query(
         "SELECT company_id, kind, headline, source_url, source_key, occurred_on FROM signal "
         "ORDER BY occurred_on DESC, id DESC"
@@ -655,15 +657,27 @@ def _gather(db: Any) -> dict[str, CompanyView]:
             continue
         if row["kind"] not in view.signals:
             view.signals.append(row["kind"])
-        view.evidence.append((row["headline"], row["source_url"]))
+        # Emit an openable page, not a workbook download, in the evidence column.
+        view.evidence.append((row["headline"], openable_url(row["source_url"])))
         if _is_ch_verification_signal(row["kind"], row["source_key"]):
             view.ch_verified = True
             if view.ch_verified_on is None:
                 view.ch_verified_on = row["occurred_on"]
 
-    for row in db.query("SELECT company_id, source_url FROM company_source ORDER BY source_key"):
-        if row["company_id"] in views:
-            views[row["company_id"]].sources.append(row["source_url"])
+    by_company: dict[str, list[Any]] = {}
+    for row in db.query(
+        "SELECT company_id, source_key, source_url, external_id FROM company_source "
+        "ORDER BY source_key"
+    ):
+        by_company.setdefault(row["company_id"], []).append(row)
+    for company_id, rows in by_company.items():
+        view = views.get(company_id)
+        if view is None:
+            continue
+        for item in prefer_evidence_sources(rows):
+            view.sources.append(
+                openable_url(item.get("source_url"), item.get("external_id"))
+            )
 
     return views
 
@@ -1014,6 +1028,7 @@ def build_sources(db: Any, cfg: Any, *, today: date) -> list[Row]:
             "H": note,
             "I": source.url if source else "",
             "J": ", ".join(source.funds) if source else "",
+            "K": "TRUE" if (source and source.ignore_robots) else "FALSE",
         }))
     return rows
 

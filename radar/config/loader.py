@@ -362,6 +362,7 @@ def with_default_sources(sources: Sequence[SourceConfig] | None) -> list[SourceC
                 key=source.key, track=source.track,
                 enabled=source.enabled, note=source.note,
                 url=source.url, funds=list(source.funds),
+                ignore_robots=bool(source.ignore_robots),
             ))
     return out
 
@@ -1314,9 +1315,14 @@ def parse_sources(grid: Sequence[Sequence[Any]]) -> list[SourceConfig]:
         except ValueError:
             enabled = True
         funds = [f.strip().lower() for f in re.split(r"[,\s]+", _cell(row, 9) or "") if f.strip()]
+        try:
+            ignore_robots = coerce_bool(_cell(row, 10))
+        except ValueError:
+            ignore_robots = False
         out.append(SourceConfig(key=key, track=track if track in {"A", "B"} else "A",
                                 enabled=enabled, note=_configured_note(key, _cell(row, 7)),
-                                url=(_cell(row, 8) or "").strip(), funds=funds))
+                                url=(_cell(row, 8) or "").strip(), funds=funds,
+                                ignore_robots=ignore_robots))
     return out
 
 

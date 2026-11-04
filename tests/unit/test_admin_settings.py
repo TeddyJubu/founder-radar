@@ -145,3 +145,26 @@ def test_rescore_now_matches_the_snapshot(db):
     out = settings.rescore_now(db, note="manual")
     assert out["config_hash"] == _active_hash(db)
     assert settings.changes_view(db)[0]["kind"] == "rescore"
+
+
+def test_add_feed_ignore_robots_survives_robots_check(db, monkeypatch):
+    from radar.fetch.http import RobotsDenied
+
+    def deny(key, url, ignore_robots=False):
+        if ignore_robots:
+            return url
+        raise settings.SourceInvalid(
+            f"that site asks crawlers not to read this page ({RobotsDenied(url)})")
+
+    monkeypatch.setattr(settings, "_check_feed", deny)
+    with pytest.raises(settings.SourceInvalid, match="asks crawlers"):
+        settings.add_feed_source(
+            db, "Denied", "https://blocked.test/feed", gateway=None)
+    result = settings.add_feed_source(
+        db, "Denied", "https://blocked.test/feed", ignore_robots=True, gateway=None)
+    assert result.applied == {"feed_denied": "added"}
+    cfg, _ = settings.current_config(db)
+    src = next(s for s in cfg.sources if s.key == "feed_denied")
+    assert src.ignore_robots is True
+    change = next(c for c in settings.changes_view(db) if c["key"] == "feed_denied")
+    assert "ignore_robots=true" in (change["note"] or "")

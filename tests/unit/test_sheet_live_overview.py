@@ -31,9 +31,12 @@ def test_the_sheet_today_tab_lists_the_dashboard_companies(db):
 def test_feed_url_and_funds_round_trip_through_the_sources_tab(db):
     from radar.config.models import SourceConfig
     cfg = default_config().model_copy(update={"sources": [
-        SourceConfig(key="feed_sifted", url="https://sifted.eu/feed", funds=["outward"])]})
+        SourceConfig(key="feed_sifted", url="https://sifted.eu/feed", funds=["outward"],
+                     ignore_robots=True)]})
     row = build_sources(db, cfg, today=__import__("datetime").date.today())[0]
     assert row.cells["I"] == "https://sifted.eu/feed" and row.cells["J"] == "outward"
-    grid = [["Source"], [row.cells[c] for c in "ABCDEFGHIJ"]]
+    assert row.cells["K"] == "TRUE"
+    grid = [["Source"], [row.cells[c] for c in "ABCDEFGHIJK"]]
     parsed = parse_sources(grid)[0]
     assert parsed.url == "https://sifted.eu/feed" and parsed.funds == ["outward"]
+    assert parsed.ignore_robots is True

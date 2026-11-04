@@ -26,13 +26,17 @@ class FeedAdapter:
     requires_browser = False
     track = "A"
 
-    def __init__(self, key: str, url: str) -> None:
+    def __init__(self, key: str, url: str, *, ignore_robots: bool = False) -> None:
         self.key = key
         self.endpoint = url
         self.homepage = url
+        self.ignore_robots = bool(ignore_robots)
 
     def fetch(self, ctx: FetchContext) -> Iterable[RawItem]:
-        resp = ctx.http.get(self.endpoint)
+        if self.ignore_robots:
+            resp = ctx.http.get(self.endpoint, check_robots=False)
+        else:
+            resp = ctx.http.get(self.endpoint)
         if resp.status == 304:
             return []
         require_ok(resp, self.key, self.endpoint)
@@ -66,5 +70,9 @@ class FeedAdapter:
 
 def feed_adapters(configured) -> list[FeedAdapter]:
     """Adapters for every enabled `feed_*` source that has a URL."""
-    return [FeedAdapter(s.key, s.url) for s in configured
-            if s.key.startswith(PREFIX) and getattr(s, "url", "") and s.enabled]
+    return [
+        FeedAdapter(s.key, s.url,
+                    ignore_robots=bool(getattr(s, "ignore_robots", False)))
+        for s in configured
+        if s.key.startswith(PREFIX) and getattr(s, "url", "") and s.enabled
+    ]

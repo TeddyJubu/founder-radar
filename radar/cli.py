@@ -144,9 +144,12 @@ def verify_identities(ctx, limit, request_budget, company_ids, collect_links, ap
     Preview makes bounded read-only HTTP requests but no live database writes.
     """
     import sqlite3
+    from radar.config.defaults import default_config
+    from radar.config.loader import load_last_good
     from radar.enrich import RequestBudget
     from radar.enrich.website_identity import collect_source_links, verify_missing_crns
     from radar.pipeline import _make_http
+    from radar.selection import source_enabled
     from radar.sources.companies_house import api_key_from_env
 
     key = api_key_from_env()
@@ -164,8 +167,12 @@ def verify_identities(ctx, limit, request_budget, company_ids, collect_links, ap
     http = _make_http()
     budget = RequestBudget(request_budget)
     try:
+        cfg = load_last_good(db) or default_config()
         collected = collect_source_links(db, http, budget=budget, limit=limit, company_ids=company_ids) if collect_links else {}
-        result = verify_missing_crns(db, http, api_key=key, budget=budget, limit=limit, company_ids=company_ids)
+        result = verify_missing_crns(
+            db, http, api_key=key, budget=budget, limit=limit, company_ids=company_ids,
+            attach_ch_source=source_enabled(cfg, "companies_house"),
+        )
         _emit({'applied': apply, 'links': collected, 'verification': result,
                'budget_spent': budget.spent, 'budget_limit': budget.limit,
                'companies': [dict(r) for r in db.query('SELECT id,canonical_name,companies_house_no,incorporated_on,country_iso2 FROM company WHERE id IN (' + ','.join('?' for _ in company_ids) + ')', company_ids)] if company_ids else []}, ctx.obj['json'])

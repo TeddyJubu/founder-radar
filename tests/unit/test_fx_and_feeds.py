@@ -63,6 +63,28 @@ def test_a_feed_source_with_a_url_runs_as_an_adapter():
     assert "feed_sifted" in keys and "uktn" in keys and "feed_off" not in keys
 
 
+def test_feed_fetch_passes_check_robots_false_when_ignore_robots():
+    seen = []
+
+    class Http:
+        def get(self, url, **kw):
+            seen.append("check_robots" in kw and kw["check_robots"] is False)
+            return SimpleNamespace(ok=True, status=200, text="""<?xml version="1.0"?>
+            <rss version="2.0"><channel><title>t</title>
+            <item><title>Acme</title><link>https://n.test/a</link>
+            <guid>1</guid><description>Body text long enough.</description>
+            </item></channel></rss>""")
+
+    adapter = FeedAdapter("feed_n", "https://n.test/feed", ignore_robots=True)
+    list(adapter.fetch(SimpleNamespace(http=Http(), since=None)))
+    assert seen == [True]
+
+    seen.clear()
+    FeedAdapter("feed_n", "https://n.test/feed", ignore_robots=False).fetch(
+        SimpleNamespace(http=Http(), since=None))
+    assert seen == [False]
+
+
 def test_feed_items_are_news_that_needs_the_article_when_the_feed_is_short():
     rss = """<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
     <item><title>Acme raises £2m seed</title><link>https://n.test/acme</link>

@@ -154,6 +154,15 @@ def _value(row, key, default=None):
     return default if value is None else value
 
 
+def source_enabled(config: Any, key: str, *, default: bool = False) -> bool:
+    """Whether a configured source is enabled (missing key → ``default``)."""
+    sources = getattr(config, "sources", None) or ()
+    source = next((s for s in sources if getattr(s, "key", None) == key), None)
+    if source is None:
+        return default
+    return bool(getattr(source, "enabled", default))
+
+
 def deterministic_block_reason(db, row, config, *, today, config_hash=None):
     """The shared Today gates before QA; never loads cards or reads QA state."""
     from radar.qa.today import _query, has_registry_venture_signal
@@ -187,6 +196,10 @@ def deterministic_block_reason(db, row, config, *, today, config_hash=None):
     stage = canon_enum(_value(row, "stage"), STAGES)
 
     if (row["discovery_route"] or "registry") in {"registry", ""}:
+        # Companies House discovery off ⇒ hide registry-only cards. Historical
+        # DB rows stay; age/profile verification for Track A may still run.
+        if not source_enabled(config, "companies_house"):
+            return "companies_house_disabled"
         if age_unknown:
             return "age_unknown"
         leftover = [flag for flag in flags if flag != "age_unknown"]

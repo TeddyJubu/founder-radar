@@ -48,7 +48,7 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
 from radar.store.db import now_iso
 
@@ -224,7 +224,7 @@ class TodayCard:
                 "status": "Stored registry identity and raw SIC codes; record link for independent verification.",
                 "address_note": "A registered office is not proof of headquarters.",
             } if self.company_number else None),
-            "source_evidence": list(self.source_evidence),
+            "source_evidence": _openable_evidence_payload(self.source_evidence),
             "name": self.name,
             "city": self.city,
             "region": self.region,
@@ -798,23 +798,40 @@ def _vehicle_geo(cfg: Any, vehicle_key: str | None) -> tuple[str | None, tuple[s
     return None, ()
 
 
-def _http_source(db: Any, company_id: str) -> tuple[str | None, str | None]:
+def _http_source(
+    db: Any, company_id: str,
+) -> tuple[str | None, str | None, str | None]:
+    """Prefer non-workbook, non-CH HTTP sources — same order as Today / Sheet."""
+    from radar.links import primary_source
+
     rows = _query(
         db,
-        "SELECT source_key, source_url FROM company_source WHERE company_id = ? "
-        "ORDER BY last_seen DESC",
+        "SELECT source_key, source_url, external_id FROM company_source "
+        "WHERE company_id = ? ORDER BY last_seen DESC",
         (company_id,),
     )
-    picked = None
-    for row in rows:
-        url = str(_row_get(row, "source_url") or "")
-        if not url.startswith(("http://", "https://")):
-            continue
-        key = _row_get(row, "source_key")
-        if key != "companies_house":
-            return key, url
-        picked = picked or (key, url)
-    return picked or (None, None)
+    picked = primary_source(rows)
+    if picked is None:
+        return None, None, None
+    return (
+        picked.get("source_key"),
+        str(picked.get("source_url") or "") or None,
+        picked.get("external_id"),
+    )
+
+
+def _openable_evidence_payload(evidence: Sequence[Mapping[str, Any]] | tuple) -> list[dict]:
+    """Rewrite clickable citation URLs; keep ``source_workbook_url`` as provenance."""
+    from radar.links import openable_url
+
+    out: list[dict] = []
+    for raw in evidence:
+        item = dict(raw)
+        for key in ("citation_url", "source_url"):
+            if key in item and item[key]:
+                item[key] = openable_url(item[key])
+        out.append(item)
+    return out
 
 
 def _headlines(db: Any, company_id: str, *, limit: int = 4) -> tuple[str, ...]:
@@ -983,7 +1000,7 @@ def load_today_cards(
             db, row, cfg or _config_for(db, None), today=date.today(), config_hash=config_hash,
         ):
             continue
-        source_key, source_url = _http_source(db, row["company_id"])
+        source_key, source_url, external_id = _http_source(db, row["company_id"])
         if not source_url:
             continue
         route = _row_get(row, "discovery_route")
@@ -992,12 +1009,15 @@ def load_today_cards(
         ):
             continue
         geo_rule, geo_values = _vehicle_geo(cfg, _row_get(row, "vehicle_key"))
+        from radar.links import openable_url
         from radar.qa.evidence import source_evidence, _number
+        # Evidence lookup needs the stored citation; the card blob opens a page.
+        evidence = source_evidence(db, row["company_id"], source_key, source_url)
         card = TodayCard(
             company_id=row["company_id"],
             company_number=_number(_row_get(row, "companies_house_no")),
             sic_codes=_raw_sic_codes(_row_get(row, "sic_codes")),
-            source_evidence=source_evidence(db, row["company_id"], source_key, source_url),
+            source_evidence=evidence,
             name=row["canonical_name"],
             city=_row_get(row, "hq_city"),
             region=_row_get(row, "hq_region"),
@@ -1006,7 +1026,7 @@ def load_today_cards(
             incorporated_on=_row_get(row, "incorporated_on"),
             route=route,
             website=_row_get(row, "website_url"),
-            source_url=source_url,
+            source_url=openable_url(source_url, external_id),
             source_key=source_key,
             fund_key=_row_get(row, "fund_key"),
             vehicle_key=_row_get(row, "vehicle_key"),

@@ -67,6 +67,7 @@ TODAY_DIAGNOSTIC_LABELS = {
     "reviewed_today": "Already reviewed today",
     "already_decided": "Already decided (Kept / not for me)",
     "display_limit": "Beyond today's display limit",
+    "companies_house_disabled": "Companies House discovery is off",
     "registry_without_venture_signal": "Companies House only, no venture signal",
     "hermes_rejected": "Failed the final Hermes company check",
     "qa_incomplete": "Final Hermes company check did not complete",
@@ -524,9 +525,15 @@ def build_kept(conn: sqlite3.Connection) -> dict[str, list[dict]]:
                  FROM score WHERE company_id = ? AND tier != 'reject'
                 ORDER BY priority DESC LIMIT 1""", (r["company_id"],)).fetchone()
         vehicle = vehicles.get((best["vehicle_key"] or "") if best else "", {})
-        source = conn.execute(
-            "SELECT source_url FROM company_source WHERE company_id = ? "
-            "ORDER BY first_seen DESC LIMIT 1", (r["company_id"],)).fetchone()
+        from radar.links import openable_url, primary_source
+
+        rows = conn.execute(
+            """SELECT source_key, source_url, external_id, first_seen
+                 FROM company_source WHERE company_id = ?
+                ORDER BY first_seen DESC""",
+            (r["company_id"],),
+        ).fetchall()
+        source = primary_source(rows)
         out[verdict].append({
             "company_id": r["company_id"],
             "name": r["canonical_name"],
@@ -534,7 +541,10 @@ def build_kept(conn: sqlite3.Connection) -> dict[str, list[dict]]:
             "where": r["hq_city"] or (r["hq_region"] or "").replace("_", " "),
             "sector": (r["sector"] or "").replace("_", " "),
             "website": r["website_url"] or (f"https://{r['domain']}" if r["domain"] else ""),
-            "source": source["source_url"] if source else "",
+            "source": openable_url(
+                source.get("source_url") if source else None,
+                source.get("external_id") if source else None,
+            ),
             "fund": (vehicle.get("fund") or (best["fund_key"] if best else "")) or "",
             "vehicle": vehicle.get("name") or ((best["vehicle_key"] or "") if best else ""),
             "fit": best["fund_fit_pct"] if best else None,
@@ -974,7 +984,7 @@ def build_kept_table(conn: sqlite3.Connection) -> list[dict]:
         if (r["verdict"] or "").strip().lower() not in KEPT_VERDICTS:
             continue
         sources = [dict(s) for s in conn.execute(
-            """SELECT source_key, source_url, substr(first_seen,1,10) seen
+            """SELECT source_key, source_url, external_id, substr(first_seen,1,10) seen
                  FROM company_source WHERE company_id = ?
                 ORDER BY first_seen""", (r["company_id"],))]
         signals = [dict(s) for s in conn.execute(
@@ -1004,13 +1014,15 @@ def render_kept_table(conn: sqlite3.Connection) -> str:
         return ('<p class="empty" data-testid="table-empty">Nothing kept yet. '
                 'Press <b>1</b> on a card in Today to keep one.</p>')
 
+    from radar.links import openable_url, prefer_evidence_sources
+
     body = []
     for c in rows:
         srcs = "".join(
-            f'<a class="lnk" href="{escape(s["source_url"])}" target="_blank" '
-            f'rel="noopener">{escape(_source_name(s["source_key"]))} ↗</a>'
-            for s in c["sources"]
-            if str(s["source_url"] or "").startswith(("http://", "https://"))) or "—"
+            f'<a class="lnk" href="{escape(openable_url(s.get("source_url"), s.get("external_id")))}" '
+            f'target="_blank" rel="noopener">'
+            f'{escape(_source_name(s["source_key"]))} ↗</a>'
+            for s in prefer_evidence_sources(c["sources"])) or "—"
         sigs = "<br>".join(
             f'{escape((s["kind"] or "").replace("_", " "))}'
             f'{" · " + escape(str(s["occurred_on"])[:10]) if s["occurred_on"] else ""}'
@@ -1441,29 +1453,21 @@ def build_today(conn: sqlite3.Connection, limit: int = 100, fund: str | None = N
         # `company_source` row for *every* mention — so this is the reliable
         # home of the article URL, and the reason the card had no link to
         # anything: 20 of 20 companies on the queue have zero signal rows.
-        sources = [dict(s) for s in conn.execute(
-            """SELECT source_key, source_url, external_id, first_seen
-                 FROM company_source WHERE company_id = ?
-                ORDER BY first_seen DESC""",
-            (r["company_id"],)) if _is_http_url(s["source_url"])]
-        def _workbook(url: str) -> bool:
-            path = str(url or "").lower().split("?", 1)[0].split("#", 1)[0]
-            return path.endswith(".xlsx")
+        from radar.links import openable_url, prefer_evidence_sources, primary_source
 
-        pages = [
-            item for item in sources
-            if item["source_key"] != "companies_house" and not _workbook(item["source_url"])
-        ]
-        source = pages[0] if pages else next(
-            (item for item in sources if item["source_key"] != "companies_house"),
-            sources[0] if sources else None,
-        )
+        sources = prefer_evidence_sources([
+            dict(s) for s in conn.execute(
+                """SELECT source_key, source_url, external_id, first_seen
+                     FROM company_source WHERE company_id = ?
+                    ORDER BY first_seen DESC""",
+                (r["company_id"],))
+        ])
+        source = primary_source(sources)
         if source is None:
             # The SQL guard is intentionally cheap; this second check handles
             # malformed values such as `https://` without leaking a card that
             # cannot be verified by a human.
             continue
-        from radar.sources.innovate_uk import page_url
 
         directory.append({
             "company_id": r["company_id"],
@@ -1476,9 +1480,9 @@ def build_today(conn: sqlite3.Connection, limit: int = 100, fund: str | None = N
         if len(out) >= cap:
             continue
         source = dict(source)
-        source["open_url"] = page_url(source["source_url"], source.get("external_id"))
+        source["open_url"] = openable_url(source["source_url"], source.get("external_id"))
         for item in sources:
-            item["open_url"] = page_url(item["source_url"], item.get("external_id"))
+            item["open_url"] = openable_url(item["source_url"], item.get("external_id"))
 
         components = [dict(c) for c in conn.execute(
             """SELECT key, label, sub_score, weight, contribution, evidence
@@ -1509,6 +1513,7 @@ def build_today(conn: sqlite3.Connection, limit: int = 100, fund: str | None = N
             "route": r["discovery_route"],
             "ch_number": r["companies_house_no"],
             "source_url": source["source_url"],
+            "open_url": source["open_url"],
             "source_key": source["source_key"],
             "source_external_id": source["external_id"],
             "age_phrase": phrase,
@@ -1891,14 +1896,21 @@ def admin_post(conn: sqlite3.Connection, path: str, body: dict) -> tuple[int, di
             return 200, {"ok": True, "active": current.as_dict() if current else None,
                          "rotation": focus_mod.rotation(db)}
         if path in ("/api/admin/sources/add", "/api/admin/sources/remove",
-                    "/api/admin/sources/funds"):
+                    "/api/admin/sources/funds",
+                    "/api/admin/sources/ignore-robots"):
             try:
                 if path.endswith("/add"):
                     applied = settings.add_feed_source(
                         db, str(body.get("name") or ""), str(body.get("url") or ""),
-                        funds=body.get("funds"), note=note)
+                        funds=body.get("funds"),
+                        ignore_robots=bool(body.get("ignore_robots")),
+                        note=note)
                 elif path.endswith("/remove"):
                     applied = settings.remove_source(db, str(body.get("key") or ""), note=note)
+                elif path.endswith("/ignore-robots"):
+                    applied = settings.set_source_ignore_robots(
+                        db, str(body.get("key") or ""),
+                        bool(body.get("ignore_robots")), note=note)
                 else:
                     applied = settings.set_source_funds(
                         db, str(body.get("key") or ""), body.get("funds"), note=note)

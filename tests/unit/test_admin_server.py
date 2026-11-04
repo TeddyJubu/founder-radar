@@ -345,7 +345,8 @@ def test_rescore_reports_the_same_config_hash_as_the_settings_view(admin):
 
 
 def test_a_feed_source_can_be_added_mapped_and_removed(admin, monkeypatch):
-    monkeypatch.setattr(admin_settings, "_check_feed", lambda key, url: None)
+    monkeypatch.setattr(admin_settings, "_check_feed",
+                        lambda key, url, ignore_robots=False: None)
     status, body = post(admin, "/api/admin/sources/add",
                         {"name": "Sifted", "url": "https://sifted.eu/feed", "funds": ["outward"]})
     assert status == 200, body
@@ -366,7 +367,8 @@ def test_a_feed_source_can_be_added_mapped_and_removed(admin, monkeypatch):
 
 
 def test_bad_source_requests_are_refused_with_a_reason(admin, monkeypatch):
-    monkeypatch.setattr(admin_settings, "_check_feed", lambda key, url: None)
+    monkeypatch.setattr(admin_settings, "_check_feed",
+                        lambda key, url, ignore_robots=False: None)
     status, body = post(admin, "/api/admin/sources/add", {"name": "X", "url": "http://plain.test/feed"})
     assert status == 400 and "https" in body["error"]
     status, body = post(admin, "/api/admin/sources/funds", {"key": "uktn", "funds": "nosuchfund"})
@@ -414,12 +416,52 @@ def test_bad_fund_edits_are_refused_per_field(admin):
     v = view["vehicles"][0]
     status, body = post(admin, "/api/admin/funds", {
         "fund_key": v["fund_key"], "vehicle_key": v["vehicle_key"],
-        "changes": {"stage_min": "unicorn", "geo_values": "london", "max_age_years": "0"}})
+        "changes": {"stage_min": "unicorn", "geo_values": "atlantis",
+                    "max_age_years": "0"}})
     assert status == 400
+    # Every bad field is reported at once, so one save does not mean four round
+    # trips. `geo_values` stays in the set: geography is editable here since
+    # Oct 2026, but only against the same enum the loader validates with —
+    # "atlantis" is refused, not silently dropped.
     assert set(body["errors"]) == {"stage_min", "geo_values", "max_age_years"}
     status, _ = post(admin, "/api/admin/funds", {
         "fund_key": "nofund", "vehicle_key": "x", "changes": {"active": True}})
     assert status == 404
+
+
+def test_geography_and_sectors_are_editable_from_the_control_room(admin):
+    """Aryan asked to edit places and sectors, not just money and stage.
+
+    Kept separate from the refusal test above: that one would still pass if the
+    field were rejected on *every* value, which is the bug this covers.
+    """
+    _, view = get(admin, "/api/admin/funds")
+    v = view["vehicles"][0]
+    key = {"fund_key": v["fund_key"], "vehicle_key": v["vehicle_key"]}
+
+    status, body = post(admin, "/api/admin/funds", {**key, "changes": {
+        "geo_rule": "SOFT", "geo_values": "yorkshire, north_east",
+        "sectors_plus": "fintech, AI Data"}})
+    assert status == 200, body
+
+    _, view = get(admin, "/api/admin/funds")
+    after = next(x for x in view["vehicles"]
+                 if (x["fund_key"], x["vehicle_key"]) == (v["fund_key"], v["vehicle_key"]))
+    assert after["geo_rule"] == "SOFT"
+    # Canonicalised, so the Sheet text and the model agree on separators/case.
+    assert after["geo_values"] == ["yorkshire", "north_east"]
+    assert after["sectors_plus"] == ["fintech", "ai_data"]
+
+
+def test_a_hard_geography_rule_cannot_be_left_without_places(admin):
+    """Clearing the places on a HARD vehicle would make it match nothing."""
+    _, view = get(admin, "/api/admin/funds")
+    v = next(x for x in view["vehicles"] if x["geo_rule"] == "HARD")
+    status, body = post(admin, "/api/admin/funds", {
+        "fund_key": v["fund_key"], "vehicle_key": v["vehicle_key"],
+        "changes": {"geo_values": ""}})
+    assert status == 400
+    assert "geo_values" in body["errors"]
 
 
 def test_focus_and_rotation_from_the_control_room(admin):
@@ -435,3 +477,59 @@ def test_focus_and_rotation_from_the_control_room(admin):
     assert status == 200
     kinds = admin.read("SELECT kind FROM admin_change WHERE kind = 'focus'")
     assert len(kinds) >= 3
+
+
+def test_fund_add_edit_pause_write_admin_change_kind_fund(admin):
+    """Control-room fund mutations always land in Changes with kind=fund."""
+    before = admin.change_count()
+    status, body = post(admin, "/api/admin/funds/add", {
+        "name": "Harbour", "geo_values": "yorkshire", "sectors_plus": "fintech",
+        "one_liner": "Yorkshire fintech"})
+    assert status == 200, body
+    status, body = post(admin, "/api/admin/funds/pause",
+                        {"fund_key": "harbour", "paused": True})
+    assert status == 200, body
+    _, view = get(admin, "/api/admin/funds")
+    v = next(x for x in view["vehicles"] if x["fund_key"] == "harbour")
+    status, body = post(admin, "/api/admin/funds", {
+        "fund_key": v["fund_key"], "vehicle_key": v["vehicle_key"],
+        "changes": {"cheque_max": "£500,000"}})
+    assert status == 200, body
+
+    rows = admin.read(
+        "SELECT kind, key, new_value, sheet_sync FROM admin_change WHERE kind = 'fund' "
+        "ORDER BY id")
+    assert len(rows) >= 3
+    assert admin.change_count() >= before + 3
+    keys = {r[1] for r in rows}
+    assert "harbour" in keys
+    assert any(r[1] == "harbour.active" for r in rows)
+    assert all(r[3] in ("skipped", "synced", "not_in_sheet") for r in rows)
+    _, changes = get(admin, "/api/admin/changes")
+    assert any(c["kind"] == "fund" for c in changes["changes"])
+
+
+def test_add_feed_with_ignore_robots_and_toggle(admin, monkeypatch):
+    monkeypatch.setattr(admin_settings, "_check_feed",
+                        lambda key, url, ignore_robots=False: None)
+    status, body = post(admin, "/api/admin/sources/add", {
+        "name": "BlockedFeed", "url": "https://example.test/feed",
+        "ignore_robots": True})
+    assert status == 200, body
+    _, view = get(admin, "/api/admin/settings")
+    added = next(s for s in view["sources"] if s["key"] == "feed_blockedfeed")
+    assert added["ignore_robots"] is True
+    note = admin.read(
+        "SELECT note FROM admin_change WHERE key = 'feed_blockedfeed' ORDER BY id DESC")
+    assert note and "ignore_robots=true" in (note[0][0] or "")
+
+    status, body = post(admin, "/api/admin/sources/ignore-robots", {
+        "key": "uktn", "ignore_robots": True})
+    assert status == 200, body
+    _, view = get(admin, "/api/admin/settings")
+    uktn = next(s for s in view["sources"] if s["key"] == "uktn")
+    assert uktn["ignore_robots"] is True
+    note = admin.read(
+        "SELECT note FROM admin_change WHERE key = 'uktn.ignore_robots' "
+        "ORDER BY id DESC LIMIT 1")
+    assert note and "ignore_robots=true" in (note[0][0] or "")

@@ -267,6 +267,9 @@ class SourceConfig(BaseModel):
     url: str = ""
     #: Funds this source's companies may be suggested for; empty means all.
     funds: list[str] = Field(default_factory=list)
+    #: Operator override: fetch even when robots.txt disallows this URL.
+    #: Default remains obey; never spoofs UA or bypasses HTTP 403.
+    ignore_robots: bool = False
 
 
 class Config(BaseModel):

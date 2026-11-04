@@ -363,6 +363,28 @@ def test_fetch_all_records_a_blocked_source_as_degraded(db, config):
     assert result2.sources[0].status == "failed"
 
 
+def test_uncaught_robots_denied_is_degraded_like_source_blocked(db, config):
+    from radar.fetch.http import RobotsDenied
+    from radar.sources import fetch_all
+    from radar.sources.base import FetchContext
+
+    class RobotsAdapter:
+        key = "robots_test"
+        kind = "news"
+        schedule = "daily"
+        requires_browser = False
+
+        def fetch(self, ctx):  # noqa: ARG002
+            raise RobotsDenied("https://example.org/feed")
+
+    result = fetch_all(FetchContext(http=None, config=config),
+                       adapters=[RobotsAdapter()], db=db)
+    assert result.sources[0].status == "degraded"
+    assert "RobotsDenied" in (result.sources[0].error or "") or "example.org" in (
+        result.sources[0].error or "")
+    assert result.status == "ok"
+
+
 def test_sources_test_surfaces_a_layout_change_instead_of_a_quiet_zero(db):
     """A source that returns 200 and nothing must not read as "0 items today"."""
     http = StubHttp(load("northern_accelerator_CHANGED.json"))

@@ -1204,6 +1204,13 @@ function sourceCitationLabel(key, url, externalId) {
   return sourceName(key);
 }
 
+function isCompaniesHouseVerification(sig) {
+  const kind = String(sig?.kind || "");
+  const source = String(sig?.source_key || "");
+  return (kind === "verification" && source === "companies_house")
+    || (kind === "ch_verified" && (source === "" || source === "companies_house"));
+}
+
 function articleLinks(c) {
   const seen = new Set();
   const out = [];
@@ -1216,12 +1223,13 @@ function articleLinks(c) {
     });
   }
   for (const s of c.signals || []) {
-    if (!s.source_url || seen.has(s.source_url)) continue;
+    // CH registration proof is the verification badge, not a discovery link.
+    if (!s.source_url || seen.has(s.source_url) || isCompaniesHouseVerification(s)) continue;
     seen.add(s.source_url);
     out.push({ url: s.open_url || openableUrl(s.source_url, s.external_id), label: evidenceLabel(s), kind: s.kind || "" });
   }
   for (const s of c.sources || []) {
-    if (!s.source_url || seen.has(s.source_url)) continue;
+    if (!s.source_url || seen.has(s.source_url) || s.source_key === "companies_house") continue;
     seen.add(s.source_url);
     out.push({
       url: s.open_url || openableUrl(s.source_url, s.external_id),
@@ -1291,7 +1299,10 @@ function renderCompaniesHouseVerification(c) {
   const dateText = date
     ? `<span class="ch-verified-date" data-testid="ch-verified-date">Incorporated ${esc(date)}</span>`
     : `<span class="ch-verified-date" data-testid="ch-verified-date">incorporation date unavailable</span>`;
+  // Verification badge — distinct from "Found via …" discovery source copy.
   return `<div class="ch-verified" data-testid="ch-verified"
+                 data-kind="verification"
+                 title="Registration check — not the discovery source"
                  data-incorporated-on="${esc(verified.incorporated_on || "")}">
             <span>Verified on Companies House</span>${dateText}
           </div>`;
