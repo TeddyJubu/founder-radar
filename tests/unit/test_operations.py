@@ -1003,6 +1003,58 @@ def test_a_missing_env_file_is_not_an_error(tmp_path):
     assert load_env_file(tmp_path / "nope.env") == 0
 
 
+def test_a_named_env_file_does_not_read_the_installed_hermes_env(tmp_path, monkeypatch):
+    """The box at /opt/founder-radar has a real hermes.env. Loading a named
+    file — what these tests do, and what a caller with an explicit path does —
+    must not merge that into the process. It used to, and the extra HERMES_BIN
+    then made later Today QA tests launch the real Hermes."""
+    from radar.cli import load_env_file
+
+    installed = tmp_path / "installed-hermes.env"
+    installed.write_text("HERMES_BIN=/should/not/load\nHERMES_HOME=/should/not/load\n")
+    monkeypatch.setattr("radar.cli._INSTALLED_HERMES_ENV", installed)
+    monkeypatch.delenv("HERMES_BIN", raising=False)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.delenv("HERMES_ENV_FILE", raising=False)
+    monkeypatch.delenv("COMPANIES_HOUSE_API_KEY", raising=False)
+
+    env = tmp_path / "work" / ".env"
+    env.parent.mkdir()
+    env.write_text("COMPANIES_HOUSE_API_KEY=abc-123\n")
+
+    assert load_env_file(env) == 1
+    assert os.environ["COMPANIES_HOUSE_API_KEY"] == "abc-123"
+    assert "HERMES_BIN" not in os.environ
+    assert "HERMES_HOME" not in os.environ
+
+    # A hermes.env next to the named file is still that caller's file.
+    (env.parent / "hermes.env").write_text("HERMES_BIN=/beside/hermes\n")
+    monkeypatch.delenv("HERMES_BIN", raising=False)
+    monkeypatch.delenv("COMPANIES_HOUSE_API_KEY", raising=False)
+    assert load_env_file(env) == 2
+    assert os.environ["HERMES_BIN"] == "/beside/hermes"
+
+
+def test_the_cli_still_reads_the_installed_env_when_no_file_is_named(tmp_path, monkeypatch):
+    """`founder-radar doctor` with no local .env has to see the unit's files."""
+    from radar.cli import load_env_file
+
+    monkeypatch.chdir(tmp_path)
+    installed_env = tmp_path / "opt.env"
+    installed_hermes = tmp_path / "opt-hermes.env"
+    installed_env.write_text("COMPANIES_HOUSE_API_KEY=from-opt\n")
+    installed_hermes.write_text("HERMES_BIN=/opt/bin/hermes\n")
+    monkeypatch.setattr("radar.cli._INSTALLED_ENV", installed_env)
+    monkeypatch.setattr("radar.cli._INSTALLED_HERMES_ENV", installed_hermes)
+    monkeypatch.delenv("COMPANIES_HOUSE_API_KEY", raising=False)
+    monkeypatch.delenv("HERMES_BIN", raising=False)
+    monkeypatch.delenv("HERMES_ENV_FILE", raising=False)
+
+    assert load_env_file() == 2
+    assert os.environ["COMPANIES_HOUSE_API_KEY"] == "from-opt"
+    assert os.environ["HERMES_BIN"] == "/opt/bin/hermes"
+
+
 def test_today_requires_verified_age_and_uk_presence(db):
     """Today is an opportunity queue, not the unknown-data research pool."""
     from prototype.server import build_today

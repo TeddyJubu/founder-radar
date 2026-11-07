@@ -25,6 +25,13 @@ from radar.store.db import Db, default_db_path
 
 EXIT_OK, EXIT_PARTIAL, EXIT_FATAL = 0, 1, 2
 
+# The installed copies. The no-argument CLI load reads these so `doctor`
+# matches the systemd unit. An explicit path must not: a caller who named a
+# file is loading that file, and merging the installed hermes.env changes the
+# count and leaks HERMES_BIN into the process.
+_INSTALLED_ENV = Path("/opt/founder-radar/.env")
+_INSTALLED_HERMES_ENV = Path("/opt/founder-radar/hermes.env")
+
 
 class NotBuilt(click.ClickException):
     def __init__(self, what: str) -> None:
@@ -37,6 +44,10 @@ def load_env_file(path: Path | None = None) -> int:
     Returns how many names it set. A real environment variable always wins.
     Systemd also loads these via EnvironmentFile=; this keeps `doctor` and
     manual CLI invocations seeing HERMES_BIN the same way the timer does.
+
+    Pass a path to load that file only, plus a `hermes.env` sitting next to
+    it. The installed files under `/opt/founder-radar` are the fallback for
+    the no-argument call the CLI makes at startup, not for a named file.
     """
     def _is_file(file_path: Path) -> bool:
         try:
@@ -62,16 +73,22 @@ def load_env_file(path: Path | None = None) -> int:
 
     loaded = 0
     if path is not None:
-        loaded += _load(path if _is_file(path) else Path(path))
+        target = path if _is_file(path) else Path(path)
+        loaded += _load(target)
+        hermes_beside = target.parent / "hermes.env"
+        installed_hermes = None
     else:
-        for candidate in (Path.cwd() / ".env", Path("/opt/founder-radar/.env")):
+        hermes_beside = Path.cwd() / "hermes.env"
+        installed_hermes = _INSTALLED_HERMES_ENV
+        for candidate in (Path.cwd() / ".env", _INSTALLED_ENV):
             if _is_file(candidate):
                 loaded += _load(candidate)
                 break
+    named = (os.environ.get("HERMES_ENV_FILE") or "").strip()
     hermes_candidates = [
-        Path((os.environ.get("HERMES_ENV_FILE") or "").strip()) if (os.environ.get("HERMES_ENV_FILE") or "").strip() else None,
-        Path.cwd() / "hermes.env",
-        Path("/opt/founder-radar/hermes.env"),
+        Path(named) if named else None,
+        hermes_beside,
+        installed_hermes,
     ]
     for candidate in hermes_candidates:
         if candidate is not None and _is_file(candidate):

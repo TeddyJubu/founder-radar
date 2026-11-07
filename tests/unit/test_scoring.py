@@ -139,7 +139,7 @@ def test_coverage_counts_known_attributes_not_weighted_share(cfg):
     assert fit.coverage != weighted, "coverage remains a count, not a weighted share"
 
 
-def test_edge_varies_across_the_today_queue(db, cfg):
+def test_edge_varies_across_the_today_queue(db, cfg, companies_house_on):
     """Client-issues plan §3.3 (C11) — the client's words, verbatim: "Edge
     seems to be the same across the results."
 

@@ -114,7 +114,7 @@ def test_today_hides_explicit_non_uk_country(db):
     assert reasons.get("min_uk_presence") == 1
 
 
-def test_today_does_not_surface_age_unverified_companies(db, config):
+def test_today_does_not_surface_age_unverified_companies(db, config, companies_house_on):
     """Registry cards with unknown age stay in the research pool."""
     from radar.pipeline import score_company
     from tests.factories import registry_company, store_company

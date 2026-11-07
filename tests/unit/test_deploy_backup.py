@@ -29,6 +29,30 @@ DEPLOY_DIR = Path(__file__).resolve().parents[2] / "deploy"
 DEPLOY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
 UPDATE_SCRIPT = DEPLOY_DIR / "update-from-main.sh"
 UPDATE_TIMER = DEPLOY_DIR / "founder-radar-update.timer"
+
+
+@pytest.fixture
+def root_safe_tmp(tmp_path):
+    """A directory the root updater will accept as a checkout.
+
+    update-from-main.sh, as root, refuses a path that walks through a
+    directory it does not own or that is group/other-writable. pytest's
+    tmp_path lives under /tmp, which is 1777, so a root test run dies in
+    that guard before the behaviour under test. Non-root runs never enter
+    the guard and keep the ordinary temp dir.
+    """
+    if os.geteuid() != 0:
+        yield tmp_path
+        return
+    base = Path("/root/.cache/founder-radar-pytest-sandboxes")
+    base.mkdir(parents=True, exist_ok=True)
+    base.chmod(0o700)
+    sandbox = base / tmp_path.name
+    sandbox.mkdir(mode=0o700)
+    try:
+        yield sandbox
+    finally:
+        shutil.rmtree(sandbox, ignore_errors=True)
 UPDATE_SERVICE = DEPLOY_DIR / "founder-radar-update.service"
 INSTALL_SH = DEPLOY_DIR / "install.sh"
 
@@ -388,7 +412,8 @@ def test_deploy_ships_main_without_a_manual_click():
     assert "inputs.rescore_all" in workflow
 
 
-def test_update_from_main_fast_forwards_and_skips_when_current(tmp_path):
+def test_update_from_main_fast_forwards_and_skips_when_current(root_safe_tmp):
+    tmp_path = root_safe_tmp
     """The timer's job, against a local origin: no-op when HEAD matches,
     fast-forward when main moves. Dry-run so we do not invoke install.sh."""
     if shutil.which("git") is None:
@@ -498,7 +523,8 @@ def test_hermes_acl_never_grants_access_to_root_code(tmp_path):
 
 
 @pytest.mark.parametrize('state', ['activating', 'active', 'reloading', 'deactivating', 'unknown'])
-def test_updater_does_not_fetch_or_install_while_oneshot_scan_is_busy(tmp_path, state):
+def test_updater_does_not_fetch_or_install_while_oneshot_scan_is_busy(root_safe_tmp, state):
+    tmp_path = root_safe_tmp
     tools = tmp_path / 'bin'
     tools.mkdir()
     app = tmp_path / 'app'

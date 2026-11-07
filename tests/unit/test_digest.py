@@ -32,7 +32,10 @@ QUIET = "2026-08-08"        # the Saturday after
 def seed_company(db, name, *, cid=None, incorporated_on="2026-06-14", city="Newcastle",
                  region="north_east", sector="life_sciences", stage="pre_seed",
                  domain=None, funding=None, ch_no=None, postcode="NE1 4ST",
-                 one_liner=None):
+                 one_liner=None, route="news"):
+    """A Track A company. Registry is hidden while Companies House discovery is
+    off (the default), so a fixture seeded as registry never earns a Today pass
+    and the morning message comes out empty."""
     cid = cid or f"C{abs(hash(name)) % 10**10:010d}"
     stamp = f"{DAY}T06:30:00Z"
     db.execute(
@@ -43,7 +46,7 @@ def seed_company(db, name, *, cid=None, incorporated_on="2026-06-14", city="Newc
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (cid, name, name.lower().replace(" ", ""), ch_no, domain,
          f"https://{domain}" if domain else None, incorporated_on, postcode, region, city,
-         sector, stage, funding, "registry", one_liner, stamp, stamp, stamp, stamp),
+         sector, stage, funding, route, one_liner, stamp, stamp, stamp, stamp),
     )
     db.execute("INSERT INTO company_source(company_id, source_key, external_id, source_url, "
                "first_seen, last_seen) VALUES (?, 'fixture_article', ?, ?, ?, ?)",
@@ -291,12 +294,11 @@ def test_a_described_company_reads_as_a_company_not_as_an_article(db):
 
 
 def test_a_registry_company_still_leads_with_its_filings(db):
-    """The other half of the same rule: a Track B company is met at Companies
-    House, where there is no prose to describe it. Signals are facts about the
-    company there — "incorporated 11 May", "SH01 filed 22 Jul" — so they stay.
+    """The other half of the same rule: a company with no prose to describe it
+    still leads with the facts — "SH01 filed 22 Jul" — rather than going blank.
     """
     seed_run(db, shortlisted=1)
-    cid = seed_company(db, "Quayside Robotics")
+    cid = seed_company(db, "Quayside Robotics", route="news")
     seed_score(db, cid)
     seed_signal(db, cid, "SH01 filed 22 Jul", kind="share_issue")
 

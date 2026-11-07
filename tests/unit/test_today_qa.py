@@ -32,6 +32,15 @@ from radar.qa.today import (
 from tests.fakes import seed_companies, source_link_proof
 
 
+@pytest.fixture(autouse=True)
+def _hermes_comes_from_the_test(monkeypatch):
+    """These tests inject a runner. A host with HERMES_HOME or HERMES_BIN set
+    — this VPS, via hermes.env — would otherwise wrap the argv in sudo or
+    resolve a real binary and the fake runner would never be what ran."""
+    for name in ("HERMES_HOME", "HERMES_BIN", "HERMES_USER", "HERMES_ENV_FILE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _card(**kw) -> TodayCard:
     base = dict(company_id="c1", name="Kelvin Bio", city="Newcastle",
                 region="north_east", stage="pre_seed")

@@ -93,7 +93,17 @@ def build(path: str) -> int:
     db = Db(path)
     try:
         db.migrate()
+        # The recipe is a Companies House sweep. Discovery is off in the
+        # product default, which would score these rows and then hide every
+        # one of them from Today. The demo turns that source on and stores
+        # the same config the scores were computed against.
         cfg = default_config()
+        cfg = cfg.model_copy(update={"sources": [
+            s.model_copy(update={"enabled": True}) if s.key == "companies_house" else s
+            for s in cfg.sources
+        ]})
+        from radar.config.loader import save_snapshot
+        save_snapshot(db, cfg)
         http = MockCompaniesHouse()
         adapter = CompaniesHouseAdapter(api_key="demo", days_back=90, window_days=90)
         for item in adapter.fetch(FetchContext(http=http, config=cfg, db=db, now=TODAY)):
