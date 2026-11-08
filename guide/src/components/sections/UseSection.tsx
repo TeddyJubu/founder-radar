@@ -1,4 +1,5 @@
 import { Reveal, SectionShell, TechnicalPanel } from "@/components/SectionShell"
+import { TutorialVideo } from "@/components/TutorialVideo"
 import { cliCheatSheet, howToUseEasy, surfacesTable } from "@/content/cli"
 import { useAudience } from "@/hooks/use-audience"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +12,9 @@ export function UseSection() {
 
   return (
     <SectionShell id="use" number="06" title="Day to day" eyebrow="What you actually do">
+      <Reveal className="mb-10">
+        <TutorialVideo />
+      </Reveal>
       <div className="mb-10 grid gap-4 md:grid-cols-3">
         {howToUseEasy.map((item) => (
           <Reveal key={item.title}>

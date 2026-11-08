@@ -31,6 +31,21 @@ rsync -az --delete dist/ aryan:/opt/founder-radar/guide/
 ssh aryan 'chown -R radar:radar /opt/founder-radar/guide'
 ```
 
+## Tutorial video
+
+The Day to day section embeds a silent, captioned walkthrough of the real
+Today / Kept / Dashboard / Help pages (`public/tutorial/how-to-use.mp4`).
+Re-record against a seeded demo database:
+
+```bash
+.venv/bin/python scripts/seed_demo_db.py /tmp/tutorial.db
+.venv/bin/python prototype/server.py --db /tmp/tutorial.db --port 8788
+DISPLAY=:1 .venv/bin/python scripts/record_usage_tutorial.py \
+  --base-url http://127.0.0.1:8788 --out-dir /tmp/tutorial-out
+```
+
+Then replace `guide/public/tutorial/how-to-use.{mp4,vtt,srt}` from that folder.
+
 ## Audience toggle
 
 Sticky header: **Easy** (default) vs **Technical**. Same scroll path; Easy uses
